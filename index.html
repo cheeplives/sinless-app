@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0d1017">
+<title>Sinless — Character Dossier</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="static/fonts.css">
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="rail">
+    <header class="rail-brand">
+      <div class="brand-mark">SINLESS</div>
+      <div class="brand-sub">character dossier</div>
+    </header>
+
+    <div class="rail-block">
+      <input id="char-name" class="name-input" placeholder="Street name" spellcheck="false">
+      <input id="char-player" class="player-input" placeholder="Player" spellcheck="false">
+    </div>
+
+    <div class="rail-block">
+      <div class="rail-label">Pools</div>
+      <div id="rail-pools" class="pool-grid"></div>
+    </div>
+
+    <div class="rail-block">
+      <div class="rail-label">Condition</div>
+      <div id="rail-condition"></div>
+    </div>
+
+    <div class="rail-block">
+      <div class="rail-label">Budgets</div>
+      <div id="rail-budgets"></div>
+    </div>
+
+    <div class="rail-block">
+      <div class="rail-label">Zoetics</div>
+      <div id="rail-zoetics"></div>
+    </div>
+
+    <div class="rail-block rail-actions">
+      <button id="btn-save" class="btn">Save</button>
+      <select id="load-select" class="btn-select"><option value="">Load…</option></select>
+      <button id="btn-new" class="btn ghost">New</button>
+      <button id="btn-export" class="btn ghost">Export JSON</button>
+      <button id="btn-import" class="btn ghost">Import JSON</button>
+      <input id="import-file" type="file" accept=".json,application/json" hidden>
+    </div>
+
+    <div id="rail-alerts"></div>
+  </aside>
+
+  <main id="main">
+    <nav id="tabs"></nav>
+    <section id="panel"></section>
+  </main>
+</div>
+<div id="sheet" hidden></div>
+<script src="static/data.js"></script>
+<script src="static/rules.js"></script>
+<script src="static/storage.js"></script>
+<script src="static/app.js"></script>
+<script src="static/sheet.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* offline install is best-effort */ });
+  }
+</script>
+</body>
+</html>

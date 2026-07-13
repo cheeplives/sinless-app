@@ -381,27 +381,28 @@ function applyHeritage(character, data, warnings, errors) {
     attributeMaxAdjustment[name] = 0;
   }
 
-  // For Small Uplifts, move STR and BOD to max-only adjustments
+  // Move an attribute's current adjustment into the max-only bucket: it
+  // raises/lowers the maximum but not the starting value. Accumulates so
+  // multiple sources on the same attribute compose instead of clobbering.
+  const moveToMaxOnly = name => {
+    attributeMaxAdjustment[name] += attributeAdjustment[name];
+    attributeAdjustment[name] = 0;
+  };
+
+  // Small Uplifts: STR and BOD reductions apply to the maximum only.
   const isSmallUplift = traits.some(row => row.SmallUplift === "true" || row.SmallUplift === true);
   if (isSmallUplift) {
-    attributeMaxAdjustment["Strength"] = attributeAdjustment["Strength"];
-    attributeMaxAdjustment["Body"] = attributeAdjustment["Body"];
-    attributeAdjustment["Strength"] = 0;
-    attributeAdjustment["Body"] = 0;
+    moveToMaxOnly("Strength");
+    moveToMaxOnly("Body");
   }
 
-  // Handle max-only attributes for any heritage trait
+  // Any heritage trait may name attributes whose modifier is max-only.
   for (const trait of traits) {
-    const maxOnlyAttrs = trait.MaxOnlyAttributes;
-    if (maxOnlyAttrs) {
-      const attrNames = maxOnlyAttrs.split(",").map(s => s.trim());
-      for (const attrName of attrNames) {
-        const fullName = attrName.charAt(0).toUpperCase() + attrName.slice(1).toLowerCase();
-        if (ATTRIBUTES.includes(fullName)) {
-          attributeMaxAdjustment[fullName] = attributeAdjustment[fullName];
-          attributeAdjustment[fullName] = 0;
-        }
-      }
+    if (!trait.MaxOnlyAttributes) continue;
+    for (const raw of trait.MaxOnlyAttributes.split(",")) {
+      const attrName = raw.trim();
+      const fullName = attrName.charAt(0).toUpperCase() + attrName.slice(1).toLowerCase();
+      if (ATTRIBUTES.includes(fullName)) moveToMaxOnly(fullName);
     }
   }
 
@@ -767,7 +768,8 @@ function scoreAttributes(character, data, startingAttributePoints, heritage, aug
                         + amp.attribute_adjustment[name]);
     const finalValue = baseLevel[name] + adjustment;
     const maxValue = (ATTRIBUTE_MAX_BASELINE
-                      + (heritage.attribute_max_adjustment[name] || heritage.attribute_adjustment[name])
+                      + heritage.attribute_max_adjustment[name]
+                      + heritage.attribute_adjustment[name]
                       + augments.attribute_max_adjustment[name]
                       + amp.attribute_max_adjustment[name]);
     attributes[name] = { base: baseLevel[name], adjust: adjustment,

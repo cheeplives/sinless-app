@@ -1054,7 +1054,7 @@ function shGear(body) {
 
   // ===== 3. Weapons — buy new + owned table (equipped toggle stays live, remove)
   const weaponCard = el("div", { class: "card sh-card" }, el("h3", {}, "Weapons"));
-  if (mult > 1) weaponCard.append(el("p", { class: "hint" }, `Extra Arm boon: all costs ×${mult}.`));
+  if (mult > 1) weaponCard.append(el("p", { class: "hint" }, `Heritage surcharge: all costs ×${mult}.`));
   const weaponBuyGroups = Object.entries(
     DATA.tables.weapons.reduce((acc, r) => (((acc[r.Type] ??= []).push(r)), acc), {}))
     .map(([type, rows]) => ({

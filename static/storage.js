@@ -1,10 +1,9 @@
 /**
- * storage.js — localStorage character persistence for the standalone build.
+ * storage.js — localStorage character persistence.
  *
- * Replaces app.py's file-based /api/characters endpoints. Keys mirror the
- * server's character_filename() sanitization so a name always maps to the
- * same slot on both backends. Characters are a few KB each; localStorage's
- * ~5 MB budget is ample.
+ * Each character is stored under `sinless:char:<sanitized-name>`, so a given
+ * street name always maps to the same slot. Characters are a few KB each;
+ * localStorage's ~5 MB budget is ample.
  */
 "use strict";
 
@@ -13,8 +12,8 @@ const STORAGE = (() => {
 const KEY_PREFIX = "sinless:char:";
 const MAX_CHARACTER_NAME_LENGTH = 80;
 
-/** Mirror of app.py character_filename(): letters/digits/_/- survive,
- * everything else collapses to a hyphen; length-capped; never empty. */
+/** Turn a character name into a stable storage key: letters/digits/_/-
+ * survive, everything else collapses to a hyphen; length-capped; never empty. */
 function sanitizeName(name) {
   let cleaned = String(name || "unnamed").trim()
     .replace(/[^A-Za-z0-9_-]+/g, "-")
@@ -33,8 +32,17 @@ function listCharacters() {
 }
 
 function loadCharacter(name) {
-  const raw = localStorage.getItem(KEY_PREFIX + sanitizeName(name));
-  return raw ? JSON.parse(raw) : null;
+  const key = KEY_PREFIX + sanitizeName(name);
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Corrupt entry (partial write, manual edit): drop it so it stops
+    // breaking loads, and report nothing found.
+    localStorage.removeItem(key);
+    return null;
+  }
 }
 
 function saveCharacter(character) {

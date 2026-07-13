@@ -5,7 +5,7 @@
  * recalc). Chargen and play mode are two top-level views: #app (rail +
  * chargen tabs) and #sheet (this file); enterSheet()/exitSheet() toggle
  * between them. All play state lives under CHAR.play and is auto-saved
- * (debounced) to the server whenever it changes — no explicit Save button
+ * (debounced) to localStorage whenever it changes — no explicit Save button
  * in play mode.
  *
  * Derived stats (pools, condition maxima, attribute finals) still come from
@@ -240,7 +240,7 @@ async function revertToChargenEnd() {
 }
 
 /* auto-generated dossier notes that don't fit the tab structure */
-function moveSpecial() {   // rules.py returns a list of special-movement notes
+function moveSpecial() {   // CALC.combat.move_special is a list of special-movement notes
   const v = CALC.combat.move_special;
   return (Array.isArray(v) ? v.join(" · ") : String(v || "")).trim();
 }

@@ -4,17 +4,17 @@
  * No build step, no framework: plain DOM construction via the `el()`
  * helper below. State lives in three module-level variables:
  *
- *   DATA  - game data tables + rule constants, fetched once from /api/data
- *           and never mutated (see app.py's api_data()).
+ *   DATA  - game data tables + rule constants (the DATA_BUNDLE from
+ *           data.js). Loaded once at boot and never mutated.
  *   CHAR  - the character being edited. Every input handler in this file
  *           mutates CHAR directly, then calls scheduleRecalc() or refresh().
- *   CALC  - the derived character sheet last returned by POST /api/calculate
- *           (rules.calculate() on the server). Read-only from here; never
- *           edit CALC directly, it's overwritten wholesale on every recalc.
+ *   CALC  - the derived character sheet from the last RULES.calculate(CHAR).
+ *           Read-only from here; never edit CALC directly, it's overwritten
+ *           wholesale on every recalc.
  *
  * Edit lifecycle: a control's event handler mutates CHAR -> calls
- * scheduleRecalc() (debounced) or refresh() (immediate) -> that POSTs CHAR
- * to /api/calculate -> CALC is replaced with the response -> renderRail()
+ * scheduleRecalc() (debounced) or refresh() (immediate) -> that runs
+ * RULES.calculate(CHAR) -> CALC is replaced with the result -> renderRail()
  * and the current tab's render function redraw from DATA/CHAR/CALC.
  *
  * Tabs: each tab is one render function (tabPriorities, tabHeritage, ...)
@@ -68,8 +68,8 @@ const POOL_FORMULAS = {
 /* ------------------------------------------------ boot */
 /* Fully client-side: game data comes from data.js (DATA_BUNDLE), the
  * engine from rules.js (RULES), persistence from storage.js (STORAGE).
- * recalc() is synchronous now, but stays `async`-shaped so the existing
- * `await recalc()` call sites don't need to change. */
+ * recalc() is synchronous but stays `async`-shaped so the many
+ * `await recalc()` call sites read uniformly. */
 async function boot() {
   DATA = DATA_BUNDLE;
   CHAR = RULES.defaultCharacter();
@@ -114,9 +114,10 @@ function bindRail() {
   });
   $("#btn-export").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(CHAR, null, 2)], { type: "application/json" });
-    const a = el("a", { href: URL.createObjectURL(blob),
-      download: (CHAR.name || "character") + ".json" });
+    const url = URL.createObjectURL(blob);
+    const a = el("a", { href: url, download: (CHAR.name || "character") + ".json" });
     a.click();
+    URL.revokeObjectURL(url);   // release the blob; the click has already fired
   });
   $("#btn-import").addEventListener("click", () => $("#import-file").click());
   $("#import-file").addEventListener("change", async e => {

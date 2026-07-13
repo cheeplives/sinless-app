@@ -1717,7 +1717,7 @@ function tabGear(p) {
   p.append(t);
   if (CALC.budget.gear_cost_multiplier > 1)
     p.append(el("p", { class: "hint" },
-      `Extra Arm boon: all gear costs \u00d7${CALC.budget.gear_cost_multiplier}.`));
+      `Heritage surcharge: all gear & augment costs \u00d7${CALC.budget.gear_cost_multiplier}.`));
 }
 
 boot();

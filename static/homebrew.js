@@ -96,6 +96,10 @@ const HOMEBREW_CONFIG = {
     { key: "Weight", hint: "number" },
     { key: "Hardening", hint: "number" },
     { key: "Rarity", hint: "number" },
+    { key: "Upgr1_Cost", hint: "Upgrade 1 cost — Woolongs plus optional special part, e.g. “1500 + 50 Tc”" },
+    { key: "Upgr1_Eff", hint: "Upgrade 1 effect, e.g. “Barrel Detailing (+1 damage)”" },
+    { key: "Upgr2_Cost", hint: "Upgrade 2 cost — same format as Upgrade 1" },
+    { key: "Upgr2_Eff", hint: "Upgrade 2 effect" },
     { key: "Notes", ta: true },
   ]},
   armor: { label: "Armor", nameKey: "Armor", fields: [

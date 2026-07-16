@@ -1863,15 +1863,18 @@ function shAugments(body) {
     const hasZr = !!(+r.ZR);
     const alphaZr = hasZr
       ? Math.max(0, Math.ceil((+r.ZR - Math.max(+r.ZR * 0.2, 0.1)) * 10) / 10) : 0;
-    const base = Math.round((+r.Cost || 0) * mult);
+    // Going alpha adds max(base cost, 1000) — mirrors rules.js effCost (min
+    // applied to raw cost, then × the gear multiplier) so the play-mode cash
+    // ledger stays in step with the recalculated total.
+    const alphaExtra = Math.round(Math.max(+r.Cost || 0, 1000) * mult);
     const alphaCell = hasZr
-      ? el("label", { class: "opt", title: `α-cyber grade: ZR ${alphaZr} (−20%, min −0.1), cost ×2` },
+      ? el("label", { class: "opt", title: `α-cyber grade: ZR ${alphaZr} (−20%, min −0.1), cost ×2 (min +${CURRENCY_SYMBOL}1,000)` },
           el("input", { type: "checkbox", ...(a.alpha ? { checked: 1 } : {}),
             onchange: async e => {
               a.alpha = e.target.checked;
               logCash(a.alpha ? `Upgraded ${a.name} to α-cyber grade`
                               : `Reverted ${a.name} from α-cyber grade`,
-                a.alpha ? -base : base);
+                a.alpha ? -alphaExtra : alphaExtra);
               await playChangedRecalc();
             } }),
           el("span", {}, `ZR ${a.alpha ? alphaZr : +r.ZR}`))

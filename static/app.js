@@ -1063,7 +1063,7 @@ function tabAugments(p) {
   p.append(el("h2", {}, "Augments ", chip("cash")));
   p.append(el("p", { class: "hint" },
     "Cyberware accrues ZR (Zoetic Rating); bioware accrues Body Index, which must stay at or below your Body. Banned combinations are flagged in the sidebar. "
-    + "α-cyber Augments are bleeding edge, reducing the ZR by 20% but doubling the cost."));
+    + "α-cyber Augments are bleeding edge, reducing the ZR by 20% (minimum 0.1) but doubling the cost (minimum +ㄓ1,000)."));
   const avail = augmentAvailability(CHAR.augments);
   // Cyberlimb augments (except the melee implants below) need a replacement limb.
   const LIMB_TYPES = new Set(["Right Arm", "Left Arm", "Right Leg", "Left Leg"]);
@@ -1135,12 +1135,15 @@ function tabAugments(p) {
       const hasZr = !!(+r.ZR);
       const alphaZr = hasZr
         ? Math.max(0, Math.ceil((+r.ZR - Math.max(+r.ZR * 0.2, 0.1)) * 10) / 10) : 0;
-      const costOf = () => (+r.Cost || 0) * (it.alpha ? 2 : 1) * (it.count || 1);
+      const costOf = () => {
+        const base = +r.Cost || 0;
+        return (it.alpha ? base + Math.max(base, 1000) : base) * (it.count || 1);
+      };
       const costCell = el("td", { class: "num" }, fmt(costOf()));
       const zrCell = el("td", { class: "num" },
         hasZr ? `ZR ${it.alpha ? alphaZr : +r.ZR}` : r.BI ? `BI ${r.BI}` : "");
       const alphaCtl = hasZr
-        ? el("label", { class: "opt", title: `\u03b1-cyber grade: ZR ${alphaZr} (\u221220%, min \u22120.1), cost \u00d72` },
+        ? el("label", { class: "opt", title: `\u03b1-cyber grade: ZR ${alphaZr} (\u221220%, min \u22120.1), cost \u00d72 (min +${CURRENCY_SYMBOL}1,000)` },
             el("input", { type: "checkbox", ...(it.alpha ? { checked: "1" } : {}),
               onchange: e => {
                 it.alpha = e.target.checked;

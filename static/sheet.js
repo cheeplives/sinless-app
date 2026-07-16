@@ -291,8 +291,9 @@ function sheetTabList() {
   // a character can pick up a deck/rig/drone/vehicle in play even if they had
   // none at chargen.
   return [["overview", "Overview"], ["skills", "Skills"], ["kismet", "Kismet"],
-    ["gear", "Gear"], ["magic", "Magic"], ["decking", "Decking"],
-    ["rigging", "Rigging"], ["actions", "Actions"], ["notes", "Notes"]];
+    ["gear", "Gear"], ["augments", "Augments"], ["magic", "Magic"],
+    ["decking", "Decking"], ["rigging", "Rigging"], ["actions", "Actions"],
+    ["notes", "Notes"]];
 }
 
 function renderSheet() {
@@ -301,8 +302,8 @@ function renderSheet() {
   root.append(sheetHeader());
   const body = el("div", { class: "sheet-body" });
   ({ overview: shOverview, skills: shSkills, kismet: shKismet, gear: shGear,
-     magic: shMagic, decking: shDecking, rigging: shRigging, actions: shActions,
-     notes: shNotes })[sheetTab](body);
+     augments: shAugments, magic: shMagic, decking: shDecking,
+     rigging: shRigging, actions: shActions, notes: shNotes })[sheetTab](body);
   root.append(body);
 }
 
@@ -713,16 +714,25 @@ function shOverview(body) {
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length) {
       const wt = el("table");
-      wt.append(el("tr", {}, el("th", {}, "Equipped weapon"), el("th", {}, "Stats"), el("th", {}, "Mods")));
+      wt.append(el("tr", {}, el("th", {}, "Equipped weapon"), el("th", {}, "Stats"), el("th", {}, "Mods & upgrades")));
       equippedWeapons.forEach(w => {
         const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
         const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
+        // each mod/upgrade on its own line, with its effect spelled out
+        const modLines = (w.mods || []).map(m => {
+          const mr = DATA.tables.weapon_mods.find(x => x.Modification === m);
+          return (mr && mr.Effect) ? `${m} — ${mr.Effect}` : m;
+        });
+        if (w.upgr1 && r.Upgr1_Eff) modLines.push(`Upgrade 1 — ${r.Upgr1_Eff}`);
+        if (w.upgr2 && r.Upgr2_Eff) modLines.push(`Upgrade 2 — ${r.Upgr2_Eff}`);
         wt.append(el("tr", {},
           el("td", {}, el("b", {}, w.name + (w.smart ? " (smart)" : ""))),
           el("td", { class: "sub" },
             `${r.Type || ""} · Acc ${r.Accuracy || 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0}`
             + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
-          el("td", { class: "sub" }, (w.mods || []).length ? w.mods.join(", ") : "—")));
+          el("td", { class: "sub" }, modLines.length
+            ? el("div", {}, ...modLines.map(l => el("div", {}, l)))
+            : "—")));
       });
       loadout.append(wt);
     }
@@ -837,27 +847,50 @@ function notesCard(rows) {
 }
 
 /* skills belonging to one pool — shown when its pool card is clicked */
+// Shared skill-breakdown table, used by both the Skills tab and the pool-chip
+// expansion on the Overview so the two stay in lockstep. Columns read left to
+// right as Base (Pts) + Bonus + Group = Final dice.
+function skillTableHeader() {
+  return el("tr", {}, el("th", {}, "Skill"), el("th", { class: "num" }, "Pts"),
+    el("th", { class: "num" }, "Bonus"), el("th", { class: "num" }, "Group"),
+    el("th", { class: "num" }, "Final"));
+}
+
+function skillTableRow(name, dim = false) {
+  const s = CALC.skills[name];
+  const spec = (CHAR.skill_specializations || {})[name];
+  const specOn = !!(spec && spec.on) && s.final > 0;
+  const rating = specOn ? `${s.final - 1} / ${s.final + 1}`
+    : s.final > 0 ? String(s.final)
+    : s.dice_bonus ? "0" : "—";
+  // group_value already folds the bonus in; the Group column shows just the
+  // group-derived dice so Pts + Bonus + Group reads as Final.
+  const groupDice = s.points === 0 && s.group_value != null ? s.group_value - s.bonus : 0;
+  return el("tr", dim ? { class: "dim" } : {},
+    el("td", {}, name,
+      specOn && spec.text ? el("span", { class: "sub skill-spec-note" }, ` — ${spec.text}`) : null),
+    el("td", { class: "num sub" }, s.points ? String(s.points) : ""),
+    el("td", { class: "num sub" }, s.bonus ? (s.bonus > 0 ? `+${s.bonus}` : String(s.bonus)) : ""),
+    el("td", { class: "num sub" }, groupDice ? String(groupDice) : ""),
+    el("td", { class: "num" }, el("b", {}, rating),
+      s.soft ? el("span", { class: "sub" }, ` (soft)`) : null,
+      s.dice_bonus ? el("span", { class: "skill-dice" }, `+${s.dice_bonus}d`) : null));
+}
+
 function poolSkillList(pool) {
-  const rows = [];
-  for (const [name, meta] of Object.entries(DATA.skills)) {
-    if (meta.pool !== pool) continue;
-    rows.push({ name, s: CALC.skills[name] });
-  }
-  rows.sort((a, b) => (b.s.final - a.s.final) || a.name.localeCompare(b.name));
+  const names = Object.entries(DATA.skills)
+    .filter(([, meta]) => meta.pool === pool)
+    .map(([name]) => name)
+    .sort((a, b) => (CALC.skills[b].final - CALC.skills[a].final) || a.localeCompare(b));
   const box = el("div", { class: `sh-poolskills ${pool.toLowerCase()}` },
     el("h4", {}, `${pool} skills`));
-  for (const { name, s } of rows) {
-    const spec = (CHAR.skill_specializations || {})[name];
-    const specOn = !!(spec && spec.on) && s.final > 0;
-    const rating = specOn ? `${s.final - 1} / ${s.final + 1}`
-      : s.final > 0 ? String(s.final)
-      : s.dice_bonus ? "0" : "—";
-    box.append(el("div", { class: "sh-poolskill" + (s.final > 0 || s.dice_bonus ? "" : " dim") },
-      el("span", {}, name, s.group ? el("span", { class: "sub" }, ` ·${s.group}`) : null,
-        specOn && spec.text ? el("span", { class: "sub skill-spec-note" }, ` — ${spec.text}`) : null),
-      el("b", {}, rating,
-        s.dice_bonus ? el("span", { class: "skill-dice" }, `+${s.dice_bonus}d`) : null)));
+  const t = el("table", { class: "sh-skilltable" });
+  t.append(skillTableHeader());
+  for (const name of names) {
+    const s = CALC.skills[name];
+    t.append(skillTableRow(name, !(s.final > 0 || s.dice_bonus)));
   }
+  box.append(t);
   return box;
 }
 
@@ -874,27 +907,8 @@ function shSkills(body) {
     if (!trained.length) col.append(el("p", { class: "hint" }, "No trained skills."));
     else {
       const t = el("table", { class: "sh-skilltable" });
-      t.append(el("tr", {}, el("th", {}, "Skill"), el("th", { class: "num" }, "Pts"),
-        el("th", { class: "num" }, "Bonus"), el("th", { class: "num" }, "Group"),
-        el("th", { class: "num" }, "Final")));
-      for (const [name] of trained) {
-        const s = CALC.skills[name];
-        const spec = (CHAR.skill_specializations || {})[name];
-        const specOn = !!(spec && spec.on) && s.final > 0;
-        const rating = specOn ? `${s.final - 1} / ${s.final + 1}` : String(s.final);
-        // group_value already folds the bonus in; the Group column shows just
-        // the group-derived dice so Pts + Bonus + Group reads as Final.
-        const groupDice = s.points === 0 && s.group_value != null ? s.group_value - s.bonus : 0;
-        t.append(el("tr", {},
-          el("td", {}, name,
-            specOn && spec.text ? el("span", { class: "sub skill-spec-note" }, ` — ${spec.text}`) : null),
-          el("td", { class: "num sub" }, s.points ? String(s.points) : ""),
-          el("td", { class: "num sub" }, s.bonus ? (s.bonus > 0 ? `+${s.bonus}` : String(s.bonus)) : ""),
-          el("td", { class: "num sub" }, groupDice ? String(groupDice) : ""),
-          el("td", { class: "num" }, el("b", {}, rating),
-            s.soft ? el("span", { class: "sub" }, ` (soft)`) : null,
-            s.dice_bonus ? el("span", { class: "skill-dice" }, `+${s.dice_bonus}d`) : null)));
-      }
+      t.append(skillTableHeader());
+      for (const [name] of trained) t.append(skillTableRow(name));
       col.append(t);
     }
     grid.append(col);
@@ -1308,13 +1322,15 @@ function weaponModSlots(w, mult, weaponName) {
     if (modName) {
       box.append(el("span", {
         class: `chip ${cls}`, style: "cursor:pointer",
-        title: (modRow && modRow.Effect) ? `${modRow.Effect} — click to remove` : "Click to remove",
+        title: "Click to remove",
         onclick: () => {
           const idx = w.mods.indexOf(modName);
           if (idx >= 0) w.mods.splice(idx, 1);
           playChangedRecalc();
         },
       }, modName + " ✕"));
+      if (modRow && modRow.Effect)
+        box.append(el("div", { class: "sh-modslot-eff" }, modRow.Effect));
     } else {
       const options = table.filter(m => m.Slot === slot);
       box.append(el("select", {
@@ -1340,6 +1356,66 @@ function weaponModSlots(w, mult, weaponName) {
   return grid;
 }
 
+/* Split an upgrade cost string into the Woolong part and any special-currency
+ * remainder: "1500 + 50 Tc" -> {cash:1500, special:"50 Tc"}; "250" -> {cash:250}.
+ * Some rows use "and" as the separator ("10000 and 200 Tc"). */
+function parseUpgradeCost(str) {
+  const m = /^\s*([\d,]+)\s*(?:(?:\+|and)\s*(.+))?$/i.exec(str || "");
+  if (!m) return { cash: 0, special: (str || "").trim() };
+  return { cash: parseInt(m[1].replace(/,/g, ""), 10) || 0, special: (m[2] || "").trim() };
+}
+
+/* Fixed Upgrade 1 / Upgrade 2 boxes for a weapon. Each weapon has at most one
+ * of each, defined on its data row (Upgr1_Cost/Upgr1_Eff/Upgr2_Cost/Upgr2_Eff).
+ * Unpurchased: the box shows the cost with a Buy button. Purchased: it shows
+ * the upgrade's effect. Mixed costs ("1500 + 50 Tc") deduct the Woolong part
+ * from cash; the special part pops a reminder to settle with the Agonarch. */
+function weaponUpgradeSlots(w, r, mult) {
+  const boxes = [];
+  for (const n of [1, 2]) {
+    const costStr = r[`Upgr${n}_Cost`] || "";
+    const eff = r[`Upgr${n}_Eff`] || "";
+    if (!costStr && !eff) continue;
+    const key = `upgr${n}`;
+    const label = `Upgrade ${n}`;
+    const box = el("div", { class: "sh-modslot mod-upgrade" },
+      el("div", { class: "sh-modslot-label" }, label));
+    if (w[key]) {
+      box.append(
+        el("div", { class: "sh-modslot-active" },
+          el("span", { class: "chip mod-upgrade", style: "cursor:pointer",
+            title: "Installed — click to remove (not refunded)",
+            onclick: async () => {
+              if (!confirm(`Remove ${label} (${eff}) from ${w.name}? Not refunded.`)) return;
+              delete w[key];
+              await playChangedRecalc();
+            } }, "Installed ✕")),
+        el("div", { class: "sh-modslot-eff" }, eff));
+    } else {
+      const { cash, special } = parseUpgradeCost(costStr);
+      const cost = Math.round(cash * mult);
+      box.append(
+        el("div", { class: "sh-modslot-active" }, fmt(cost) + (special ? ` + ${special}` : "")),
+        el("div", { class: "sh-modslot-eff" }, eff),
+        el("button", { class: "btn small", style: "margin-top:4px",
+          onclick: async () => {
+            if (!confirm(`Install ${label} on ${w.name}?\n\n${eff}\nCost: ${fmt(cost)}${special ? ` + ${special}` : ""}`))
+              return;
+            if (CHAR.play.cash < cost
+                && !confirm(`${label} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
+              return;
+            w[key] = true;
+            logCash(`Installed ${label} (${eff}) on ${w.name}`, -cost);
+            if (special)
+              alert(`${label} on ${w.name} has an extra cost of ${special} on top of the Woolongs.\n\nMake sure that cost is paid — consult with the Agonarch.`);
+            await playChangedRecalc();
+          } }, "Buy"));
+    }
+    boxes.push(box);
+  }
+  return boxes;
+}
+
 /* ------------------------------------------------ gear tab */
 function shGear(body) {
   const play = CHAR.play;
@@ -1352,7 +1428,7 @@ function shGear(body) {
     ?.scrollIntoView({ behavior: "smooth", block: "start" });
   body.append(el("div", { class: "gear-submenu" },
     ...[["gear-cash", "Woolongs"], ["gear-lifestyle", "Lifestyle"], ["gear-weapons", "Weapons"],
-        ["gear-armor", "Armor"], ["gear-augments", "Augments"], ["gear-gear", "Gear"],
+        ["gear-armor", "Armor"], ["gear-gear", "Gear"],
         ["gear-vehicles", "Vehicles"], ["gear-buy", "Buy"]]
       .map(([id, label]) => el("button", { onclick: jump(id) }, label))));
 
@@ -1417,7 +1493,8 @@ function shGear(body) {
   weaponCard.append(el("div", { class: "mod-slot-legend" },
     el("span", { class: "mod-overbarrel" }, "● Overbarrel"),
     el("span", { class: "mod-underbarrel" }, "● Underbarrel"),
-    el("span", { class: "mod-chassis" }, "● Chassis")));
+    el("span", { class: "mod-chassis" }, "● Chassis"),
+    el("span", { class: "mod-upgrade" }, "● Upgrade")));
   const weaponBuyGroups = Object.entries(
     DATA.tables.weapons.reduce((acc, r) => (((acc[r.Type] ??= []).push(r)), acc), {}))
     .map(([type, rows]) => ({
@@ -1448,9 +1525,14 @@ function shGear(body) {
             if (!confirm(`Remove ${w.name}?`)) return;
             CHAR.weapons.splice(wi, 1); await playChangedRecalc();
           } }, "✕"))));
-      if (canMod)
+      const upgBoxes = weaponUpgradeSlots(w, r, mult);
+      if (canMod || upgBoxes.length) {
+        const strip = canMod ? weaponModSlots(w, mult, w.name)
+                             : el("div", { class: "sh-modslots" });
+        upgBoxes.forEach(b => strip.append(b));
         t.append(el("tr", { class: "sh-modslots-row" },
-          el("td", { colspan: "4" }, weaponModSlots(w, mult, w.name))));
+          el("td", { colspan: "4" }, strip)));
+      }
     });
     weaponCard.append(t);
   } else {
@@ -1531,108 +1613,8 @@ function shGear(body) {
   }
   body.append(armorCard);
 
-  // ===== Augments (chargen + bought in play) — Alpha toggle + remove
-  const augEntries = [
-    ...CHAR.augments.map(a => ({ ref: a, inPlay: false })),
-    ...play.purchases.augments.map(a => ({ ref: a, inPlay: true }))];
-  const augCard = el("div", { class: "card sh-card", id: "gear-augments" }, el("h3", {}, "Augments"));
-  // Slotted Skillsofts grant their bonus; how many can be slotted at once is
-  // capped by the number of Chipjacks installed.
-  const ownedAugsAll = [...CHAR.augments, ...play.purchases.augments];
-  const chipjackCount = ownedAugsAll
-    .filter(a => a.name === "Chipjack").reduce((sum, a) => sum + (a.count || 1), 0);
-  const slottedSkillsoftCount = ownedAugsAll
-    .filter(a => a.name.startsWith("Skillsoft") && a.slotted !== false).length;
-  if (augEntries.length) {
-    const t = el("table");
-    t.append(el("tr", {}, el("th", {}, "Augment"), el("th", { class: "num" }, "×"),
-      el("th", {}, "α-cyber"), el("th", {}, "Slotted"), el("th", {}, "Effect"), el("th", {}, "")));
-    augEntries.forEach(({ ref: a, inPlay }) => {
-      const r = DATA.tables.augments.find(x => x.Name === a.name) || {};
-      const isSkillsoft = a.name.startsWith("Skillsoft");
-      const hasZr = !!(+r.ZR);
-      const alphaZr = hasZr ? Math.ceil(+r.ZR * 0.8 * 10) / 10 : 0;
-      const base = Math.round((+r.Cost || 0) * mult);
-      const alphaCell = hasZr
-        ? el("label", { class: "opt", title: `α-cyber grade: ZR ${alphaZr} (−20%), cost ×2` },
-            el("input", { type: "checkbox", ...(a.alpha ? { checked: 1 } : {}),
-              onchange: async e => {
-                a.alpha = e.target.checked;
-                logCash(a.alpha ? `Upgraded ${a.name} to α-cyber grade`
-                                : `Reverted ${a.name} from α-cyber grade`,
-                  a.alpha ? -base : base);
-                await playChangedRecalc();
-              } }),
-            el("span", {}, `ZR ${a.alpha ? alphaZr : +r.ZR}`))
-        : el("span", { class: "sub" }, "—");
-      // Skillsofts target a player-chosen skill (like chargen) and only grant
-      // their bonus while slotted, capped by owned Chipjacks.
-      let target = null, slottedCell = el("span", { class: "sub" }, "—");
-      if (isSkillsoft) {
-        target = el("select", { onchange: async e => { a.target = e.target.value; await playChangedRecalc(); } },
-          el("option", { value: "" }, "Skill…"),
-          ...Object.keys(DATA.skills).sort().map(x => el("option", {}, x)));
-        target.value = a.target || "";
-        const isSlotted = a.slotted !== false;
-        const atCap = !isSlotted && slottedSkillsoftCount >= chipjackCount;
-        slottedCell = el("label", {
-          class: "opt",
-          title: atCap
-            ? `Only ${chipjackCount} Chipjack(s) installed — unslot another Skillsoft first`
-            : "Apply this Skillsoft's bonus to its target skill",
-        },
-          el("input", { type: "checkbox", ...(isSlotted ? { checked: 1 } : {}),
-            disabled: atCap ? "1" : null,
-            onchange: async e => { a.slotted = e.target.checked; await playChangedRecalc(); } }));
-      }
-      // Knowledge Skillsofts bought in play get a cash-aware +/- stepper —
-      // each unit adds a Knowledge skill point. Chargen-installed ones (or
-      // other augments) show a static count; the chargen record is immutable
-      // in play, so extra copies are bought in play instead.
-      const unitCost = Math.round((+r.Cost || 0) * mult);
-      const countCell = (inPlay && a.name === "Knowledge Skillsoft")
-        ? el("td", { class: "num" }, el("span", { class: "stepper" },
-            el("button", { title: "Remove one (refunded)", onclick: async () => {
-              if ((a.count || 1) <= 1) return;
-              a.count -= 1;
-              logCash("Removed a Knowledge Skillsoft", unitCost);
-              await playChangedRecalc();
-            } }, "–"),
-            el("b", {}, String(a.count || 1)),
-            el("button", { title: "Install another", onclick: async () => {
-              if (CHAR.play.cash < unitCost
-                  && !confirm(`Another Knowledge Skillsoft costs ${fmt(unitCost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
-                return;
-              a.count = (a.count || 1) + 1;
-              logCash("Installed Knowledge Skillsoft", -unitCost);
-              await playChangedRecalc();
-            } }, "+")))
-        : el("td", { class: "num" }, String(a.count || 1));
-      t.append(el("tr", {},
-        el("td", {}, el("b", {}, a.name),
-          inPlay ? el("span", { class: "sh-tag" }, "bought in play") : null,
-          target),
-        countCell,
-        el("td", {}, alphaCell),
-        el("td", {}, slottedCell),
-        el("td", { class: "sub" }, r.Effect || ""),
-        el("td", {}, el("button", { class: "row-del", title: "Remove (surgical removal — not refunded)",
-          onclick: async () => {
-            if (!confirm(`Remove ${a.name}? Surgical removal is not refunded.`)) return;
-            const arr = inPlay ? CHAR.play.purchases.augments : CHAR.augments;
-            const idx = arr.indexOf(a);
-            if (idx >= 0) arr.splice(idx, 1);
-            await playChangedRecalc();
-          } }, "✕"))));
-    });
-    augCard.append(el("p", { class: "hint" },
-      "α-cyber Augments are bleeding edge, reducing the ZR by 20% but doubling the cost."), t);
-  } else {
-    augCard.append(el("p", { class: "hint" }, "No augments — buy some in the Buy section below."));
-  }
-  body.append(augCard);
-
   // ===== Gear list (chargen + bought in play) — remove buttons
+  // (Augments moved to their own tab.)
   const gearEntries = [
     ...CHAR.gear.map(g => ({ ref: g, inPlay: false })),
     ...play.purchases.gear.map(g => ({ ref: g, inPlay: true }))];
@@ -1682,25 +1664,7 @@ function shGear(body) {
   }
 
   // ===== Buy equipment — all purchasing lives here, collapsible by type.
-  const augAvail = augmentAvailability([...CHAR.augments, ...play.purchases.augments]);
-  const syntheticNoBio = CHAR.heritage.type === "Synthetic";
-  const augBuyGroups = Object.entries(
-    DATA.tables.augments.reduce((acc, r) => (((acc[r.Type || "Augment"] ??= []).push(r)), acc), {}))
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([type, rows]) => ({
-      label: type,
-      items: rows.map(r => {
-        const bioBanned = syntheticNoBio && r.Type === "Bioware";
-        const banned = bioBanned ? "Synthetics cannot install Bioware" : augAvail.bannedReason(r.Name);
-        return {
-          name: r.Name, cost: Math.round((+r.Cost || 0) * mult),
-          sub: `ZR ${r.ZR || 0} · BI ${r.BI || 0}${r.Effect ? " · " + r.Effect : ""}`,
-          banned: !!banned,
-          reason: banned || "",
-          note: banned ? "banned" : "",
-        };
-      }),
-    }));
+  // (Augments are bought on the Augments tab.)
   const gearBuyGroups = Object.entries(
     DATA.tables.misc_gear.reduce((acc, r) => (((acc[r.Class || "Gear"] ??= []).push(r)), acc), {}))
     .sort(([a], [b]) => a.localeCompare(b))
@@ -1714,7 +1678,7 @@ function shGear(body) {
     el("h3", {}, "Buy equipment"),
     el("p", { class: "hint" }, "Everything purchasable from woolongs, grouped by type. "
       + (mult > 1 ? `Heritage surcharge ×${mult} applied. ` : "")
-      + "Decks, programs, rigs, drones and vehicles are bought on the Decking and Rigging tabs."));
+      + "Augments are bought on the Augments tab; decks, programs, rigs, drones and vehicles on the Decking and Rigging tabs."));
   const buyBlock = (title, browser) =>
     buySection.append(el("div", { class: "sh-unit-add" }, el("b", {}, title), browser));
   buyBlock("Weapons", categoryBrowser({ id: "sh-buy-weapons", groups: weaponBuyGroups,
@@ -1735,9 +1699,6 @@ function shGear(body) {
       CHAR.armor.push({ name, style: "", material: "", extras: [], active: true });
       logCash(`Bought ${name}`, -cost);
     } }));
-  buyBlock("Augments", categoryBrowser({ id: "sh-buy-augments", groups: augBuyGroups,
-    rerender: renderSheet, afterAdd: () => {},
-    onAdd: name => buyAugment(name, mult) }));
   buyBlock("Gear", categoryBrowser({ id: "sh-buy-gear", groups: gearBuyGroups,
     rerender: renderSheet, afterAdd: () => {},
     onAdd: name => buyGear(name, mult) }));
@@ -1753,6 +1714,168 @@ function shGear(body) {
           (entry.delta >= 0 ? "+" : "") + fmt(entry.delta).replace("ㄓ-", "−ㄓ")))));
     body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Activity"), t));
   }
+}
+
+/* ------------------------------------------------ augments tab */
+// Preferred display order for augment type groups; unlisted types follow
+// alphabetically.
+const AUG_TYPE_ORDER = ["Headware", "Eyeware", "Earware", "Bodyware", "Bioware",
+  "Cyberlimbs", "Right Arm", "Left Arm", "Right Leg", "Left Leg", "Mobi"];
+
+function shAugments(body) {
+  const play = CHAR.play;
+  const mult = CALC.budget.gear_cost_multiplier || 1;
+  const z = CALC.zoetics;
+
+  const augEntries = [
+    ...CHAR.augments.map(a => ({ ref: a, inPlay: false })),
+    ...play.purchases.augments.map(a => ({ ref: a, inPlay: true }))];
+  // Slotted Skillsofts grant their bonus; how many can be slotted at once is
+  // capped by the number of Chipjacks installed.
+  const ownedAugsAll = [...CHAR.augments, ...play.purchases.augments];
+  const chipjackCount = ownedAugsAll
+    .filter(a => a.name === "Chipjack").reduce((sum, a) => sum + (a.count || 1), 0);
+  const slottedSkillsoftCount = ownedAugsAll
+    .filter(a => a.name.startsWith("Skillsoft") && a.slotted !== false).length;
+
+  body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Augments"),
+    el("div", { class: "sh-advrow" },
+      el("span", {}, "Augment ZR"), el("b", {}, String(z.augment_zr))),
+    el("div", { class: "sh-advrow" },
+      el("span", {}, `Body Index (max ${CALC.attributes.Body.final})`),
+      el("b", { style: z.body_index_ok ? "" : "color:var(--bad)" }, String(z.body_index))),
+    el("p", { class: "hint" },
+      "α-cyber Augments are bleeding edge, reducing the ZR by 20% but doubling the cost.")));
+
+  // One card per augment type, in anatomical-ish order.
+  const byType = {};
+  augEntries.forEach(en => {
+    const r = DATA.tables.augments.find(x => x.Name === en.ref.name) || {};
+    (byType[r.Type || "Other"] ??= []).push(en);
+  });
+  const types = Object.keys(byType).sort((a, b) => {
+    const ia = AUG_TYPE_ORDER.indexOf(a), ib = AUG_TYPE_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+  const augmentRow = ({ ref: a, inPlay }) => {
+    const r = DATA.tables.augments.find(x => x.Name === a.name) || {};
+    const isSkillsoft = a.name.startsWith("Skillsoft");
+    const hasZr = !!(+r.ZR);
+    const alphaZr = hasZr ? Math.ceil(+r.ZR * 0.8 * 10) / 10 : 0;
+    const base = Math.round((+r.Cost || 0) * mult);
+    const alphaCell = hasZr
+      ? el("label", { class: "opt", title: `α-cyber grade: ZR ${alphaZr} (−20%), cost ×2` },
+          el("input", { type: "checkbox", ...(a.alpha ? { checked: 1 } : {}),
+            onchange: async e => {
+              a.alpha = e.target.checked;
+              logCash(a.alpha ? `Upgraded ${a.name} to α-cyber grade`
+                              : `Reverted ${a.name} from α-cyber grade`,
+                a.alpha ? -base : base);
+              await playChangedRecalc();
+            } }),
+          el("span", {}, `ZR ${a.alpha ? alphaZr : +r.ZR}`))
+      : el("span", { class: "sub" }, "—");
+    // Skillsofts target a player-chosen skill (like chargen) and only grant
+    // their bonus while slotted, capped by owned Chipjacks.
+    let target = null, slottedCell = el("span", { class: "sub" }, "—");
+    if (isSkillsoft) {
+      target = el("select", { onchange: async e => { a.target = e.target.value; await playChangedRecalc(); } },
+        el("option", { value: "" }, "Skill…"),
+        ...Object.keys(DATA.skills).sort().map(x => el("option", {}, x)));
+      target.value = a.target || "";
+      const isSlotted = a.slotted !== false;
+      const atCap = !isSlotted && slottedSkillsoftCount >= chipjackCount;
+      slottedCell = el("label", {
+        class: "opt",
+        title: atCap
+          ? `Only ${chipjackCount} Chipjack(s) installed — unslot another Skillsoft first`
+          : "Apply this Skillsoft's bonus to its target skill",
+      },
+        el("input", { type: "checkbox", ...(isSlotted ? { checked: 1 } : {}),
+          disabled: atCap ? "1" : null,
+          onchange: async e => { a.slotted = e.target.checked; await playChangedRecalc(); } }));
+    }
+    // Knowledge Skillsofts bought in play get a cash-aware +/- stepper —
+    // each unit adds a Knowledge skill point. Chargen-installed ones (or
+    // other augments) show a static count; the chargen record is immutable
+    // in play, so extra copies are bought in play instead.
+    const unitCost = Math.round((+r.Cost || 0) * mult);
+    const countCell = (inPlay && a.name === "Knowledge Skillsoft")
+      ? el("td", { class: "num" }, el("span", { class: "stepper" },
+          el("button", { title: "Remove one (refunded)", onclick: async () => {
+            if ((a.count || 1) <= 1) return;
+            a.count -= 1;
+            logCash("Removed a Knowledge Skillsoft", unitCost);
+            await playChangedRecalc();
+          } }, "–"),
+          el("b", {}, String(a.count || 1)),
+          el("button", { title: "Install another", onclick: async () => {
+            if (CHAR.play.cash < unitCost
+                && !confirm(`Another Knowledge Skillsoft costs ${fmt(unitCost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
+              return;
+            a.count = (a.count || 1) + 1;
+            logCash("Installed Knowledge Skillsoft", -unitCost);
+            await playChangedRecalc();
+          } }, "+")))
+      : el("td", { class: "num" }, String(a.count || 1));
+    return el("tr", {},
+      el("td", {}, el("b", {}, a.name),
+        inPlay ? el("span", { class: "sh-tag" }, "bought in play") : null,
+        target),
+      countCell,
+      el("td", {}, alphaCell),
+      el("td", {}, slottedCell),
+      el("td", { class: "sub" }, r.Effect || ""),
+      el("td", {}, el("button", { class: "row-del", title: "Remove (surgical removal — not refunded)",
+        onclick: async () => {
+          if (!confirm(`Remove ${a.name}? Surgical removal is not refunded.`)) return;
+          const arr = inPlay ? CHAR.play.purchases.augments : CHAR.augments;
+          const idx = arr.indexOf(a);
+          if (idx >= 0) arr.splice(idx, 1);
+          await playChangedRecalc();
+        } }, "✕")));
+  };
+  if (!augEntries.length) {
+    body.append(el("div", { class: "card sh-card" },
+      el("p", { class: "hint" }, "No augments installed — buy some below.")));
+  }
+  for (const type of types) {
+    const t = el("table");
+    t.append(el("tr", {}, el("th", {}, "Augment"), el("th", { class: "num" }, "×"),
+      el("th", {}, "α-cyber"), el("th", {}, "Slotted"), el("th", {}, "Effect"), el("th", {}, "")));
+    byType[type].forEach(en => t.append(augmentRow(en)));
+    body.append(el("div", { class: "card sh-card" }, el("h3", {}, type), t));
+  }
+
+  // ===== Buy augments — same browser that used to live on the Gear tab.
+  const augAvail = augmentAvailability(ownedAugsAll);
+  const syntheticNoBio = CHAR.heritage.type === "Synthetic";
+  const augBuyGroups = Object.entries(
+    DATA.tables.augments.reduce((acc, r) => (((acc[r.Type || "Augment"] ??= []).push(r)), acc), {}))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([type, rows]) => ({
+      label: type,
+      items: rows.map(r => {
+        const bioBanned = syntheticNoBio && r.Type === "Bioware";
+        const banned = bioBanned ? "Synthetics cannot install Bioware" : augAvail.bannedReason(r.Name);
+        return {
+          name: r.Name, cost: Math.round((+r.Cost || 0) * mult),
+          sub: `ZR ${r.ZR || 0} · BI ${r.BI || 0}${r.Effect ? " · " + r.Effect : ""}`,
+          banned: !!banned,
+          reason: banned || "",
+          note: banned ? "banned" : "",
+        };
+      }),
+    }));
+  body.append(el("div", { class: "card sh-card" },
+    el("h3", {}, "Buy augments"),
+    el("p", { class: "hint" },
+      (mult > 1 ? `Heritage surcharge ×${mult} applied. ` : "")
+      + "Installed augments appear above, grouped by type."),
+    el("div", { class: "sh-unit-add" },
+      categoryBrowser({ id: "sh-buy-augments", groups: augBuyGroups,
+        rerender: renderSheet, afterAdd: () => {},
+        onAdd: name => buyAugment(name, mult) }))));
 }
 
 /* prepaid lifestyle months: tick up/down, buy months, one active at a time */

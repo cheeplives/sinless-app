@@ -626,8 +626,8 @@ function tallyAugments(character, data, warnings, errors) {
   }
 
   // Alpha-grade augments (bleeding edge): ZR reduced 20% (minimum reduction
-  // of 0.1, round UP to the nearest tenth) but cost is doubled. Flagged
-  // per-entry with entry.alpha.
+  // of 0.1, round UP to the nearest tenth) but cost is doubled (with a minimum
+  // increase of 1000). Flagged per-entry with entry.alpha.
   const effZr = (row, entry) => {
     const base = asNumber(row.ZR);
     if (!(entry && entry.alpha && base)) return base;
@@ -636,7 +636,9 @@ function tallyAugments(character, data, warnings, errors) {
   };
   const effCost = (row, entry) => {
     const base = asNumber(row.Cost);
-    return (entry && entry.alpha) ? base * 2 : base;
+    // Doubles the cost, but the increase is at least 1000 so cheap augments
+    // still pay a real premium for bleeding-edge grade.
+    return (entry && entry.alpha) ? base + Math.max(base, 1000) : base;
   };
 
   const typeZr = (typeName, exclude = []) => sumBy(owned, ([row, count, entry]) =>

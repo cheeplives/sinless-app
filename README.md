@@ -54,6 +54,33 @@ edit the relevant table entry directly in `static/data.js`. Keep the header
 comment ASCII-only, and confirm the file still parses (it's plain JSON after the
 `const DATA_BUNDLE =` prefix).
 
+### Promoting homebrew into the base data
+
+Anyone can create custom "homebrew" content in-app (Augments, Weapons, Gear,
+etc.); it lives only in their browser. To fold that content into the base
+package for everyone, the owner can promote an exported pack instead of hand-
+editing `data.js`:
+
+1. In the app, open the Homebrew screen and click **Export Pack** to download a
+   `sinless-homebrew-pack.json` (from your own browser, or one a user sent you).
+2. Run the promoter:
+
+   ```
+   python tools/promote_homebrew.py sinless-homebrew-pack.json --dry-run   # preview
+   python tools/promote_homebrew.py sinless-homebrew-pack.json             # apply
+   ```
+
+   By default a promoted row whose name matches an existing base row *replaces*
+   its stats (upsert); new names are appended. The `Custom` marker is stripped
+   so promoted rows become permanent base rows. Flags: `--skip` (leave existing
+   base rows untouched, only add new items), `--no-cache-bump`, `--dry-run`.
+3. The script rewrites `static/data.js` and bumps `CACHE_VERSION` in `sw.js`.
+   Review the diff, commit both files, and deploy.
+
+Note: if you promote your *own* homebrew, that item still exists in your
+browser's local homebrew afterward — delete it from the Homebrew screen so you
+don't see both the base copy and your custom copy.
+
 ## Notes
 
 - Entirely client-side: no accounts, no network calls, no secrets. Characters

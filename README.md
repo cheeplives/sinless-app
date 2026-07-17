@@ -140,3 +140,12 @@ don't see both the base copy and your custom copy.
   is handy for scripting or testing the engine in isolation.
 - No test suite is committed today; verify changes by running the app in a
   browser and exercising the affected flow end-to-end.
+
+## House Rules
+-Minimum Alpha Cyber ZR Reduction of 0.1
+-Minimum Alpha Cyber Cost of 1000
+-Zuzus-> Woolongs
+-1/2 Cost to Cyberlimbs
+-Collapse Engnineering Skills to one Skill
+-Remove Computer (Electronic Warfare) Skill
+-Priorites are rated from 4 to 0 instead of A to E. Players have 10 points to spend and can buy things of the same Prority.

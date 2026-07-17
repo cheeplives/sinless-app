@@ -1387,6 +1387,39 @@ function augmentAvailability(ownedEntries) {
    item's row on the Weapons/Armor/Gear tabs — mounted augments are managed
    with the gear, never on the Augments tab, and their ZR doesn't count
    against the character's ZP. Effects apply only while the host is active. */
+
+/* categoryBrowser groups for the mount picker: accepted augments grouped by
+   type, each priced and annotated, with an unavailable reason when it won't
+   fit the host's free ZP or is already mounted. Shared with sheet.js. */
+function mountBrowserGroups(cap, freeZp, mounted, mult = 1) {
+  const mountedNames = new Set((mounted || []).map(m => m.name));
+  const byType = {};
+  for (const a of DATA.tables.augments) {
+    if (cap.accepts(a.Type)) (byType[a.Type] ??= []).push(a);
+  }
+  return Object.entries(byType).sort(([a], [b]) => a.localeCompare(b))
+    .map(([type, rows]) => ({
+      label: type,
+      items: rows.map(a => {
+        const zr = +a.ZR || 0;
+        const dupe = mountedNames.has(a.Name);
+        const noFit = zr - freeZp > 1e-9;
+        return {
+          name: a.Name,
+          cost: Math.round((+a.Cost || 0) * mult),
+          sub: `ZR ${a.ZR || 0}${a.Effect ? " · " + a.Effect : ""}`,
+          disabled: dupe || noFit,
+          reason: dupe ? "Already mounted on this item"
+                : noFit ? `Needs ${zr} ZP — only ${freeZp} free on this item` : "",
+        };
+      }),
+    }));
+}
+
+/* Open/closed state of each host's mount picker, keyed by browser id so it
+   survives re-renders (same idea as browserOpenState). */
+const mountPickerOpen = {};
+
 function mountEditor(host, hostRow, hostActive) {
   const cap = RULES.mountCapability(hostRow || {});
   if (!cap) return null;
@@ -1399,41 +1432,45 @@ function mountEditor(host, hostRow, hostActive) {
     const row = augRow(m.name);
     return sum + (row ? RULES.augmentEffZr(row, m) : 0);
   }, 0));
+  const over = used - capacity > 1e-9;
 
   const wrap = el("div", { class: "sub" });
   wrap.append(el("div", {},
-    el("b", {}, "Mounts "), `${cap.label} · ${used} / ${capacity} ZP`
-    + (hostActive ? "" : " · inactive — mounted effects offline")));
+    el("b", {}, "Mounted augments "),
+    el("span", { style: over ? "color:var(--bad)" : "" }, `${used} / ${capacity} ZP`),
+    ` · accepts ${cap.label}` + (hostActive ? "" : " · inactive — effects offline")));
 
   host.mounted.forEach((m, idx) => {
     const row = augRow(m.name) || {};
     const hasZr = +row.ZR > 0;
-    wrap.append(el("div", { class: "opt" },
+    wrap.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0" },
       el("span", {}, `${m.name} — ZR ${RULES.augmentEffZr(row, m)} · ${fmt(RULES.augmentEffCost(row, m))}`),
-      hasZr ? el("label", { class: "opt", title: "Bleeding-edge grade: ZR −20% (min 0.1), cost doubled (min +1000)" },
+      hasZr ? el("label", { style: "display:inline-flex;align-items:center;gap:4px;margin:0",
+          title: "Bleeding-edge grade: ZR −20% (min 0.1), cost doubled (min +1000)" },
         el("input", { type: "checkbox", ...(m.alpha ? { checked: 1 } : {}),
           onchange: e => { m.alpha = e.target.checked; refresh(); } }),
         el("span", {}, "α-cyber")) : null,
-      el("button", { class: "row-del", onclick: () => { host.mounted.splice(idx, 1); refresh(); } }, "✕")));
+      el("button", { class: "row-del", title: "Unmount", onclick: () => { host.mounted.splice(idx, 1); refresh(); } }, "✕")));
   });
 
-  const byType = {};
-  for (const a of DATA.tables.augments) {
-    if (cap.accepts(a.Type)) (byType[a.Type] ??= []).push(a);
+  // The grouped browser sits behind a collapsed header so item rows stay
+  // compact; open state persists across re-renders like other browsers.
+  const pickerId = `mount-${host.name}`;
+  const open = !!mountPickerOpen[pickerId];
+  wrap.append(el("div", {
+    class: "cat-head", role: "button", tabindex: "0",
+    onclick: () => { mountPickerOpen[pickerId] = !open; renderPanel(); },
+    onkeydown: e => { if (e.key === "Enter" || e.key === " ") e.currentTarget.click(); },
+  },
+    el("span", {}, "Mount an augment"),
+    el("span", { class: "cat-arrow" }, open ? "▾" : "▸")));
+  if (open) {
+    wrap.append(categoryBrowser({
+      id: pickerId,
+      groups: mountBrowserGroups(cap, r2(capacity - used), host.mounted),
+      onAdd: name => host.mounted.push({ name }),
+    }));
   }
-  const sel = el("select", {},
-    el("option", { value: "" }, "Mount augment…"),
-    ...Object.entries(byType).sort(([a], [b]) => a.localeCompare(b))
-      .map(([type, rows]) => el("optgroup", { label: type },
-        ...rows.map(a => el("option", { value: a.Name,
-            ...((+a.ZR || 0) - (capacity - used) > 1e-9 ? { disabled: 1 } : {}) },
-          `${a.Name} — ZR ${a.ZR || 0} · ${fmt(a.Cost)}`)))));
-  sel.onchange = () => {
-    if (!sel.value) return;
-    host.mounted.push({ name: sel.value });
-    refresh();
-  };
-  wrap.append(sel);
   return wrap;
 }
 

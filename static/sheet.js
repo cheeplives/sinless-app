@@ -313,6 +313,7 @@ function renderSheet() {
      augments: shAugments, magic: shMagic, decking: shDecking,
      rigging: shRigging, actions: shActions, notes: shNotes })[sheetTab](body);
   root.append(body);
+  root.append(rollerOverlay());
   // The full header scrolls away normally; once it leaves the viewport the
   // sticky bar grows a compact summary strip (pools / ZP / cash). The DOM is
   // rebuilt every render, so the observer is re-attached each time. The bar's
@@ -332,6 +333,83 @@ function renderSheet() {
 
 function counterBtn(label, fn, cls) {
   return el("button", { class: "btn " + (cls || ""), onclick: fn }, label);
+}
+
+/* ------------------------------------------------ die roller */
+/* Floating d6 success roller: pick a pool size, roll, every 4-6 is a Success.
+ * Any die can be selected and re-rolled, but each die only once per roll.
+ * State lives here (not in the DOM) so it survives the full rebuilds of
+ * renderSheet(); interactions re-render only the overlay itself. */
+const ROLLER_MAX_DICE = 30;
+const rollerD6 = () => 1 + Math.floor(Math.random() * 6);
+const rollerState = { open: false, count: 6, dice: [] };  // dice: {value, selected, rerolled}
+
+function rollerRefresh() {
+  const cur = $("#die-roller");
+  if (cur) cur.replaceWith(rollerOverlay());
+}
+
+function rollerOverlay() {
+  const st = rollerState;
+  const wrap = el("div", { id: "die-roller" });
+  wrap.append(el("button", {
+    class: "sh-roller-fab" + (st.open ? " open" : ""),
+    title: st.open ? "Close die roller" : "Die roller",
+    "aria-label": st.open ? "Close die roller" : "Open die roller",
+    onclick: () => { st.open = !st.open; rollerRefresh(); },
+  }, "⚄"));
+  if (!st.open) return wrap;
+
+  const successes = st.dice.filter(d => d.value >= 4).length;
+  const selected = st.dice.filter(d => d.selected).length;
+  const clampCount = n => Math.max(1, Math.min(ROLLER_MAX_DICE, n));
+  const stepBtn = (delta, label) => el("button", {
+    class: "sh-roller-step",
+    onclick: () => { st.count = clampCount(st.count + delta); rollerRefresh(); },
+  }, label);
+
+  const panel = el("div", { class: "sh-roller" },
+    el("div", { class: "sh-roller-head" }, "Die Roller",
+      el("button", { class: "sh-roller-close", title: "Close",
+        onclick: () => { st.open = false; rollerRefresh(); } }, "✕")),
+    el("div", { class: "sh-roller-controls" },
+      stepBtn(-1, "–"),
+      el("span", { class: "sh-roller-count" }, `${st.count}d6`),
+      stepBtn(1, "+"),
+      el("button", { class: "btn sh-roller-roll", onclick: () => {
+        st.dice = Array.from({ length: st.count },
+          () => ({ value: rollerD6(), selected: false, rerolled: false }));
+        rollerRefresh();
+      } }, "Roll")));
+
+  if (st.dice.length) {
+    panel.append(el("div", { class: "sh-roller-dice" },
+      ...st.dice.map(d => el("button", {
+        class: "sh-roller-die" + (d.value >= 4 ? " hit" : "")
+          + (d.selected ? " sel" : "") + (d.rerolled ? " spent" : ""),
+        title: d.rerolled ? `${d.value} — already re-rolled`
+          : `${d.value} — tap to ${d.selected ? "keep" : "select for re-roll"}`,
+        onclick: () => { if (!d.rerolled) { d.selected = !d.selected; rollerRefresh(); } },
+      }, String(d.value)))));
+    panel.append(el("div", { class: "sh-roller-succ" },
+      el("b", {}, String(successes)), ` Success${successes === 1 ? "" : "es"}`));
+    panel.append(el("button", {
+      class: "btn sh-roller-reroll", ...(selected ? {} : { disabled: 1 }),
+      onclick: () => {
+        for (const d of st.dice) {
+          if (d.selected) { d.value = rollerD6(); d.rerolled = true; d.selected = false; }
+        }
+        rollerRefresh();
+      },
+    }, selected ? `Re-roll ${selected} selected` : "Re-roll selected"));
+    panel.append(el("div", { class: "sh-roller-hint" },
+      "4–6 = Success. Tap dice to mark for re-roll — each die re-rolls once."));
+  } else {
+    panel.append(el("div", { class: "sh-roller-hint" },
+      `Roll ${st.count}d6 — every 4–6 is a Success.`));
+  }
+  wrap.append(panel);
+  return wrap;
 }
 
 /* Effective ZP = max ZP minus Amp ZP spent minus carried ZR, any fraction

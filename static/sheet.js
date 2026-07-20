@@ -1404,14 +1404,7 @@ function shKismet(body) {
 function weaponModSlots(w, mult, weaponName) {
   const table = DATA.tables.weapon_mods;
   const order = ["Overbarrel", "Underbarrel", "Chassis"];
-  const slotsByMod = {};
-  for (const m of table) (slotsByMod[m.Modification] ??= new Set()).add(m.Slot);
-  const boxes = {};
-  for (const name of w.mods || []) {
-    const candidates = order.filter(s => (slotsByMod[name] || new Set()).has(s));
-    const slot = candidates.find(s => !boxes[s]);
-    if (slot) boxes[slot] = name;
-  }
+  const boxes = RULES.assignWeaponModSlots(w.mods || [], table).assigned;
   const grid = el("div", { class: "sh-modslots" });
   for (const slot of order) {
     const modName = boxes[slot];

@@ -1532,6 +1532,16 @@ function tabWeapons(p) {
             id: `wmods-${i}-${it.name}`,
             items: it.mods || [],
             groups: modGroups(DATA.tables.weapon_mods, "Modification", "Slot"),
+            // One mod per slot (Overbarrel / Underbarrel / Chassis): refuse a
+            // mod that would leave the fitted set without a free slot.
+            guard: name => {
+              if ((it.mods || []).includes(name)) return `${name} is already fitted.`;
+              const { overflow } = RULES.assignWeaponModSlots(
+                [...(it.mods || []), name], DATA.tables.weapon_mods);
+              return overflow.length
+                ? "No free slot: each weapon takes one Overbarrel, one Underbarrel, and one Chassis mod."
+                : null;
+            },
             onAdd: name => it.mods.push(name),
             onRemove: index => it.mods.splice(index, 1),
             effectOf: name =>

@@ -1522,7 +1522,8 @@ function tabWeapons(p) {
       const isThrown = r.Type === "Thrown";
       // Melee, Thrown, Grenade Launchers, Heavy and Energy weapons can't take mods.
       const canMod = !["Melee", "Thrown", "GrenadeLauncher", "Heavy", "Energy"].includes(r.Type);
-      const canSmart = !isMelee && !isThrown;
+      // Stripped guns have their circuits removed — nothing left to smart-link.
+      const canSmart = !isMelee && !isThrown && !/\(Stripped\)$/.test(it.name);
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" },

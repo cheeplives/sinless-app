@@ -1206,16 +1206,36 @@ function budgetMagic(character, data, magicType, warnings, errors) {
 }
 
 // ============================================================== step 8: gear pricing
+/**
+ * Assign fitted mod names to a weapon's three slots (Overbarrel / Underbarrel /
+ * Chassis), one mod per slot. Single-slot mods claim their slot first; dual-slot
+ * mods (e.g. Laser Sight, which fits either barrel slot) then take whichever of
+ * their candidate slots is still free. Mods not in the table are ignored.
+ * Returns { assigned: {slot: modName}, overflow: [modName] } where overflow is
+ * every mod left without a free slot.
+ */
+function assignWeaponModSlots(modNames, modsTable) {
+  const order = ["Overbarrel", "Underbarrel", "Chassis"];
+  const slotsByMod = {};
+  for (const m of modsTable) (slotsByMod[m.Modification] ??= new Set()).add(m.Slot);
+  const entries = (modNames || [])
+    .map(name => ({ name, candidates: order.filter(s => (slotsByMod[name] || new Set()).has(s)) }))
+    .filter(e => e.candidates.length > 0);
+  const assigned = {}, overflow = [];
+  for (const flexible of [false, true]) {
+    for (const e of entries) {
+      if ((e.candidates.length > 1) !== flexible) continue;
+      const slot = e.candidates.find(s => !assigned[s]);
+      if (slot) assigned[slot] = e.name;
+      else overflow.push(e.name);
+    }
+  }
+  return { assigned, overflow };
+}
+
 function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
   const priced = [];
   let totalCost = 0.0, totalWeight = 0.0;
-  // Some mods (e.g. Laser Sight, Flashlight) are listed under more than one
-  // barrel slot, meaning they can mount in either. Those don't count toward
-  // the one-per-slot limit; collect their names once.
-  const slotsByMod = {};
-  for (const m of data.weapon_mods) (slotsByMod[m.Modification] ??= new Set()).add(m.Slot);
-  const dualSlotMods = new Set(
-    Object.entries(slotsByMod).filter(([, slots]) => slots.size > 1).map(([name]) => name));
   for (const entry of character.weapons) {
     const row = findRow(data.weapons, "Weapon", entry.name);
     if (!row) continue;
@@ -1240,14 +1260,13 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
       }
       seenMods.add(mod.name);
     }
-    // One mod per fixed barrel slot. Dual-slot mods fit either slot, so they're
-    // excluded from this check (only their duplicate is caught, above).
-    for (const slot of ["underbarrel", "overbarrel"]) {
-      const inSlot = fittedMods.filter(mod =>
-        !dualSlotMods.has(mod.name) && (mod.slot || "").toLowerCase() === slot);
-      if (inSlot.length > 1) {
-        warnings.push(`${entry.name}: more than one ${slot} mod fitted.`);
-      }
+    // One mod per slot (Overbarrel / Underbarrel / Chassis). Dual-slot mods
+    // land in whichever of their slots is free; any mod left without a free
+    // slot is flagged.
+    const { overflow } = assignWeaponModSlots(fittedMods.map(m => m.name), data.weapon_mods);
+    for (const name of overflow) {
+      warnings.push(`${entry.name}: no free slot for ${name} — one Overbarrel, `
+        + "one Underbarrel, and one Chassis mod per weapon.");
     }
 
     cost = round2(cost * gearCostMultiplier * qty);
@@ -2000,7 +2019,7 @@ return {
   MAGIC_TYPE_BY_PRIORITY, MAGIC_TYPES_ALLOWED_BY_PRIORITY,
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
-  rigStats, applyExtendedMagazine, meleeDamage,
+  rigStats, applyExtendedMagazine, meleeDamage, assignWeaponModSlots,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost,
 };
 

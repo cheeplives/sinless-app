@@ -827,7 +827,7 @@ function shOverview(body) {
         if (w.upgr1 && r.Upgr1_Eff) modLines.push(`Upgrade 1 — ${r.Upgr1_Eff}`);
         if (w.upgr2 && r.Upgr2_Eff) modLines.push(`Upgrade 2 — ${r.Upgr2_Eff}`);
         wt.append(el("tr", {},
-          el("td", {}, el("b", {}, w.name + (w.smart ? " (smart)" : ""))),
+          el("td", {}, el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : ""))),
           el("td", { class: "sub" },
             `${r.Type || ""} · Acc ${r.Accuracy || 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0}`
             + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
@@ -1404,14 +1404,7 @@ function shKismet(body) {
 function weaponModSlots(w, mult, weaponName) {
   const table = DATA.tables.weapon_mods;
   const order = ["Overbarrel", "Underbarrel", "Chassis"];
-  const slotsByMod = {};
-  for (const m of table) (slotsByMod[m.Modification] ??= new Set()).add(m.Slot);
-  const boxes = {};
-  for (const name of w.mods || []) {
-    const candidates = order.filter(s => (slotsByMod[name] || new Set()).has(s));
-    const slot = candidates.find(s => !boxes[s]);
-    if (slot) boxes[slot] = name;
-  }
+  const boxes = RULES.assignWeaponModSlots(w.mods || [], table).assigned;
   const grid = el("div", { class: "sh-modslots" });
   for (const slot of order) {
     const modName = boxes[slot];
@@ -1690,7 +1683,7 @@ function shGear(body) {
       const canMod = !["Melee", "Thrown", "GrenadeLauncher", "Heavy", "Energy"].includes(r.Type);
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
       t.append(el("tr", {},
-        el("td", {}, el("b", {}, w.name + (w.smart ? " (smart)" : "")),
+        el("td", {}, el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
           el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type)),
           shMountEditor(w, r, w.equipped !== false)),
         el("td", { class: "sub" },
@@ -1867,7 +1860,8 @@ function shGear(body) {
       const r = DATA.tables.weapons.find(x => x.Weapon === name) || {};
       const cost = Math.round((+r.Cost || 0) * mult);
       if (!overdrawOK(name, cost)) return;
-      CHAR.weapons.push({ name, smart: false, mods: [], equipped: true, qty: 1 });
+      CHAR.weapons.push({ name, smart: Boolean(r["Integrated Smart"]),
+        mods: [], equipped: true, qty: 1 });
       logCash(`Bought ${name}`, -cost);
     } }));
   buyBlock("Armor", categoryBrowser({ id: "sh-buy-armor", groups: armorBuyGroups,
@@ -3074,7 +3068,7 @@ function buildMarkdown() {
     CHAR.weapons.forEach(w => {
       const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
-      L.push(`- **${w.name}**${w.smart ? " (smart)" : ""} — DMG ${calcRow.Damage ?? r.Damage ?? "—"}, Acc ${r.Accuracy || 0}, Pen ${r.Pen || 0}`
+      L.push(`- **${w.name}**${(calcRow.smart ?? w.smart) ? " (smart)" : ""} — DMG ${calcRow.Damage ?? r.Damage ?? "—"}, Acc ${r.Accuracy || 0}, Pen ${r.Pen || 0}`
         + ((w.mods || []).length ? ` (${w.mods.join(", ")})` : ""));
     });
     L.push("");

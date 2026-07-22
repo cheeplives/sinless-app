@@ -22,6 +22,7 @@
 </script>
 </head>
 <body>
+<nav id="workspace-tabs" aria-label="Open characters"></nav>
 <button id="theme-toggle" class="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">🌙</button>
 <div id="app">
   <aside id="rail">
@@ -82,6 +83,7 @@
 <script src="static/homebrew.js"></script>
 <script src="static/app.js"></script>
 <script src="static/sheet.js"></script>
+<script src="static/workspace.js"></script>
 <script>
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => { /* offline install is best-effort */ });

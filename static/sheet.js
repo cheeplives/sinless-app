@@ -323,11 +323,16 @@ function renderSheet() {
     .setProperty("--sh-sticky-h", bar.offsetHeight + "px");
   publishBarHeight();
   if (sheetHeadObserver) sheetHeadObserver.disconnect();
+  // The workspace strip is a fixed bar of height --ws-h at the very top; the
+  // sheet's sticky bar parks just below it, so the header counts as "gone" once
+  // it slips under both.
+  const wsH = parseInt(getComputedStyle(document.documentElement)
+    .getPropertyValue("--ws-h"), 10) || 0;
   sheetHeadObserver = new IntersectionObserver(([entry]) => {
     sheetStickyScrolled = !entry.isIntersecting;
     bar.classList.toggle("scrolled", sheetStickyScrolled);
     publishBarHeight();
-  }, { rootMargin: "-48px 0px 0px 0px" });   // header "gone" once it's under the bar
+  }, { rootMargin: `-${48 + wsH}px 0px 0px 0px` });
   sheetHeadObserver.observe(head);
 }
 
@@ -633,16 +638,12 @@ function sheetActions() {
     if (!name) return;
     const loaded = STORAGE.loadCharacter(name);
     if (!loaded) { e.target.value = ""; return; }
-    CHAR = RULES.mergeDefaults(loaded);
-    await recalc();
-    if (CHAR.finalized) renderSheet(); else { exitSheet(); renderTabs(); renderPanel(); }
+    await openCharacter(RULES.mergeDefaults(loaded));
+    e.target.value = "";
   } }, el("option", { value: "" }, "Load…"),
     ...STORAGE.listCharacters().map(n => el("option", { value: n }, n)));
-  const newBtn = el("button", { class: "btn ghost", onclick: async () => {
-    if (!confirm("Start a new character? Unsaved changes are lost.")) return;
-    CHAR = RULES.defaultCharacter();
-    exitSheet(); renderTabs(); await recalc(); renderPanel();
-  } }, "New");
+  const newBtn = el("button", { class: "btn ghost",
+    onclick: () => { newCharacterTab(); } }, "New");
   return el("div", { class: "sh-actions" }, saveBtn, loadSel, newBtn);
 }
 
@@ -766,13 +767,11 @@ function sheetMenu() {
         alert("That file doesn't look like an exported Sinless character.");
         return;
       }
-      if (!confirm("Import this character? Unsaved changes to the current one are lost.")) return;
       sheetMenuOpen = false;
-      CHAR = RULES.mergeDefaults(parsed);
-      STORAGE.saveCharacter(CHAR);
+      const merged = RULES.mergeDefaults(parsed);
+      if (merged.name) STORAGE.saveCharacter(merged);   // so it shows in the Load list
+      await openCharacter(merged);                      // opens in its own tab
       if (typeof refreshLoadList === "function") refreshLoadList();
-      await recalc();
-      if (CHAR.finalized) renderSheet(); else { exitSheet(); renderTabs(); renderPanel(); }
     },
   });
 
@@ -821,6 +820,8 @@ async function backToChargen() {
   exitSheet();
   renderTabs();
   renderPanel();
+  renderWorkspaceBar();   // state dot flips play -> chargen
+  persistWorkspace();
 }
 
 /* ------------------------------------------------ overview */

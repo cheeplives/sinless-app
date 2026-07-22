@@ -74,12 +74,11 @@ const POOL_FORMULAS = {
 async function boot() {
   DATA = DATA_BUNDLE;
   mergeCustomContent();   // homebrew.js: splice user-created rows into the tables
-  CHAR = RULES.defaultCharacter();
   initTheme();
   bindRail();
-  renderTabs();
+  initWorkspace();        // workspace.js: restore/seed open characters, set CHAR
   await recalc();
-  renderPanel();
+  showActiveTab();        // reveal #app or #sheet for the active tab + the tab strip
   refreshLoadList();
 }
 
@@ -123,19 +122,16 @@ async function recalc() {
 
 /* ------------------------------------------------ rail */
 function bindRail() {
-  $("#char-name").addEventListener("input", e => { CHAR.name = e.target.value; });
-  $("#char-player").addEventListener("input", e => { CHAR.player = e.target.value; });
+  $("#char-name").addEventListener("input", e => {
+    CHAR.name = e.target.value; renderWorkspaceBar(); persistWorkspace();
+  });
+  $("#char-player").addEventListener("input", e => { CHAR.player = e.target.value; persistWorkspace(); });
   $("#btn-save").addEventListener("click", () => {
     if (!CHAR.name) { alert("Give the character a street name first."); return; }
     STORAGE.saveCharacter(CHAR);
     refreshLoadList();
   });
-  $("#btn-new").addEventListener("click", async () => {
-    CHAR = RULES.defaultCharacter();
-    $("#char-name").value = ""; $("#char-player").value = "";
-    exitSheet();
-    await recalc(); renderPanel();
-  });
+  $("#btn-new").addEventListener("click", () => { newCharacterTab(); });
   $("#btn-export").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(CHAR, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -155,24 +151,17 @@ function bindRail() {
       alert("That file doesn't look like an exported Sinless character.");
       return;
     }
-    CHAR = RULES.mergeDefaults(parsed);
-    $("#char-name").value = CHAR.name || "";
-    $("#char-player").value = CHAR.player || "";
-    STORAGE.saveCharacter(CHAR);
+    const merged = RULES.mergeDefaults(parsed);
+    if (merged.name) STORAGE.saveCharacter(merged);   // so it shows in the Load list immediately
+    await openCharacter(merged);
     refreshLoadList();
-    await recalc();
-    if (CHAR.finalized) enterSheet(); else { exitSheet(); renderPanel(); }
   });
   $("#load-select").addEventListener("change", async e => {
     const name = e.target.value;
     if (!name) return;
     const loaded = STORAGE.loadCharacter(name);
     if (!loaded) { e.target.value = ""; return; }
-    CHAR = RULES.mergeDefaults(loaded);
-    $("#char-name").value = CHAR.name || "";
-    $("#char-player").value = CHAR.player || "";
-    await recalc();
-    if (CHAR.finalized) enterSheet(); else { exitSheet(); renderPanel(); }
+    await openCharacter(RULES.mergeDefaults(loaded));
     e.target.value = "";
   });
   $("#delete-select").addEventListener("change", async e => {
@@ -191,12 +180,9 @@ async function deleteSavedCharacter(name) {
   if (!confirm(`Delete ${name}? The saved character is permanently removed.`)) return;
   STORAGE.deleteCharacter(name);
   refreshLoadList();
-  if (STORAGE.sanitizeName(CHAR.name) === STORAGE.sanitizeName(name)) {
-    CHAR = RULES.defaultCharacter();
-    $("#char-name").value = ""; $("#char-player").value = "";
-    exitSheet();
-    await recalc(); renderPanel();
-  }
+  // If it's open in a tab, close that tab without re-committing (the slot is
+  // gone; committing would resurrect it). Reseeds a blank if it was the last.
+  await closeTabByName(name, false);
 }
 function refreshLoadList() {
   const names = STORAGE.listCharacters();
@@ -425,6 +411,8 @@ async function finalizeCharacter() {
   refreshLoadList();
   await recalc();          // re-run: finalized chars get advances applied, errors suppressed
   enterSheet();
+  renderWorkspaceBar();    // state dot flips chargen -> play
+  persistWorkspace();
   if (rollNote) alert(rollNote);
 }
 async function refresh() { await recalc(); renderPanel(); }
@@ -1994,4 +1982,10 @@ function tabGear(p) {
       `Heritage surcharge: all gear & augment costs \u00d7${CALC.budget.gear_cost_multiplier}.`));
 }
 
-boot();
+// Deferred to DOMContentLoaded so every later script (sheet.js, workspace.js)
+// is defined before boot() — which restores the workspace and may open the
+// play sheet — runs.
+if (document.readyState === "loading")
+  document.addEventListener("DOMContentLoaded", boot);
+else
+  boot();

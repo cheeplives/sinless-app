@@ -13,7 +13,7 @@
  */
 "use strict";
 
-const CACHE_VERSION = "sinless-v21";
+const CACHE_VERSION = "sinless-v22";
 
 const PRECACHE = [
   "./",
@@ -27,6 +27,7 @@ const PRECACHE = [
   "static/homebrew.js",
   "static/app.js",
   "static/sheet.js",
+  "static/workspace.js",
   "icons/icon-192.png",
   "icons/icon-512.png",
   // latin woff2 subsets referenced by fonts.css

@@ -128,6 +128,10 @@ input:focus,select:focus,button:focus{outline:2px solid var(--manon-dim);outline
 .budget .val.zero{color:var(--ok)}
 
 .rail-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+/* Let the grid tracks shrink below their content's min-content width — without
+ * this a long character name in the Load…/Delete… <select> forces both columns
+ * wide and overflows a narrowed rail on small screens. */
+.rail-actions>.btn,.rail-actions>.btn-select{min-width:0}
 .btn,.btn-select{background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:4px;
   padding:7px 8px;font-family:var(--disp);font-size:12px;letter-spacing:.06em;cursor:pointer}
 .btn:hover{border-color:var(--manon-dim)}
@@ -620,13 +624,25 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   .sh-meters{margin-left:0;width:100%;grid-template-columns:repeat(4,minmax(0,1fr))}
   .sh-heritage-abilities,.sh-ls-effect{max-width:none}
 }
+/* Chargen keeps its summary rail as a sidebar down to ~11" tablets (portrait
+ * ≈ 820px) — just progressively narrower — rather than burying it below the
+ * whole editor. Only genuine phones (≤680px, out of our target) stack it. */
+@media(max-width:1024px){
+  #app{grid-template-columns:250px 1fr}
+  #main{padding:0 18px 60px}
+}
 @media(max-width:900px){
-  #app{grid-template-columns:1fr}
-  /* content first: the editor matters more than the summary rail on tablets */
-  #main{order:-1}
-  #rail{position:static;height:auto;border-right:none;border-top:1px solid var(--line)}
+  #app{grid-template-columns:212px 1fr}
+  #main{padding:0 14px 60px}
+  #rail{padding:16px 11px}
   .grid-2,.grid-3{grid-template-columns:1fr}
   .sh-ov-grid,.sh-two,.sh-pools,.sh-skillgrid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:680px){
+  /* phones (out of target): stack, content first */
+  #app{grid-template-columns:1fr}
+  #main{order:-1;padding:0 14px 60px}
+  #rail{position:static;height:auto;border-right:none;border-top:1px solid var(--line);padding:16px}
 }
 @media(max-width:640px){
   .sh-ov-grid{grid-template-columns:1fr}

@@ -64,6 +64,66 @@ function restoreView(tab) {
 
 function activeTabObj() { return WORKSPACE.tabs[WORKSPACE.active] || null; }
 
+/* ---- drag-to-reorder -----------------------------------------------------
+ * Pointer Events (not HTML5 drag-and-drop) so it works with both mouse and
+ * touch on the tablets we target. A small movement threshold distinguishes a
+ * reorder from a plain tab-switch tap; while dragging, the tabs array reorders
+ * live as the pointer crosses each chip's midpoint, and the strip re-renders. */
+let tabDrag = null;            // { tab, startX, startY, dragging, activeChar }
+let suppressTabClick = false;  // set after a drag so the trailing click doesn't switch tabs
+const TAB_DRAG_THRESHOLD = 6;  // px before a press becomes a drag
+
+function onTabPointerDown(e, tab) {
+  if (e.button != null && e.button > 0) return;             // primary button only
+  if (e.target.closest(".ws-dup, .ws-close")) return;       // let the chip buttons work
+  tabDrag = { tab, startX: e.clientX, startY: e.clientY, dragging: false,
+              activeChar: activeTabObj() ? activeTabObj().char : null };
+  window.addEventListener("pointermove", onTabPointerMove);
+  window.addEventListener("pointerup", onTabPointerUp, { once: true });
+}
+
+function onTabPointerMove(e) {
+  if (!tabDrag) return;
+  if (!tabDrag.dragging) {
+    if (Math.hypot(e.clientX - tabDrag.startX, e.clientY - tabDrag.startY) < TAB_DRAG_THRESHOLD) return;
+    tabDrag.dragging = true;
+    document.body.classList.add("ws-reordering");
+  }
+  e.preventDefault();
+  const chips = [...document.querySelectorAll("#workspace-tabs .ws-tab")];
+  const from = WORKSPACE.tabs.indexOf(tabDrag.tab);
+  if (from < 0) return;
+  // Target slot: leftmost right-neighbor whose midpoint we've passed, or the
+  // first left-neighbor we've moved before. Insert index is valid post-splice.
+  let to = from;
+  for (let k = 0; k < chips.length; k++) {
+    if (k === from) continue;
+    const mid = chips[k].getBoundingClientRect().left + chips[k].getBoundingClientRect().width / 2;
+    if (k < from && e.clientX < mid) { to = k; break; }
+    if (k > from && e.clientX > mid) { to = k; }
+  }
+  if (to !== from) {
+    WORKSPACE.tabs.splice(from, 1);
+    WORKSPACE.tabs.splice(to, 0, tabDrag.tab);
+    WORKSPACE.active = Math.max(0, WORKSPACE.tabs.findIndex(t => t.char === tabDrag.activeChar));
+    renderWorkspaceBar();
+  }
+  const chipNow = document.querySelectorAll("#workspace-tabs .ws-tab")[WORKSPACE.tabs.indexOf(tabDrag.tab)];
+  if (chipNow) chipNow.classList.add("ws-dragging");
+}
+
+function onTabPointerUp() {
+  window.removeEventListener("pointermove", onTabPointerMove);
+  if (tabDrag && tabDrag.dragging) {
+    document.body.classList.remove("ws-reordering");
+    renderWorkspaceBar();
+    persistWorkspace();
+    suppressTabClick = true;                       // swallow the click that follows this drag
+    setTimeout(() => { suppressTabClick = false; }, 0);
+  }
+  tabDrag = null;
+}
+
 /* ---- render the strip ---------------------------------------------------- */
 function renderWorkspaceBar() {
   const bar = $("#workspace-tabs");
@@ -79,7 +139,8 @@ function renderWorkspaceBar() {
           role: "button", tabindex: "0",
           title: `${name} — ${finalized ? "play" : "chargen"}`,
           "aria-current": active ? "true" : null,
-          onclick: () => switchTab(i),
+          onpointerdown: e => onTabPointerDown(e, tab),
+          onclick: () => { if (suppressTabClick) { suppressTabClick = false; return; } switchTab(i); },
           onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchTab(i); } },
         },
           el("span", { class: "ws-dot " + (finalized ? "play" : "chargen"),

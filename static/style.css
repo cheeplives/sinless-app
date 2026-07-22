@@ -75,13 +75,19 @@ body{background:var(--ink);color:var(--text);font-family:var(--body);font-size:1
 .ws-tabs{display:flex;align-items:stretch;gap:4px;min-width:0;overflow-x:auto;
   scrollbar-width:thin}
 .ws-tab{display:flex;align-items:center;gap:7px;max-width:190px;
-  padding:0 8px 0 11px;margin-top:5px;cursor:pointer;user-select:none;
+  padding:0 8px 0 11px;margin-top:5px;cursor:grab;user-select:none;touch-action:none;
   border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;
   background:var(--ink);color:var(--dim);font-size:12.5px;white-space:nowrap;
   transition:color .12s,background .12s}
 .ws-tab:hover{color:var(--text);background:var(--panel-2)}
 .ws-tab.active{color:var(--strong);background:var(--panel-2);
   border-color:var(--line);box-shadow:inset 0 2px 0 var(--manon)}
+/* the chip being dragged: lifted, and its neighbors don't animate under it */
+.ws-tab.ws-dragging{cursor:grabbing;opacity:.9;background:var(--panel-2);
+  color:var(--strong);border-color:var(--manon-dim);
+  box-shadow:0 6px 16px rgba(0,0,0,.45);transition:none}
+body.ws-reordering{cursor:grabbing}
+body.ws-reordering .ws-tab{transition:none}
 .ws-tab .ws-name{overflow:hidden;text-overflow:ellipsis}
 .ws-dot{flex:none;width:7px;height:7px;border-radius:50%}
 .ws-dot.chargen{background:var(--amber)}

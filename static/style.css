@@ -86,8 +86,11 @@ body{background:var(--ink);color:var(--text);font-family:var(--body);font-size:1
 .ws-dot{flex:none;width:7px;height:7px;border-radius:50%}
 .ws-dot.chargen{background:var(--amber)}
 .ws-dot.play{background:var(--ok)}
-.ws-close{flex:none;border:none;background:none;color:var(--dim);cursor:pointer;
-  font-size:15px;line-height:1;padding:2px 3px;border-radius:4px}
+.ws-dup,.ws-close{flex:none;border:none;background:none;color:var(--dim);cursor:pointer;
+  line-height:1;padding:2px 3px;border-radius:4px}
+.ws-dup{font-size:12px}
+.ws-dup:hover{color:var(--manon);background:var(--line)}
+.ws-close{font-size:15px}
 .ws-close:hover{color:var(--bad);background:var(--line)}
 .ws-new{flex:none;align-self:center;margin-left:4px;width:26px;height:26px;
   border:1px solid var(--line);border-radius:6px;background:var(--ink);

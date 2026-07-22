@@ -86,6 +86,10 @@ function renderWorkspaceBar() {
             "aria-hidden": "true" }),
           el("span", { class: "ws-name" }, name),
           el("button", {
+            class: "ws-dup", "aria-label": `Duplicate ${name}`, title: "Duplicate tab",
+            onclick: e => { e.stopPropagation(); duplicateTab(i); },
+          }, "⎘"),
+          el("button", {
             class: "ws-close", "aria-label": `Close ${name}`, title: "Close tab",
             onclick: e => { e.stopPropagation(); closeTab(i); },
           }, "×"));
@@ -174,6 +178,44 @@ async function newCharacterTab() {
   await recalc();
   showActiveTab();
   persistWorkspace();
+}
+
+/* Duplicate the tab at index i: deep-copy its character (including play state,
+ * so a finalized character clones with its damage/Kismet/purchases intact),
+ * give the copy a unique "(copy)" name so it gets its own storage slot instead
+ * of clobbering the original, and open it in a new tab right after the source. */
+async function duplicateTab(i) {
+  const src = WORKSPACE.tabs[i];
+  if (!src) return;
+  leaveTab(activeTabObj());   // stash + flush whatever's currently active first
+  const copy = RULES.mergeDefaults(JSON.parse(JSON.stringify(src.char)));
+  if (copy.name) copy.name = uniqueCopyName(copy.name);
+  const view = src.view ? { ...src.view } : defaultView();
+  WORKSPACE.tabs.splice(i + 1, 0, { char: copy, view });
+  WORKSPACE.active = i + 1;
+  CHAR = copy;
+  restoreView(activeTabObj());
+  sheetStickyScrolled = false;
+  await recalc();
+  showActiveTab();
+  commitTabChar(activeTabObj());   // named copy -> save its slot now
+  if (typeof refreshLoadList === "function") refreshLoadList();
+  persistWorkspace();
+}
+
+/* "<name> (copy)", bumping to "(copy 2)", "(copy 3)"… until the sanitized name
+ * collides with neither an open tab nor an existing save. An existing
+ * "(copy)"/"(copy N)" suffix is stripped first so duplicating a copy yields
+ * "Alice (copy 2)" rather than "Alice (copy) (copy)". */
+function uniqueCopyName(name) {
+  const base = name.replace(/\s*\(copy(?: \d+)?\)$/i, "");
+  const taken = new Set(
+    WORKSPACE.tabs.map(t => STORAGE.sanitizeName(t.char.name))
+      .concat(STORAGE.listCharacters()));
+  let candidate = `${base} (copy)`;
+  for (let n = 2; taken.has(STORAGE.sanitizeName(candidate)); n++)
+    candidate = `${base} (copy ${n})`;
+  return candidate;
 }
 
 /* Close a tab. Saved characters close silently (they stay in storage — Load

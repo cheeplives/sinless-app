@@ -79,7 +79,12 @@ async function boot() {
   const mode = await SYNC.probe();
   if (mode === "signedout") { renderLoginGate(); return; }
   if (mode === "pending")   { renderPendingScreen(); return; }
-  if (mode === "signedin")  await SYNC.hydrate();   // pull server → local cache first
+  if (mode === "signedin") {
+    // Push any queued/offline writes BEFORE pulling, so a backlog (e.g. writes
+    // made while the server was unreachable) isn't clobbered by hydrate.
+    await SYNC.flush();
+    await SYNC.hydrate();   // then pull server → local cache
+  }
   mergeCustomContent();   // homebrew.js: splice user-created rows (incl. synced) into the tables
   bindRail();
   initWorkspace();        // workspace.js: restore/seed open characters, set CHAR

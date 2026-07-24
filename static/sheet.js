@@ -890,6 +890,18 @@ async function backToChargen() {
 }
 
 /* ------------------------------------------------ overview */
+// Cyberguns are augments with a chosen gun; surface them as read-only weapons
+// on the Overview loadout and the Gear weapons list.
+function equippedCyberguns() {
+  const all = [...CHAR.augments,
+    ...((CHAR.play && CHAR.play.purchases && CHAR.play.purchases.augments) || [])];
+  return all
+    .filter(a => a.name === "Cybergun Installation" && a.gunType)
+    .map(a => (DATA.tables.cyberguns || []).find(g => g.Type === a.gunType))
+    .filter(Boolean)
+    .map(g => ({ name: `Cybergun — ${g.Type}`, gun: g }));
+}
+
 function shOverview(body) {
   const play = CHAR.play;
   const econ = kismetEcon();
@@ -1025,10 +1037,11 @@ function shOverview(body) {
 
   // --- equipped weapons (+ mods) and worn armor, mirrored from the Gear tab
   const equippedWeapons = CHAR.weapons.filter(w => w.equipped !== false);
+  const cyberguns = equippedCyberguns();
   const wornArmor = CHAR.armor.filter(a => a.active !== false);
-  if (equippedWeapons.length || wornArmor.length) {
+  if (equippedWeapons.length || cyberguns.length || wornArmor.length) {
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
-    if (equippedWeapons.length) {
+    if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
       wt.append(el("tr", {}, el("th", {}, "Equipped weapon"), el("th", {}, "Stats"), el("th", {}, "Mods & upgrades")));
       equippedWeapons.forEach(w => {
@@ -1049,6 +1062,14 @@ function shOverview(body) {
           el("td", { class: "sub" }, modLines.length
             ? el("div", {}, ...modLines.map(l => el("div", {}, l)))
             : "—")));
+      });
+      cyberguns.forEach(cg => {
+        const g = cg.gun;
+        wt.append(el("tr", {},
+          el("td", {}, el("b", {}, cg.name + " (smart)")),
+          el("td", { class: "sub" },
+            `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
+          el("td", { class: "sub" }, "Implanted (Augments tab)")));
       });
       loadout.append(wt);
     }
@@ -1893,7 +1914,8 @@ function shGear(body) {
           + ` · DMG ${r.Type === "Melee" ? RULES.meleeDamage(r, CALC.attributes.Strength.final) : (r.Damage || "—")}`
           + ` · Pen ${r.Pen || 0} · ZR ${r.ZR || 0} · wt ${r.Weight || 0}` })),
     }));
-  if (CHAR.weapons.length) {
+  const cyberguns = equippedCyberguns();
+  if (CHAR.weapons.length || cyberguns.length) {
     const t = el("table");
     t.append(el("tr", {}, el("th", {}, "Weapon"), el("th", {}, "Stats"),
       el("th", {}, "Equip"), el("th", {}, "")));
@@ -1923,6 +1945,16 @@ function shGear(body) {
         t.append(el("tr", { class: "sh-modslots-row" },
           el("td", { colspan: "4" }, strip)));
       }
+    });
+    cyberguns.forEach(cg => {
+      const g = cg.gun;
+      t.append(el("tr", {},
+        el("td", {}, el("b", {}, cg.name + " (smart)"),
+          el("div", { class: "sub" }, "Implanted cyberarm gun — configured on the Augments tab")),
+        el("td", { class: "sub" },
+          `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · ${g.Modes} · Pen ${g.Pen} · Ammo ${g.Ammo}`),
+        el("td", { class: "sub" }, "—"),
+        el("td", {}, "")));
     });
     weaponCard.append(t);
   } else {
@@ -2131,7 +2163,7 @@ function shAugments(body) {
   const slottedSkillsoftCount = ownedAugsAll
     .filter(a => a.name.startsWith("Skillsoft") && a.slotted !== false).length;
 
-  body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Augments"),
+  const augHeaderCard = el("div", { class: "card sh-card" }, el("h3", {}, "Augments"),
     el("div", { class: "sh-advrow" },
       el("span", {}, "Augment ZR"), el("b", {}, String(z.augment_zr))),
     ...(z.mounted_zr ? [el("div", { class: "sh-advrow",
@@ -2144,13 +2176,17 @@ function shAugments(body) {
       el("b", { style: z.body_index_ok ? "" : "color:var(--bad)" }, String(z.body_index))),
     el("p", { class: "hint" },
       "α-cyber Augments are bleeding edge, reducing the ZR by 20% but doubling the cost. "
-      + "Augments mounted on gear are managed on the Gear tab with their host item.")));
+      + "Augments mounted on gear are managed on the Gear tab with their host item."));
 
-  // Curated "special senses & immunities" summary (perception + immunity augments).
-  if (CALC.combat.sense_notes && CALC.combat.sense_notes.length)
-    body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Senses & immunities"),
-      ...CALC.combat.sense_notes.map(s =>
-        el("p", { class: "hint", style: "margin:4px 0" }, el("b", {}, s.name + ": "), s.effect))));
+  // Curated "special senses & immunities" summary — sits beside the Augments card.
+  const sensesCard = (CALC.combat.sense_notes && CALC.combat.sense_notes.length)
+    ? el("div", { class: "card sh-card" }, el("h3", {}, "Senses & immunities"),
+        ...CALC.combat.sense_notes.map(s =>
+          el("p", { class: "hint", style: "margin:4px 0" }, el("b", {}, s.name + ": "), s.effect)))
+    : null;
+  body.append(sensesCard
+    ? el("div", { class: "sh-two" }, augHeaderCard, sensesCard)
+    : augHeaderCard);
 
   // One card per augment type, in anatomical-ish order.
   const byType = {};
@@ -2992,6 +3028,44 @@ function shRigging(body) {
         logCash(`Bought ${name}`, -cost);
       } })));
   body.append(rigCard);
+
+  // Active (VCR-linked) drones & vehicles summary — mirrors the Overview loadout.
+  const activeUnits = [];
+  [["drones", CHAR.drones], ["vehicles", CHAR.vehicles]].forEach(([table, list]) => {
+    (list || []).forEach((u, i) => { if (rg.linked[`${table}:${i}`]) activeUnits.push({ table, u }); });
+  });
+  if (activeUnits.length) {
+    const findUnitWeapon = (cfg, wn) => {
+      for (const [tk, nc] of cfg.weaponTables) {
+        const wr = DATA.tables[tk].find(x => x[nc] === wn);
+        if (wr) return wr;
+      }
+      return null;
+    };
+    const t = el("table");
+    t.append(el("tr", {}, el("th", {}, "Unit"), el("th", {}, "Stats"),
+      el("th", {}, "Weapons"), el("th", {}, "Mods")));
+    activeUnits.forEach(({ table, u }) => {
+      const cfg = RIG_UNIT_CFG[table];
+      const r = DATA.tables[table].find(x => x[cfg.nameKey] === u.name) || {};
+      const stats = `Move ${r.Move} · Handling ${r.Handling} · Body ${r.Body}`
+        + ((r.Ballistic || r.Impact) ? ` · ${r.Ballistic || 0}B/${r.Impact || 0}I` : "");
+      const weapons = (u.weapons || []).length
+        ? (u.weapons || []).map(wn => {
+            const wr = findUnitWeapon(cfg, wn) || {};
+            return `${wn} (DMG ${wr.Damage || "—"}${wr.Pen ? `, Pen ${wr.Pen}` : ""})`;
+          }).join(", ")
+        : "—";
+      const mods = (u.mods || []).length ? (u.mods || []).join(", ") : "—";
+      t.append(el("tr", {},
+        el("td", {}, el("b", {}, u.label || u.name), u.label ? el("div", { class: "sub" }, u.name) : null),
+        el("td", { class: "sub" }, stats),
+        el("td", { class: "sub" }, weapons),
+        el("td", { class: "sub" }, mods)));
+    });
+    body.append(el("div", { class: "card sh-card" },
+      el("h3", {}, "Active drones & vehicles"), t));
+  }
 
   const unitBlock = (cfg, list, calcArr) => {
     const card = el("div", { class: "card sh-card" }, el("h3", {}, cfg.title));

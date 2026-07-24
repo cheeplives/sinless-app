@@ -1335,10 +1335,12 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
       * (entry.smart && !integratedSmart ? SMART_WEAPON_COST_MULTIPLIER : 1);
 
     const fittedMods = [];
+    let accMod = 0;
     for (const modName of entry.mods || []) {
       const modRow = findRow(data.weapon_mods, "Modification", modName);
       if (modRow) {
         cost += asNumber(modRow.Cost);
+        accMod += asNumber(modRow.AccMod);
         fittedMods.push({ name: modName, slot: modRow.Slot, effect: modRow.Effect });
       }
     }
@@ -1369,10 +1371,12 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
     }
     if (row.Type === "Melee") item.Damage = meleeDamage(row, strength);
     item.smart = Boolean(entry.smart) || integratedSmart;
-    // Smartlink: +1 Accuracy die on a smart gun (not melee/thrown).
-    if (item.smart && hasSmartlink && item.Type !== "Melee" && item.Type !== "Thrown") {
-      item.Accuracy = String(toInt(asNumber(item.Accuracy)) + 1);
-      item.smartlink = true;
+    // Accuracy: base + fitted-mod AccMod (Laser Sight / Red dot +1, Silencer −2)
+    // + Smartlink (+1 on smart guns). Melee weapons carry no Accuracy value.
+    if (item.Accuracy !== "" && item.Accuracy != null) {
+      let acc = toInt(asNumber(item.Accuracy)) + toInt(accMod);
+      if (item.smart && hasSmartlink) { acc += 1; item.smartlink = true; }
+      item.Accuracy = String(acc);
     }
     item.qty = qty;
     item.mods = fittedMods;

@@ -913,31 +913,39 @@ async function backToChargen() {
 // item there, persists, and re-renders. Non-reorderable rows (cyberguns, granted
 // armor) simply don't call this, so they stay put.
 let dragRowState = null;
-function enableRowReorder(tr, arr, item, onReorder) {
+// Drag-to-reorder for a table row. `group` identifies which rows can be dropped
+// on each other (an array, or a shared token string). By default the item is
+// spliced within `group` (an array); pass `onMove(from, to)` to handle reordering
+// yourself — e.g. cyberguns, whose order spans two source arrays.
+function enableRowReorder(tr, group, item, onReorder, onMove) {
   tr.setAttribute("draggable", "true");
   tr.classList.add("sh-drag-row");
   tr.title = "Drag to reorder";
   tr.addEventListener("dragstart", e => {
-    dragRowState = { arr, item };
+    dragRowState = { group, item };
     e.dataTransfer.effectAllowed = "move";
     try { e.dataTransfer.setData("text/plain", ""); } catch { /* some browsers require data */ }
     tr.classList.add("dragging");
   });
   tr.addEventListener("dragend", () => { tr.classList.remove("dragging"); dragRowState = null; });
   tr.addEventListener("dragover", e => {
-    if (dragRowState && dragRowState.arr === arr) { e.preventDefault(); tr.classList.add("drag-over"); }
+    if (dragRowState && dragRowState.group === group) { e.preventDefault(); tr.classList.add("drag-over"); }
   });
   tr.addEventListener("dragleave", () => tr.classList.remove("drag-over"));
   tr.addEventListener("drop", e => {
     tr.classList.remove("drag-over");
-    if (!dragRowState || dragRowState.arr !== arr) return;
+    if (!dragRowState || dragRowState.group !== group) return;
     e.preventDefault();
-    const from = arr.indexOf(dragRowState.item), to = arr.indexOf(item);
+    const from = dragRowState.item;
     dragRowState = null;
-    if (from >= 0 && to >= 0 && from !== to) {
-      arr.splice(to, 0, arr.splice(from, 1)[0]);
-      onReorder();
+    if (from === item) return;
+    if (onMove) { onMove(from, item); }
+    else {
+      const fi = group.indexOf(from), ti = group.indexOf(item);
+      if (fi < 0 || ti < 0 || fi === ti) return;
+      group.splice(ti, 0, group.splice(fi, 1)[0]);
     }
+    onReorder();
   });
 }
 
@@ -951,14 +959,19 @@ function equippedCyberguns() {
     (CHAR.play && CHAR.play.purchases && CHAR.play.purchases.augments) || [],
   ];
   const out = [];
+  let ins = 0;
   for (const arr of sources) {
     for (const a of arr) {
       if (a.name !== "Cybergun Installation" || !a.gunType) continue;
       const g = (DATA.tables.cyberguns || []).find(x => x.Type === a.gunType);
-      if (g) out.push({ name: `Cybergun — ${g.Type}`, gun: g, src: a, srcArr: arr });
+      if (g) out.push({ name: `Cybergun — ${g.Type}`, gun: g, src: a, _ins: ins++ });
     }
   }
-  return out;
+  // A custom drag order is stored on each source augment as cgOrder, unifying the
+  // order across both arrays; entries without it keep insertion order, last.
+  return out.sort((a, b) =>
+    (typeof a.src.cgOrder === "number" ? a.src.cgOrder : 1e6 + a._ins)
+    - (typeof b.src.cgOrder === "number" ? b.src.cgOrder : 1e6 + b._ins));
 }
 
 function shOverview(body) {
@@ -1135,8 +1148,16 @@ function shOverview(body) {
           el("td", { class: "sub" },
             `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
           el("td", { class: "sub" }, "Implanted (Augments tab)"));
-        // Reorder acts on the underlying augment entry (cyberguns are derived).
-        enableRowReorder(cgtr, cg.srcArr, cg.src, () => playChanged());
+        // Cyberguns share one order across chargen + play-bought augments, so
+        // reordering rewrites cgOrder on every source augment in the new sequence.
+        enableRowReorder(cgtr, "cyberguns", cg, () => playChanged(), (from, to) => {
+          const list = equippedCyberguns();
+          const fi = list.findIndex(x => x.src === from.src);
+          const ti = list.findIndex(x => x.src === to.src);
+          if (fi < 0 || ti < 0 || fi === ti) return;
+          list.splice(ti, 0, list.splice(fi, 1)[0]);
+          list.forEach((it, i) => { it.src.cgOrder = i; });
+        });
         wt.append(cgtr);
       });
       loadout.append(wt);
@@ -3052,6 +3073,50 @@ const RIG_UNIT_CFG = {
 };
 function toInt(v) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; }
 
+// Flatten a unit's fitted weapons + mods into one attachment list (each with its
+// effect) and tally the mod effects that change unit stats. Each name is
+// self-classified against the weapon/mod tables, so a mod that slipped into
+// u.weapons (older saves) still shows as a mod with the right effect.
+function unitAttachments(cfg, unit) {
+  const findWeapon = wn => {
+    for (const [tk, nc] of cfg.weaponTables) {
+      const wr = DATA.tables[tk].find(x => x[nc] === wn);
+      if (wr) return wr;
+    }
+    return null;
+  };
+  const [mtk, mnc] = cfg.modTable;
+  const findMod = mn => DATA.tables[mtk].find(x => x[mnc] === mn) || null;
+
+  const items = [];
+  const statMods = { ballistic: 0, impact: 0, hardening: 0 };
+  const names = [...(unit.weapons || []), ...(unit.mods || [])];
+  for (const nm of names) {
+    const wr = findWeapon(nm);
+    if (wr) {
+      const bits = [];
+      if (wr.Damage) bits.push(`DMG ${wr.Damage}`);
+      if (wr.Pen && wr.Pen !== "N/A") bits.push(`Pen ${wr.Pen}`);
+      if (wr.Ammo) bits.push(`Ammo ${wr.Ammo}`);
+      items.push({ name: nm, kind: "weapon", stats: bits.join(", "),
+        effect: wr.Effect || wr.ModeEffect || "" });
+      continue;
+    }
+    const mr = findMod(nm);
+    if (mr) {
+      const eff = mr.ModeEffect || mr.Effect || "";
+      items.push({ name: nm, kind: "mod", stats: "", effect: eff });
+      let m;
+      if ((m = eff.match(/([+-]?\d+)\s*Ballistic Armor/i))) statMods.ballistic += toInt(m[1]);
+      if ((m = eff.match(/([+-]?\d+)\s*Impact Armor/i))) statMods.impact += toInt(m[1]);
+      if ((m = eff.match(/([+-]?\d+)\s*(?:Base )?Hardening/i))) statMods.hardening += toInt(m[1]);
+      continue;
+    }
+    items.push({ name: nm, kind: "unknown", stats: "", effect: "" });
+  }
+  return { items, statMods };
+}
+
 function shRigging(body) {
   const rg = CHAR.play.rigging;
   rg.linked = rg.linked || {};
@@ -3134,33 +3199,30 @@ function shRigging(body) {
     (list || []).forEach((u, i) => { if (rg.linked[`${table}:${i}`]) activeUnits.push({ table, u }); });
   });
   if (activeUnits.length) {
-    const findUnitWeapon = (cfg, wn) => {
-      for (const [tk, nc] of cfg.weaponTables) {
-        const wr = DATA.tables[tk].find(x => x[nc] === wn);
-        if (wr) return wr;
-      }
-      return null;
-    };
     const t = el("table");
-    t.append(el("tr", {}, el("th", {}, "Unit"), el("th", {}, "Stats"),
-      el("th", {}, "Weapons"), el("th", {}, "Mods")));
+    t.append(el("tr", {}, el("th", {}, "Unit"), el("th", {}, "Stats"), el("th", {}, "Attachments")));
     activeUnits.forEach(({ table, u }) => {
       const cfg = RIG_UNIT_CFG[table];
       const r = DATA.tables[table].find(x => x[cfg.nameKey] === u.name) || {};
+      const { items, statMods } = unitAttachments(cfg, u);
+      // Mods can raise armor/hardening — reflect the boosted values here.
+      const ball = toInt(r.Ballistic) + statMods.ballistic;
+      const imp = toInt(r.Impact) + statMods.impact;
       const stats = `Move ${r.Move} · Handling ${r.Handling} · Body ${r.Body}`
-        + ((r.Ballistic || r.Impact) ? ` · ${r.Ballistic || 0}B/${r.Impact || 0}I` : "");
-      const weapons = (u.weapons || []).length
-        ? (u.weapons || []).map(wn => {
-            const wr = findUnitWeapon(cfg, wn) || {};
-            return `${wn} (DMG ${wr.Damage || "—"}${wr.Pen ? `, Pen ${wr.Pen}` : ""})`;
-          }).join(", ")
+        + ((ball || imp) ? ` · ${ball}B/${imp}I` : "")
+        + (statMods.hardening ? ` · Hardening ${statMods.hardening}` : "");
+      const attachCell = items.length
+        ? el("div", {}, ...items.map(it => el("div", { class: "sub", style: "margin:2px 0" },
+            el("b", {}, it.name),
+            it.kind === "mod" ? el("span", { class: "sh-tag", style: "margin-left:6px" }, "mod") : null,
+            it.stats ? ` — ${it.stats}` : "",
+            it.effect ? el("span", { style: "color:var(--manon)" },
+              `${it.stats ? " · " : " — "}${it.effect}`) : null)))
         : "—";
-      const mods = (u.mods || []).length ? (u.mods || []).join(", ") : "—";
       t.append(el("tr", {},
         el("td", {}, el("b", {}, u.label || u.name), u.label ? el("div", { class: "sub" }, u.name) : null),
         el("td", { class: "sub" }, stats),
-        el("td", { class: "sub" }, weapons),
-        el("td", { class: "sub" }, mods)));
+        el("td", {}, attachCell)));
     });
     body.append(el("div", { class: "card sh-card" },
       el("h3", {}, "Active drones & vehicles"), t));
@@ -3273,9 +3335,14 @@ function shRigging(body) {
         el("div", {},
           nameInput,
           el("div", { class: "sub" }, el("b", {}, u.name), " · ",
-            `Move ${r.Move} · Handling ${r.Handling} · Body ${r.Body}`
-            + (r.Ballistic || r.Impact ? ` · Armor ${r.Ballistic || 0}B/${r.Impact || 0}I` : "")
-            + ` · weapons ${summary.weapon_count ?? u.weapons.length}/${summary.weapon_cap ?? cfg.capOf(r)}`),
+            (() => {
+              const sm = unitAttachments(cfg, u).statMods;
+              const ball = toInt(r.Ballistic) + sm.ballistic, imp = toInt(r.Impact) + sm.impact;
+              return `Move ${r.Move} · Handling ${r.Handling} · Body ${r.Body}`
+                + ((ball || imp) ? ` · Armor ${ball}B/${imp}I` : "")
+                + (sm.hardening ? ` · Hardening ${sm.hardening}` : "")
+                + ` · weapons ${summary.weapon_count ?? u.weapons.length}/${summary.weapon_cap ?? cfg.capOf(r)}`;
+            })()),
           r.Effect ? el("div", { class: "sub", style: "color:var(--manon)" }, r.Effect) : null,
           details,
           activeRig ? linkToggle : null),

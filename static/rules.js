@@ -153,14 +153,16 @@ const SENSE_AUGMENTS = new Set([
   "Broadcast Jammer", "Covert Synthskin", "Shimmerskin",
 ]);
 
-/* ---- House rules (global, player-toggleable, persisted) --------------------
+/* ---- House rules (per-character, player-toggleable) ------------------------
  * A registry of optional rule variants the table can switch on. Each rule has
  * an id, a label, a set of options (value + label + help), and a default. Read
  * the active choice via houseRule(id) wherever a rule branches; the settings UI
- * (app.js) flips it with setHouseRule() and the choice persists in localStorage.
- * Every rule defaults to the original behaviour ("classic") so nothing changes
- * until someone opts in. Add a rule by appending a def here and branching on
- * houseRule(<id>) at the relevant point in the engine. */
+ * (app.js) flips it with setHouseRule(). Choices live on each character
+ * (character.house_rules) and are saved/synced with the character, so changing a
+ * rule on one character never affects another. Every rule defaults to the
+ * original behaviour so nothing changes until someone opts in. Add a rule by
+ * appending a def here and branching on houseRule(<id>) at the relevant point in
+ * the engine. */
 const HOUSE_RULE_DEFS = [
   { id: "zr", label: "Zoetic Rating", default: "classic",
     options: [
@@ -207,27 +209,49 @@ function syncEngineeringSkills() {
     dskills["Engineering"] = { pool: "Focus" };
   }
 }
-const HOUSE_RULE_STORAGE_KEY = "sinless:houserules";
-const houseRuleState = {};
-for (const def of HOUSE_RULE_DEFS) houseRuleState[def.id] = def.default;
-try {
-  if (typeof localStorage !== "undefined") {
-    const saved = JSON.parse(localStorage.getItem(HOUSE_RULE_STORAGE_KEY) || "{}");
-    for (const def of HOUSE_RULE_DEFS)
-      if (def.options.some(o => o.value === saved[def.id])) houseRuleState[def.id] = saved[def.id];
-  }
-} catch { /* no/blocked localStorage or bad JSON — defaults stand */ }
+// House rules are PER CHARACTER, stored on `character.house_rules`. The engine
+// reads the active character's choices via houseRule() (activeHouseRules is
+// pointed at that character's rules at the top of calculate()); the UI flips one
+// with setHouseRule() and then persists the character. Changing a rule on one
+// character never affects another.
+// Legacy: earlier builds kept a single GLOBAL pref in localStorage. Read it once
+// to seed characters that predate per-character rules, so their behaviour carries
+// over unchanged on first load.
+const LEGACY_HOUSE_RULES = (() => {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const saved = JSON.parse(localStorage.getItem("sinless:houserules") || "null");
+      if (saved && typeof saved === "object") return saved;
+    }
+  } catch { /* blocked/absent localStorage */ }
+  return null;
+})();
+const legacyOrDefault = def =>
+  (LEGACY_HOUSE_RULES && def.options.some(o => o.value === LEGACY_HOUSE_RULES[def.id]))
+    ? LEGACY_HOUSE_RULES[def.id] : def.default;
+function defaultHouseRules() {
+  const hr = {};
+  for (const def of HOUSE_RULE_DEFS) hr[def.id] = legacyOrDefault(def);
+  return hr;
+}
+// Repair/seed a character's house_rules IN PLACE (invalid or missing values fall
+// back to the legacy global, then the rule's default) and return that same object
+// so the UI's setHouseRule mutations land on the character.
+function normalizeHouseRules(character) {
+  const hr = character.house_rules || (character.house_rules = {});
+  for (const def of HOUSE_RULE_DEFS)
+    if (!def.options.some(o => o.value === hr[def.id])) hr[def.id] = legacyOrDefault(def);
+  return hr;
+}
+let activeHouseRules = null;
 function houseRule(id) {
-  return houseRuleState[id] ?? (HOUSE_RULE_DEFS.find(d => d.id === id) || {}).default;
+  return (activeHouseRules && activeHouseRules[id])
+    ?? (HOUSE_RULE_DEFS.find(d => d.id === id) || {}).default;
 }
 function setHouseRule(id, value) {
   const def = HOUSE_RULE_DEFS.find(d => d.id === id);
   if (!def || !def.options.some(o => o.value === value)) return;
-  houseRuleState[id] = value;
-  try {
-    if (typeof localStorage !== "undefined")
-      localStorage.setItem(HOUSE_RULE_STORAGE_KEY, JSON.stringify(houseRuleState));
-  } catch { /* best-effort persistence */ }
+  if (activeHouseRules) activeHouseRules[id] = value;   // written onto the active character
 }
 // NB: the cyber ZR *value* (raw minus eyes/ears/limb absorption) is the same
 // under both ZR house rules; only how that ZR is *applied* differs — see the
@@ -281,6 +305,7 @@ function defaultCharacter() {
     player: "",
     description: "",
     notes: "",
+    house_rules: defaultHouseRules(),   // per-character optional rule variants
     priorities: { heritage: 0, magic: 0, attributes: 0, skills: 0, resources: 0 },
     heritage: {
       type: "Human",
@@ -2035,6 +2060,7 @@ function applyPlayAdvances(character) {
 // ============================================================== orchestrator
 function calculate(character) {
   character = mergeDefaults(character);
+  activeHouseRules = normalizeHouseRules(character);   // this character's house rules drive houseRule()
   const finalized = Boolean(character.finalized);
   if (finalized) character = applyPlayAdvances(character);
   const data = loadData();

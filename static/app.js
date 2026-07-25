@@ -177,12 +177,17 @@ function initTheme() {
 }
 
 /* House-rules settings panel (⚙): a gear button opening a small panel built
- * from RULES.HOUSE_RULE_DEFS. Choices persist globally (localStorage, handled by
- * RULES) and a change recomputes + re-renders the active view. */
+ * from RULES.HOUSE_RULE_DEFS. Choices are PER CHARACTER — a change writes to the
+ * active character's house_rules, recomputes, saves, and re-renders. The panel
+ * reflects whichever character is active (refreshed on every recalc). */
+let houseRuleControls = [];
 function initHouseRules() {
   const btn = $("#settings-btn"), panel = $("#settings-panel");
   if (!btn || !panel) return;
+  houseRuleControls = [];
   panel.replaceChildren(el("h4", {}, "House rules"),
+    el("p", { class: "settings-help", style: "margin:-2px 0 8px" },
+      "Set per character — changes affect only the open character."),
     ...RULES.HOUSE_RULE_DEFS.map(def => {
       const help = el("div", { class: "settings-help" });
       const setHelp = v => { help.textContent = (def.options.find(o => o.value === v) || {}).help || ""; };
@@ -190,11 +195,16 @@ function initHouseRules() {
         onchange: async e => {
           RULES.setHouseRule(def.id, e.target.value);
           setHelp(e.target.value);
-          if (typeof CHAR !== "undefined" && CHAR) { await recalc(); showActiveTab(); }
+          if (typeof CHAR !== "undefined" && CHAR) {
+            await recalc();
+            if (CHAR.name) STORAGE.saveCharacter(CHAR);   // persist the choice on this character
+            showActiveTab();
+          }
         } },
         ...def.options.map(o => el("option", { value: o.value }, o.label)));
       sel.value = RULES.houseRule(def.id);
       setHelp(sel.value);
+      houseRuleControls.push({ def, sel, setHelp });
       return el("label", { class: "settings-rule" }, el("span", {}, def.label), sel, help);
     }));
   let open = false;
@@ -208,12 +218,22 @@ function initHouseRules() {
   document.addEventListener("keydown", e => { if (e.key === "Escape" && open) close(); });
 }
 
+/* Point the ⚙ panel at the active character's house rules (called after every
+ * recalc, so switching characters/tabs updates it). */
+function refreshHouseRulesPanel() {
+  for (const { def, sel, setHelp } of houseRuleControls) {
+    const v = RULES.houseRule(def.id);
+    if (sel.value !== v) { sel.value = v; setHelp(v); }
+  }
+}
+
 function scheduleRecalc() {
   clearTimeout(calcTimer);
   calcTimer = setTimeout(recalc, RECALC_DEBOUNCE_MS);
 }
 async function recalc() {
   CALC = RULES.calculate(CHAR);
+  refreshHouseRulesPanel();   // keep the ⚙ panel in sync with the active character
   renderRail();
   renderBudgetChips();
   // keep the Finalize button's error gate current without a full re-render

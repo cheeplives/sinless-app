@@ -3073,6 +3073,13 @@ const RIG_UNIT_CFG = {
 };
 function toInt(v) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; }
 
+// Scale an ammo value by a multiplier, preserving any non-numeric suffix
+// ("40" → "80", "1 missile" → "2 missile", "" → "").
+function scaleAmmo(ammo, mult) {
+  const m = String(ammo).match(/^(\d+)(.*)$/);
+  return m ? (parseInt(m[1], 10) * mult) + m[2] : String(ammo);
+}
+
 // Flatten a unit's fitted weapons + mods into one attachment list (each with its
 // effect) and tally the mod effects that change unit stats. Each name is
 // self-classified against the weapon/mod tables, so a mod that slipped into
@@ -3088,16 +3095,25 @@ function unitAttachments(cfg, unit) {
   const [mtk, mnc] = cfg.modTable;
   const findMod = mn => DATA.tables[mtk].find(x => x[mnc] === mn) || null;
 
-  const items = [];
-  const statMods = { ballistic: 0, impact: 0, hardening: 0 };
   const names = [...(unit.weapons || []), ...(unit.mods || [])];
+  // An ammo-doubling mod (Extended Magazine) is detected up front so the mounted
+  // weapons can show their doubled Ammo. We can't tie a mod to a specific weapon,
+  // so any such mod doubles every mounted weapon's ammo (once, not per copy).
+  const doubleAmmo = names.some(nm => {
+    const mr = findMod(nm);
+    return mr && /doubl\w*\s+ammo/i.test(mr.ModeEffect || mr.Effect || "");
+  });
+
+  const items = [];
+  const statMods = { ballistic: 0, impact: 0, hardening: 0, double_ammo: doubleAmmo };
   for (const nm of names) {
     const wr = findWeapon(nm);
     if (wr) {
       const bits = [];
       if (wr.Damage) bits.push(`DMG ${wr.Damage}`);
       if (wr.Pen && wr.Pen !== "N/A") bits.push(`Pen ${wr.Pen}`);
-      if (wr.Ammo) bits.push(`Ammo ${wr.Ammo}`);
+      if (wr.Ammo) bits.push(`Ammo ${doubleAmmo ? scaleAmmo(wr.Ammo, 2) : wr.Ammo}`
+        + (doubleAmmo ? " (×2)" : ""));
       items.push({ name: nm, kind: "weapon", stats: bits.join(", "),
         effect: wr.Effect || wr.ModeEffect || "" });
       continue;

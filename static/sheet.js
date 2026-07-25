@@ -944,13 +944,21 @@ function enableRowReorder(tr, arr, item, onReorder) {
 // Cyberguns are augments with a chosen gun; surface them as read-only weapons
 // on the Overview loadout and the Gear weapons list.
 function equippedCyberguns() {
-  const all = [...CHAR.augments,
-    ...((CHAR.play && CHAR.play.purchases && CHAR.play.purchases.augments) || [])];
-  return all
-    .filter(a => a.name === "Cybergun Installation" && a.gunType)
-    .map(a => (DATA.tables.cyberguns || []).find(g => g.Type === a.gunType))
-    .filter(Boolean)
-    .map(g => ({ name: `Cybergun — ${g.Type}`, gun: g }));
+  // Keep the source augment entry + its array so the Overview can drag-reorder
+  // cyberguns (they're derived, so reordering acts on the underlying augments).
+  const sources = [
+    CHAR.augments,
+    (CHAR.play && CHAR.play.purchases && CHAR.play.purchases.augments) || [],
+  ];
+  const out = [];
+  for (const arr of sources) {
+    for (const a of arr) {
+      if (a.name !== "Cybergun Installation" || !a.gunType) continue;
+      const g = (DATA.tables.cyberguns || []).find(x => x.Type === a.gunType);
+      if (g) out.push({ name: `Cybergun — ${g.Type}`, gun: g, src: a, srcArr: arr });
+    }
+  }
+  return out;
 }
 
 function shOverview(body) {
@@ -1122,11 +1130,14 @@ function shOverview(body) {
       });
       cyberguns.forEach(cg => {
         const g = cg.gun;
-        wt.append(el("tr", {},
+        const cgtr = el("tr", {},
           el("td", {}, el("b", {}, cg.name + " (smart)")),
           el("td", { class: "sub" },
             `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
-          el("td", { class: "sub" }, "Implanted (Augments tab)")));
+          el("td", { class: "sub" }, "Implanted (Augments tab)"));
+        // Reorder acts on the underlying augment entry (cyberguns are derived).
+        enableRowReorder(cgtr, cg.srcArr, cg.src, () => playChanged());
+        wt.append(cgtr);
       });
       loadout.append(wt);
     }

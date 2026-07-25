@@ -513,6 +513,10 @@ function rollerOverlay() {
  * the header meter and the compact sticky strip. */
 function zpMeterValues() {
   const z = CALC.zoetics;
+  // House rule: ZP remaining = base − cyber − amp (gear ZR is a casting penalty,
+  // not a ZP cost) and may go negative. Classic: base − ceil(amp + all carried ZR).
+  if (RULES.houseRule("zr") === "houserule")
+    return { current: z.zp_remaining, max: z.zp };
   const spent = (z.amp_zp_spent || 0) + (z.zr_total || 0);
   return { current: Math.max(0, z.zp - Math.ceil(spent)), max: z.zp };
 }
@@ -578,19 +582,31 @@ function sheetHeader() {
 
   const z = CALC.zoetics;
   const { current: zpCurrent } = zpMeterValues();
-  const right = el("div", { class: "sh-meters" },
-    el("div", { class: "sh-meter zoetic",
-      title: `Zoetic Potential ${z.zp}`
+  const houseZr = RULES.houseRule("zr") === "houserule";
+  const castPen = Math.floor(z.gear_zr);
+  const zpTitle = houseZr
+    ? `Zoetic Potential ${z.zp}`
+        + (z.augment_zr > 0 ? ` − Cyber ZP spent ${z.augment_zr}` : "")
         + (z.amp_zp_spent > 0 ? ` − Amp ZP spent ${z.amp_zp_spent}` : "")
-        + ` − carried ZR ${z.zr_total} (fractions round up)` },
+    : `Zoetic Potential ${z.zp}`
+        + (z.amp_zp_spent > 0 ? ` − Amp ZP spent ${z.amp_zp_spent}` : "")
+        + ` − carried ZR ${z.zr_total} (fractions round up)`;
+  const zrMeter = houseZr
+    ? el("div", { class: "sh-meter zoetic",
+        title: `Gear/weapon ZR ${z.gear_zr}${castPen > 0 ? ` — −${castPen}d on casting rolls` : ""}` },
+        el("div", { class: "k" }, "Gear ZR"),
+        el("div", { class: "v" }, String(z.gear_zr)))
+    : el("div", { class: "sh-meter zoetic",
+        title: `Augment ZR ${z.augment_zr} + gear ZR ${z.gear_zr}`
+          + (CHAR.heritage.type === "Synthetic" ? " (Synthetic: augment ZR untracked)" : "") },
+        el("div", { class: "k" }, "ZR"),
+        el("div", { class: "v" }, String(z.zr_total)));
+  const right = el("div", { class: "sh-meters" },
+    el("div", { class: "sh-meter zoetic", title: zpTitle },
       el("div", { class: "k" }, "ZP"),
       el("div", { class: "v", style: z.zp_remaining < 0 ? "color:var(--bad)" : "" },
         String(zpCurrent), el("span", { class: "max" }, ` / ${z.zp}`))),
-    el("div", { class: "sh-meter zoetic",
-      title: `Augment ZR ${z.augment_zr} + gear ZR ${z.gear_zr}`
-        + (CHAR.heritage.type === "Synthetic" ? " (Synthetic: augment ZR untracked)" : "") },
-      el("div", { class: "k" }, "ZR"),
-      el("div", { class: "v" }, String(z.zr_total))),
+    zrMeter,
     el("div", { class: "sh-meter zoetic", title: "Ghost Rating" },
       el("div", { class: "k" }, "Ghost"),
       el("div", { class: "v" }, z.ghost_rating || "2d6")),
@@ -2167,7 +2183,8 @@ function shAugments(body) {
 
   const augHeaderCard = el("div", { class: "card sh-card" }, el("h3", {}, "Augments"),
     el("div", { class: "sh-advrow" },
-      el("span", {}, "Augment ZR"), el("b", {}, String(z.augment_zr))),
+      el("span", {}, RULES.houseRule("zr") === "houserule" ? "Cyber ZP Spent" : "Augment ZR"),
+      el("b", {}, String(z.augment_zr))),
     ...(z.mounted_zr ? [el("div", { class: "sh-advrow",
         title: "ZR of augments mounted on gear (Gear tab) — never counts against your ZP" },
       el("span", {}, "Mounted on gear (ZP-exempt)"), el("b", {}, String(z.mounted_zr)))] : []),

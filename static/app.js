@@ -356,15 +356,34 @@ function renderRail() {
   // zoetics
   const rz = $("#rail-zoetics"); rz.innerHTML = "";
   const z = CALC.zoetics;
-  rz.append(
-    el("div", { class: "track" }, el("span", {}, "ZP"), el("b", {}, String(z.zp))),
-    el("div", { class: "track" }, el("span", {}, "Cyber/Gear ZR"), el("b", {}, String(z.cyber_zr))),
-    ...(z.mounted_zr ? [el("div", { class: "track",
-        title: "ZR of augments mounted on gear — never counts against your ZP" },
-      el("span", {}, "Mounted ZR (exempt)"), el("b", {}, String(z.mounted_zr)))] : []),
-    el("div", { class: "track" }, el("span", {}, "Amp ZR"), el("b", {}, String(z.amp_zr))),
-    el("div", { class: "track" }, el("span", {}, "Body Index"),
-      el("b", { style: z.body_index_ok ? "" : "color:var(--bad)" }, String(z.body_index))));
+  const houseZr = RULES.houseRule("zr") === "houserule";
+  const mountedTrack = z.mounted_zr ? [el("div", { class: "track",
+      title: "ZR of augments mounted on gear — never counts against your ZP" },
+    el("span", {}, "Mounted ZR (exempt)"), el("b", {}, String(z.mounted_zr)))] : [];
+  const bodyTrack = el("div", { class: "track" }, el("span", {}, "Body Index"),
+    el("b", { style: z.body_index_ok ? "" : "color:var(--bad)" }, String(z.body_index)));
+  if (houseZr) {
+    const castPen = Math.floor(z.gear_zr);
+    rz.append(
+      el("div", { class: "track", title: "Zoetic Potential remaining (base − Cyber − Amp)" },
+        el("span", {}, "ZP"),
+        el("b", { style: z.zp_remaining <= 0 ? "color:var(--bad)" : "" }, `${z.zp_remaining} / ${z.zp}`)),
+      el("div", { class: "track", title: "Cyber ZR spent against ZP" },
+        el("span", {}, "Cyber ZP Spent"), el("b", {}, String(z.augment_zr))),
+      ...mountedTrack,
+      el("div", { class: "track" }, el("span", {}, "Amp ZP Spent"), el("b", {}, String(z.amp_zr))),
+      el("div", { class: "track", title: "Gear/weapon ZR — each full point is −1d on casting rolls" },
+        el("span", {}, "Gear ZR"),
+        el("b", {}, String(z.gear_zr) + (castPen > 0 ? ` (−${castPen}d cast)` : ""))),
+      bodyTrack);
+  } else {
+    rz.append(
+      el("div", { class: "track" }, el("span", {}, "ZP"), el("b", {}, String(z.zp))),
+      el("div", { class: "track" }, el("span", {}, "Cyber/Gear ZR"), el("b", {}, String(z.cyber_zr))),
+      ...mountedTrack,
+      el("div", { class: "track" }, el("span", {}, "Amp ZR"), el("b", {}, String(z.amp_zr))),
+      bodyTrack);
+  }
   // alerts
   const ra = $("#rail-alerts"); ra.innerHTML = "";
   for (const e2 of CALC.errors) ra.append(el("div", { class: "alert" }, e2));

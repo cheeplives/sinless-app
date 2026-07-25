@@ -169,7 +169,44 @@ const HOUSE_RULE_DEFS = [
       { value: "houserule", label: "House rule",
         help: "Gear/weapon ZR doesn't touch ZP — it's −1d per full point on casting rolls (Channeling/Conjuring/Sorcery). Cyber ZR reduces ZP directly (may go negative; Synthetics exempt). At ZP ≤ 0 only Rituals work." },
     ] },
+  { id: "engineering", label: "Engineering skills", default: "single",
+    options: [
+      { value: "single", label: "Single skill",
+        help: "One Engineering skill covers every discipline." },
+      { value: "classic", label: "Classic (six skills)",
+        help: "Engineering splits into a six-skill group — Aeronautics, Armory, Electronics, Industrial, Mechanical, Nautical. Like Ranged Weapons, an untrained member rolls the group's best −2." },
+    ] },
 ];
+
+// House rule: the single Engineering skill can split into a six-skill group.
+const ENGINEERING_GROUP = "engineering";
+const ENGINEERING_SPLIT_SKILLS = [
+  "Engineering: Aeronautics", "Engineering: Armory", "Engineering: Electronics",
+  "Engineering: Industrial", "Engineering: Mechanical", "Engineering: Nautical",
+];
+
+// Reshape the skill set to match the Engineering house rule. Mutates both SKILLS
+// (the engine map) and the data bundle's skills map (the UI's source) so every
+// consumer sees the same set. Idempotent — safe to run on each calculate().
+// Character skill points for the inactive shape are left untouched, so toggling
+// the rule back restores them.
+function syncEngineeringSkills() {
+  const classic = houseRule("engineering") === "classic";
+  // The UI reads the bundle's top-level `skills` map (DATA.skills); loadData()
+  // only exposes BUNDLE.tables, so mutate BUNDLE.skills directly here.
+  const dskills = (BUNDLE.skills = BUNDLE.skills || {});
+  if (classic) {
+    delete SKILLS["Engineering"]; delete dskills["Engineering"];
+    for (const name of ENGINEERING_SPLIT_SKILLS) {
+      SKILLS[name] = ["Focus", ENGINEERING_GROUP];
+      dskills[name] = { pool: "Focus", group: ENGINEERING_GROUP };
+    }
+  } else {
+    for (const name of ENGINEERING_SPLIT_SKILLS) { delete SKILLS[name]; delete dskills[name]; }
+    SKILLS["Engineering"] = ["Focus", null];
+    dskills["Engineering"] = { pool: "Focus" };
+  }
+}
 const HOUSE_RULE_STORAGE_KEY = "sinless:houserules";
 const houseRuleState = {};
 for (const def of HOUSE_RULE_DEFS) houseRuleState[def.id] = def.default;
@@ -2001,6 +2038,7 @@ function calculate(character) {
   const finalized = Boolean(character.finalized);
   if (finalized) character = applyPlayAdvances(character);
   const data = loadData();
+  syncEngineeringSkills();   // reshape Engineering skills per the house rule
   const warnings = [], errors = [];
 
   const priorities = resolvePriorities(character, data, warnings, errors);

@@ -878,7 +878,7 @@ function tabStats(p) {
     "1 point per rank, max 6 at creation. Untrained skills in a group roll at the group's best skill \u22122. "
     + "Martial Arts costs 2 points per rank and can never exceed your Unarmed Combat rank."));
   const GROUP_LABELS = { close_combat: "Close Combat", ranged_combat: "Ranged Combat",
-    hacking: "Hacking", vehicle: "Vehicle" };
+    hacking: "Hacking", vehicle: "Vehicle", engineering: "Engineering" };
   const byPool = {};
   Object.entries(DATA.skills).forEach(([name, s]) => (byPool[s.pool] ??= []).push(name));
   const grid = el("div", { class: "grid-2" });

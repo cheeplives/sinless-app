@@ -152,6 +152,49 @@ const SENSE_AUGMENTS = new Set([
   "Echolocation Positioning", "Dampener", "Gills", "Metabolic Stasis",
   "Broadcast Jammer", "Covert Synthskin", "Shimmerskin",
 ]);
+
+/* ---- House rules (global, player-toggleable, persisted) --------------------
+ * A registry of optional rule variants the table can switch on. Each rule has
+ * an id, a label, a set of options (value + label + help), and a default. Read
+ * the active choice via houseRule(id) wherever a rule branches; the settings UI
+ * (app.js) flips it with setHouseRule() and the choice persists in localStorage.
+ * Every rule defaults to the original behaviour ("classic") so nothing changes
+ * until someone opts in. Add a rule by appending a def here and branching on
+ * houseRule(<id>) at the relevant point in the engine. */
+const HOUSE_RULE_DEFS = [
+  { id: "zr", label: "Zoetic Rating", default: "classic",
+    options: [
+      { value: "classic", label: "Classic",
+        help: "Per-augment ZR; cyber eyes/ears absorb 0.5, each cyberlimb 1.0." },
+      { value: "houserule", label: "House rule",
+        help: "Gear/weapon ZR doesn't touch ZP — it's −1d per full point on casting rolls (Channeling/Conjuring/Sorcery). Cyber ZR reduces ZP directly (may go negative; Synthetics exempt). At ZP ≤ 0 only Rituals work." },
+    ] },
+];
+const HOUSE_RULE_STORAGE_KEY = "sinless:houserules";
+const houseRuleState = {};
+for (const def of HOUSE_RULE_DEFS) houseRuleState[def.id] = def.default;
+try {
+  if (typeof localStorage !== "undefined") {
+    const saved = JSON.parse(localStorage.getItem(HOUSE_RULE_STORAGE_KEY) || "{}");
+    for (const def of HOUSE_RULE_DEFS)
+      if (def.options.some(o => o.value === saved[def.id])) houseRuleState[def.id] = saved[def.id];
+  }
+} catch { /* no/blocked localStorage or bad JSON — defaults stand */ }
+function houseRule(id) {
+  return houseRuleState[id] ?? (HOUSE_RULE_DEFS.find(d => d.id === id) || {}).default;
+}
+function setHouseRule(id, value) {
+  const def = HOUSE_RULE_DEFS.find(d => d.id === id);
+  if (!def || !def.options.some(o => o.value === value)) return;
+  houseRuleState[id] = value;
+  try {
+    if (typeof localStorage !== "undefined")
+      localStorage.setItem(HOUSE_RULE_STORAGE_KEY, JSON.stringify(houseRuleState));
+  } catch { /* best-effort persistence */ }
+}
+// NB: the cyber ZR *value* (raw minus eyes/ears/limb absorption) is the same
+// under both ZR house rules; only how that ZR is *applied* differs — see the
+// zpRemaining / casting-penalty branches in calculate() gated on houseRule("zr").
 const SOUND_FILTER_OBSERVATION_BONUS = 1;
 const MOVEMENT_ENHANCEMENT_METERS_PER_RATING = 2;
 const RIG_EXPLOIT_ACTIONS = 2;
@@ -2009,12 +2052,33 @@ function calculate(character) {
   const gearZr = gearZoeticRating(character, data);
   const zrTotal = round2(augmentZr + gearZr);
   const hasAmpPowers = amp.powers_taken.size > 0;
+  const houseZr = houseRule("zr") === "houserule";
+  // House rule: cyber ZR reduces ZP directly and always (may go negative); gear
+  // ZR does NOT touch ZP (it penalises casting instead). Classic: total carried
+  // ZR counts against ZP only when amp powers are taken.
   const zpRemaining = round2(heritage.zoetic_potential - amp.spent
-                             - (hasAmpPowers ? zrTotal : 0));
-  const ampOffline = hasAmpPowers && zpRemaining < 0;
-  if (ampOffline) {
+    - (houseZr ? augmentZr : (hasAmpPowers ? zrTotal : 0)));
+  // House rule: ZP ≤ 0 takes all magic offline except Rituals.
+  const magicOffline = houseZr && magicType !== "Hedge" && zpRemaining <= 0;
+  const ampOffline = houseZr ? magicOffline : (hasAmpPowers && zpRemaining < 0);
+  if (magicOffline) {
+    warnings.push("Magic OFFLINE: Zoetic Potential is 0 or less (cyber ZR + Amp "
+      + "spending). Spells, Amps and Summoning are unavailable — only Rituals remain.");
+  } else if (ampOffline) {
     warnings.push("Amp powers OFFLINE: ZP is negative — Amp ZP spent plus "
                   + "carried ZR exceeds Zoetic Potential.");
+  }
+  // House rule: each full point of gear/weapon ZR is a −1d penalty on casting
+  // rolls (Channeling, Conjuring, Sorcery), surfaced as a note on those skills.
+  if (houseZr && magicType !== "Hedge") {
+    const castPenalty = Math.floor(gearZr);
+    if (castPenalty > 0) {
+      for (const sk of ["Channeling", "Conjuring", "Sorcery"]) {
+        const s = skillScoring.skills[sk];
+        if (s && (s.points > 0 || s.final > 0))
+          s.notes = [...(s.notes || []), `−${castPenalty}d on casting rolls (gear/weapon ZR ${gearZr})`];
+      }
+    }
   }
 
   const cashCategories = {
@@ -2116,6 +2180,7 @@ function calculate(character) {
                gear_zr: gearZr,
                zr_total: zrTotal,
                amp_offline: ampOffline,
+               magic_offline: magicOffline,
                cyber_zr: round2(augments.zoetic_rating),
                amp_zr: round2(amp.spent),
                // Gear-mounted augments: ZR exempt from ZP by design; the
@@ -2155,6 +2220,7 @@ return {
   rigStats, applyExtendedMagazine, meleeDamage, assignWeaponModSlots,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost,
   augmentLimbRequirement, augmentMeleeDamage,
+  HOUSE_RULE_DEFS, houseRule, setHouseRule,
 };
 
 })();

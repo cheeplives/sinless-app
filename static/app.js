@@ -74,6 +74,7 @@ const POOL_FORMULAS = {
 async function boot() {
   DATA = DATA_BUNDLE;
   initTheme();
+  initHouseRules();
   // Auth gate (sync.js). In local-only mode (no backend, e.g. GitHub Pages) this
   // returns "local" and the app runs exactly as before.
   const mode = await SYNC.probe();
@@ -173,6 +174,38 @@ function initTheme() {
     localStorage.setItem("sinless:scheme", scheme());
   } catch { /* best-effort */ }
   syncModeBtn(); syncSchemeBtn(); syncMeta();
+}
+
+/* House-rules settings panel (⚙): a gear button opening a small panel built
+ * from RULES.HOUSE_RULE_DEFS. Choices persist globally (localStorage, handled by
+ * RULES) and a change recomputes + re-renders the active view. */
+function initHouseRules() {
+  const btn = $("#settings-btn"), panel = $("#settings-panel");
+  if (!btn || !panel) return;
+  panel.replaceChildren(el("h4", {}, "House rules"),
+    ...RULES.HOUSE_RULE_DEFS.map(def => {
+      const help = el("div", { class: "settings-help" });
+      const setHelp = v => { help.textContent = (def.options.find(o => o.value === v) || {}).help || ""; };
+      const sel = el("select", {
+        onchange: async e => {
+          RULES.setHouseRule(def.id, e.target.value);
+          setHelp(e.target.value);
+          if (typeof CHAR !== "undefined" && CHAR) { await recalc(); showActiveTab(); }
+        } },
+        ...def.options.map(o => el("option", { value: o.value }, o.label)));
+      sel.value = RULES.houseRule(def.id);
+      setHelp(sel.value);
+      return el("label", { class: "settings-rule" }, el("span", {}, def.label), sel, help);
+    }));
+  let open = false;
+  const close = () => { open = false; panel.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+  btn.addEventListener("click", e => {
+    e.stopPropagation();
+    open = !open; panel.hidden = !open; btn.setAttribute("aria-expanded", String(open));
+  });
+  panel.addEventListener("click", e => e.stopPropagation());
+  document.addEventListener("click", () => { if (open) close(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && open) close(); });
 }
 
 function scheduleRecalc() {

@@ -303,7 +303,9 @@ function dossierNotes() {
   const notes = [];
   if (CHAR.heritage.type === "Replicant")
     notes.push("Replicants are ILLEGAL and are hunted by government agents. Exposure means retirement squads — keep a low profile.");
-  if (CALC.zoetics.amp_offline)
+  if (CALC.zoetics.magic_offline)
+    notes.push(`MAGIC OFFLINE: ZP is ${CALC.zoetics.zp_remaining} — cyber ZR and Amp spending have reduced Zoetic Potential to 0 or below. Spells, Amps and Summoning are unavailable; only Rituals remain.`);
+  else if (CALC.zoetics.amp_offline)
     notes.push(`AMP POWERS OFFLINE: ZP is ${CALC.zoetics.zp_remaining} — Amp ZP spent plus carried ZR exceeds your Zoetic Potential. Shed ZR or lose the powers.`);
   for (const msg of CALC.zoetics.mount_errors || []) notes.push(msg);
   if (moveSpecial()) notes.push("Movement: " + moveSpecial());

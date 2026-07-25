@@ -3339,32 +3339,29 @@ function buildMarkdown() {
 
   L.push(`# ${CHAR.name || "Unnamed"}`);
   L.push("");
-  L.push(`**Player:** ${CHAR.player || "—"} · **Heritage:** ${heritageLabel} · **Magic:** ${CALC.magic.type}`);
-  L.push("");
-  for (const note of dossierNotes()) L.push(`> ⚠ ${note}`);
+  L.push(`*${heritageLabel} · ${CALC.magic.type}${CHAR.player ? ` · Player: ${CHAR.player}` : ""}*`);
   L.push("");
 
-  L.push("## Attributes");
-  L.push("");
-  L.push("| " + ATTR_ABBR.map(([, ab]) => ab).join(" | ") + " |");
-  L.push("|" + ATTR_ABBR.map(() => "---").join("|") + "|");
-  L.push("| " + ATTR_ABBR.map(([full]) => CALC.attributes[full].final).join(" | ") + " |");
-  L.push("");
-
-  L.push("## Pools & Condition");
-  L.push("");
-  L.push("| Brawn | Finesse | Focus | Resolve |");
-  L.push("|---|---|---|---|");
-  L.push("| " + POOL_ORDER.map(p => CALC.pools[p]).join(" | ") + " |");
-  L.push("");
-  L.push(`**Physical:** ${CALC.condition.physical} boxes · **Stun:** ${CALC.condition.stun} boxes`);
+  // ---- compact stat block: attributes, pools, and combat vitals at a glance ----
   const altMoves = (c.move_modes || []).map(m => `${m.mode} ${m.meters}m`).join(", ");
-  L.push(`**Move:** ${c.move} m${moveSpecial() ? " (" + moveSpecial() + ")" : ""}${altMoves ? ` · **Alt move:** ${altMoves}` : ""} · **Armor:** ${c.ballistic_armor}B / ${c.impact_armor}I`);
   const initEx = sheetInitiative();
-  L.push(`**Initiative:** ${initEx.dice}d+${initEx.bonus} · **Simple actions:** ${c.simple_actions} · **Recoil capacity:** ${c.recoil_capacity}`
-    + (c.dodge_bonus ? ` · **Dodge bonus:** +${c.dodge_bonus}` : "")
-    + (c.physical_damage_reduction ? ` · **Damage soak:** −${c.physical_damage_reduction} phys` : ""));
+  L.push(ATTR_ABBR.map(([full, ab]) => `**${ab}** ${CALC.attributes[full].final}`).join(" · "));
   L.push("");
+  L.push(POOL_ORDER.map(p => `**${p}** ${CALC.pools[p]}`).join(" · "));
+  L.push("");
+  L.push([
+    `**Physical** ${CALC.condition.physical} · **Stun** ${CALC.condition.stun}`,
+    `**Armor** ${c.ballistic_armor}B/${c.impact_armor}I`,
+    `**Move** ${c.move}m${moveSpecial() ? ` (${moveSpecial()})` : ""}${altMoves ? ` [${altMoves}]` : ""}`,
+    `**Init** ${initEx.dice}d+${initEx.bonus}`,
+    `**Actions** ${c.simple_actions}`,
+    `**Recoil** ${c.recoil_capacity}`,
+    c.dodge_bonus ? `**Dodge** +${c.dodge_bonus}` : null,
+    c.physical_damage_reduction ? `**Soak** −${c.physical_damage_reduction}` : null,
+  ].filter(Boolean).join(" · "));
+  L.push("");
+  const notes = dossierNotes();
+  if (notes.length) { for (const note of notes) L.push(`> ⚠ ${note}`); L.push(""); }
   L.push("*Wound rule: every 3 boxes marked on either track = −1 die on tasks, cumulative. Biotech can remove these penalties during combat.*");
   L.push("");
 

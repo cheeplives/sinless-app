@@ -1616,7 +1616,12 @@ const VEHICLE_WEAPON_BODY_DIVISOR = 3;
 function priceFittedVehicle(entry, baseRow, data, weaponAndModTables, gearCostMultiplier) {
   let cost = asNumber(baseRow.Cost);
   const fitted = [];
-  for (const requestedName of [...(entry.weapons || []), ...(entry.mods || [])]) {
+  // Unit mods may be plain names (unit-scoped) or {name, weapon} (attached to a
+  // specific mounted weapon); either way we price by the mod's name.
+  const fittedNames = [...(entry.weapons || []),
+    ...(entry.mods || []).map(m => (typeof m === "string" ? m : m && m.name))];
+  for (const requestedName of fittedNames) {
+    if (!requestedName) continue;
     for (const [dataKey, nameColumn] of weaponAndModTables) {
       const found = findRow(data[dataKey], nameColumn, requestedName);
       if (found) {

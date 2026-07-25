@@ -304,7 +304,7 @@ const DATA_BUNDLE ={
 {"Drone Energy Weapon":"Particle Projection Cannon","ZR":"","BI":"","Cost":"700000","Accuracy":"5","Damage":"8","Heat":"2","Heat Limit":"20","Rarity":"7","Weight":"3","Pen":"4","ModeEffect":""}
 ],
 "drone_mods":[
-{"Drone Mod":"Extended Magazine","ZR":"","BI":"","Cost":"1000","Weight":"1","ModeEffect":"Doubles ammo"},
+{"Drone Mod":"Extended Magazine","ZR":"","BI":"","Cost":"1000","Weight":"1","Target":"weapon","ModeEffect":"Doubles ammo"},
 {"Drone Mod":"Hardening","ZR":"","BI":"","Cost":"2500","Weight":"1","ModeEffect":"+2 Base Hardening"},
 {"Drone Mod":"Advanced Hardening","ZR":"","BI":"","Cost":"11000","Weight":"2","ModeEffect":"+4 Base Hardening"},
 {"Drone Mod":"Armor","ZR":"","BI":"","Cost":"800","Weight":"1","ModeEffect":"+1 Ballistic Armor"},
@@ -761,7 +761,7 @@ const DATA_BUNDLE ={
 {"Vehicle Energy Weapon":"Particle Projection Cannon","ZR":"","BI":"","Cost":"700000","Accuracy":"5","Damage":"8","Heat":"2","Heat Limit":"20","Rarity":"6","Weight":"4","Pen":"3","ModeEffect":""}
 ],
 "vehicle_mods":[
-{"Vehicle Mod":"Extended Magazine","ZR":"","BI":"","Cost":"1000","Weight":"1","ModeEffect":"Doubles ammo"},
+{"Vehicle Mod":"Extended Magazine","ZR":"","BI":"","Cost":"1000","Weight":"1","Target":"weapon","ModeEffect":"Doubles ammo"},
 {"Vehicle Mod":"Hardening","ZR":"","BI":"","Cost":"2500","Weight":"1","ModeEffect":"+2 Base Hardening"},
 {"Vehicle Mod":"Advanced Hardening","ZR":"","BI":"","Cost":"11000","Weight":"2","ModeEffect":"+4 Base Hardening"},
 {"Vehicle Mod":"Armor","ZR":"","BI":"","Cost":"800","Weight":"1","ModeEffect":"+1 Ballistic Armor"},

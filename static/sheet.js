@@ -3080,6 +3080,27 @@ function scaleAmmo(ammo, mult) {
   return m ? (parseInt(m[1], 10) * mult) + m[2] : String(ammo);
 }
 
+// A unit mod is either a plain name (unit-scoped, also the legacy shape) or
+// {name, weapon: <index>} attached to a specific mounted weapon. These read
+// either shape without caring which it is.
+const modName = m => (typeof m === "string" ? m : (m && m.name) || "");
+const modWeaponIdx = m =>
+  (m && typeof m === "object" && Number.isInteger(m.weapon)) ? m.weapon : null;
+const modDoublesAmmo = row => !!row && /doubl\w*\s+ammo/i.test(row.ModeEffect || row.Effect || "");
+
+// Remove a mounted weapon and keep weapon-attached mods consistent: drop mods on
+// the removed weapon and shift the index of mods attached to later weapons.
+function removeUnitWeapon(u, wi) {
+  u.weapons.splice(wi, 1);
+  u.mods = (u.mods || []).reduce((acc, m) => {
+    const idx = modWeaponIdx(m);
+    if (idx === wi) return acc;
+    acc.push(idx != null && idx > wi ? { ...m, weapon: idx - 1 } : m);
+    return acc;
+  }, []);
+  playChangedRecalc();
+}
+
 // Flatten a unit's fitted weapons + mods into one attachment list (each with its
 // effect) and tally the mod effects that change unit stats. Each name is
 // self-classified against the weapon/mod tables, so a mod that slipped into
@@ -3095,40 +3116,45 @@ function unitAttachments(cfg, unit) {
   const [mtk, mnc] = cfg.modTable;
   const findMod = mn => DATA.tables[mtk].find(x => x[mnc] === mn) || null;
 
-  const names = [...(unit.weapons || []), ...(unit.mods || [])];
-  // An ammo-doubling mod (Extended Magazine) is detected up front so the mounted
-  // weapons can show their doubled Ammo. We can't tie a mod to a specific weapon,
-  // so any such mod doubles every mounted weapon's ammo (once, not per copy).
-  const doubleAmmo = names.some(nm => {
-    const mr = findMod(nm);
-    return mr && /doubl\w*\s+ammo/i.test(mr.ModeEffect || mr.Effect || "");
-  });
+  const weapons = unit.weapons || [];
+  const mods = unit.mods || [];
+  // Sort mods into unit-scoped and per-weapon (attached to a mounted weapon).
+  // A weapon-scoped mod with no valid target (legacy save) falls back to every
+  // weapon, preserving the old "applies to all" behaviour.
+  const unitMods = [];
+  const weaponMods = weapons.map(() => []);
+  for (const m of mods) {
+    const nm = modName(m), mr = findMod(nm), idx = modWeaponIdx(m);
+    if (idx != null && idx >= 0 && idx < weapons.length) weaponMods[idx].push({ nm, mr });
+    else if (mr && mr.Target === "weapon" && weapons.length)
+      weapons.forEach((_, wi) => weaponMods[wi].push({ nm, mr }));
+    else unitMods.push({ nm, mr });
+  }
 
   const items = [];
-  const statMods = { ballistic: 0, impact: 0, hardening: 0, double_ammo: doubleAmmo };
-  for (const nm of names) {
-    const wr = findWeapon(nm);
-    if (wr) {
-      const bits = [];
-      if (wr.Damage) bits.push(`DMG ${wr.Damage}`);
-      if (wr.Pen && wr.Pen !== "N/A") bits.push(`Pen ${wr.Pen}`);
-      if (wr.Ammo) bits.push(`Ammo ${doubleAmmo ? scaleAmmo(wr.Ammo, 2) : wr.Ammo}`
-        + (doubleAmmo ? " (×2)" : ""));
-      items.push({ name: nm, kind: "weapon", stats: bits.join(", "),
-        effect: wr.Effect || wr.ModeEffect || "" });
-      continue;
-    }
-    const mr = findMod(nm);
-    if (mr) {
-      const eff = mr.ModeEffect || mr.Effect || "";
-      items.push({ name: nm, kind: "mod", stats: "", effect: eff });
-      let m;
-      if ((m = eff.match(/([+-]?\d+)\s*Ballistic Armor/i))) statMods.ballistic += toInt(m[1]);
-      if ((m = eff.match(/([+-]?\d+)\s*Impact Armor/i))) statMods.impact += toInt(m[1]);
-      if ((m = eff.match(/([+-]?\d+)\s*(?:Base )?Hardening/i))) statMods.hardening += toInt(m[1]);
-      continue;
-    }
-    items.push({ name: nm, kind: "unknown", stats: "", effect: "" });
+  const statMods = { ballistic: 0, impact: 0, hardening: 0 };
+  // Weapons first, each with its attached mods and (if an ammo-doubler is fitted)
+  // doubled ammo.
+  weapons.forEach((wn, wi) => {
+    const wr = findWeapon(wn) || {};
+    const doubles = weaponMods[wi].some(x => modDoublesAmmo(x.mr));
+    const bits = [];
+    if (wr.Damage) bits.push(`DMG ${wr.Damage}`);
+    if (wr.Pen && wr.Pen !== "N/A") bits.push(`Pen ${wr.Pen}`);
+    if (wr.Ammo) bits.push(`Ammo ${doubles ? scaleAmmo(wr.Ammo, 2) : wr.Ammo}${doubles ? " (×2)" : ""}`);
+    const modBits = weaponMods[wi].map(x =>
+      x.nm + ((x.mr && (x.mr.ModeEffect || x.mr.Effect)) ? ` (${x.mr.ModeEffect || x.mr.Effect})` : ""));
+    items.push({ name: wn, kind: "weapon", stats: bits.join(", "),
+      effect: wr.Effect || wr.ModeEffect || "", mods: modBits });
+  });
+  // Unit-scoped mods, tallying the ones that change unit stats.
+  for (const { nm, mr } of unitMods) {
+    const eff = mr ? (mr.ModeEffect || mr.Effect || "") : "";
+    items.push({ name: nm, kind: "mod", stats: "", effect: eff, mods: [] });
+    let m;
+    if ((m = eff.match(/([+-]?\d+)\s*Ballistic Armor/i))) statMods.ballistic += toInt(m[1]);
+    if ((m = eff.match(/([+-]?\d+)\s*Impact Armor/i))) statMods.impact += toInt(m[1]);
+    if ((m = eff.match(/([+-]?\d+)\s*(?:Base )?Hardening/i))) statMods.hardening += toInt(m[1]);
   }
   return { items, statMods };
 }
@@ -3233,7 +3259,10 @@ function shRigging(body) {
             it.kind === "mod" ? el("span", { class: "sh-tag", style: "margin-left:6px" }, "mod") : null,
             it.stats ? ` — ${it.stats}` : "",
             it.effect ? el("span", { style: "color:var(--manon)" },
-              `${it.stats ? " · " : " — "}${it.effect}`) : null)))
+              `${it.stats ? " · " : " — "}${it.effect}`) : null,
+            ...((it.mods && it.mods.length)
+              ? [el("div", { style: "margin-left:14px;color:var(--manon)" }, "↳ " + it.mods.join(" · "))]
+              : []))))
         : "—";
       t.append(el("tr", {},
         el("td", {}, el("b", {}, u.label || u.name), u.label ? el("div", { class: "sub" }, u.name) : null),
@@ -3258,7 +3287,6 @@ function shRigging(body) {
         style: "font-weight:600;width:180px",
         onchange: e => { u.label = e.target.value.trim(); playChanged(); } });
 
-      // fitted weapons with stats (extended-magazine applied from unit mods)
       const findWeapon = wn => {
         for (const [tk, nc] of cfg.weaponTables) {
           const wr = DATA.tables[tk].find(x => x[nc] === wn);
@@ -3266,25 +3294,67 @@ function shRigging(body) {
         }
         return null;
       };
-      const weaponRows = u.weapons.map((wn, wi) => {
-        const wr = findWeapon(wn) || {};
-        const ammo = RULES.applyExtendedMagazine(wr.Ammo, u.mods);
-        const effect = wr.Effect || wr.ModeEffect || "";
-        return el("div", { class: "sub" },
-          el("span", { class: "chip", style: "cursor:pointer", title: "Remove weapon",
-            onclick: () => { u.weapons.splice(wi, 1); playChangedRecalc(); } }, wn + " ✕"),
-          ` DMG ${wr.Damage || "—"} · Acc ${wr.Accuracy || 0}`
-          + (ammo ? ` · Ammo ${ammo}` : "") + (wr.Pen ? ` · Pen ${wr.Pen}` : ""),
-          effect ? el("div", { class: "sub", style: "margin:2px 0 0 4px;color:var(--manon)" }, effect) : null);
+      const [mtk, mnc] = cfg.modTable;
+      const findMod = mn => DATA.tables[mtk].find(x => x[mnc] === mn) || null;
+      const weaponScopedMods = DATA.tables[mtk].filter(x => x.Target === "weapon");
+      const unitScopedMods = DATA.tables[mtk].filter(x => x.Target !== "weapon");
+      const buyMod = (name, targetLabel) => {
+        const mr = findMod(name) || {};
+        const cost = Math.round((+mr.Cost || 0) * mult);
+        if (CHAR.play.cash < cost
+            && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return false;
+        logCash(`Fitted ${name} to ${targetLabel}`, -cost);
+        return true;
+      };
+      // Classify existing mods: those attached to a weapon vs unit-scoped (which
+      // also catches legacy untargeted mods so they stay removable).
+      const weaponModIdx = u.weapons.map(() => []);
+      const unitModIdx = [];
+      u.mods.forEach((m, mi) => {
+        const wi = modWeaponIdx(m);
+        if (wi != null && wi >= 0 && wi < u.weapons.length) weaponModIdx[wi].push(mi);
+        else unitModIdx.push(mi);
       });
 
-      const [mtk0, mnc0] = cfg.modTable;
-      const modRows = u.mods.map((mn, mi) => {
-        const mr = DATA.tables[mtk0].find(x => x[mnc0] === mn) || {};
+      // fitted weapons — each shows its stats, effect, its attached weapon-mods
+      // (with removal), doubled ammo when an ammo-mod is attached, and a picker
+      // for weapon-scoped mods bound to that specific weapon.
+      const weaponRows = u.weapons.map((wn, wi) => {
+        const wr = findWeapon(wn) || {};
+        const doubles = weaponModIdx[wi].some(mi => modDoublesAmmo(findMod(modName(u.mods[mi]))));
+        const ammo = wr.Ammo ? (doubles ? `${scaleAmmo(wr.Ammo, 2)} (×2)` : wr.Ammo) : "";
+        const effect = wr.Effect || wr.ModeEffect || "";
+        const modChips = weaponModIdx[wi].map(mi => {
+          const nm = modName(u.mods[mi]);
+          return el("span", { class: "chip", style: "margin:2px 4px 0 0;cursor:pointer",
+            title: "Remove mod", onclick: () => { u.mods.splice(mi, 1); playChangedRecalc(); } },
+            nm + " ✕");
+        });
+        const addWeaponMod = weaponScopedMods.length ? fittedCategoryEditor({
+          id: `rig-wm-${key}-${wi}`, items: [],
+          groups: modGroups(weaponScopedMods, mnc, null, "Weapon mods"),
+          onAdd: name => { if (buyMod(name, wn)) u.mods.push({ name, weapon: wi }); },
+          onRemove: () => {}, rerender: renderSheet, afterAdd: () => playChangedRecalc(),
+        }) : null;
+        return el("div", { class: "sub", style: "margin:4px 0" },
+          el("span", { class: "chip", style: "cursor:pointer", title: "Remove weapon",
+            onclick: () => removeUnitWeapon(u, wi) }, wn + " ✕"),
+          ` DMG ${wr.Damage || "—"} · Acc ${wr.Accuracy || 0}`
+          + (ammo ? ` · Ammo ${ammo}` : "") + (wr.Pen ? ` · Pen ${wr.Pen}` : ""),
+          effect ? el("div", { class: "sub", style: "margin:2px 0 0 4px;color:var(--manon)" }, effect) : null,
+          modChips.length ? el("div", { style: "margin:2px 0 0 4px" }, ...modChips) : null,
+          addWeaponMod ? el("div", { class: "sub", style: "margin:2px 0 0 4px" },
+            el("b", {}, "Weapon mod "), addWeaponMod) : null);
+      });
+
+      // unit-scoped mods (armor, hardening, …)
+      const modRows = unitModIdx.map(mi => {
+        const nm = modName(u.mods[mi]);
+        const mr = findMod(nm) || {};
         const effect = mr.Effect || mr.ModeEffect || "";
         return el("div", { class: "sub" },
           el("span", { class: "chip", style: "margin:2px 4px 0 0;cursor:pointer", title: "Remove mod",
-            onclick: () => { u.mods.splice(mi, 1); playChangedRecalc(); } }, mn + " ✕"),
+            onclick: () => { u.mods.splice(mi, 1); playChangedRecalc(); } }, nm + " ✕"),
           effect ? el("span", { style: "color:var(--manon)" }, effect) : null);
       });
 
@@ -3306,17 +3376,12 @@ function shRigging(body) {
         },
         onRemove: () => {}, rerender: renderSheet, afterAdd: () => playChangedRecalc(),
       });
-      const [mtk, mnc] = cfg.modTable;
+      // unit-level add-mod picker (unit-scoped mods only; weapon mods are added
+      // per-weapon above)
       const addMod = fittedCategoryEditor({
         id: `rig-m-${key}`, items: [],
-        groups: modGroups(DATA.tables[mtk], mnc, null, `${cfg.nameKey} Mods`),
-        onAdd: name => {
-          const mr = DATA.tables[mtk].find(x => x[mnc] === name) || {};
-          const cost = Math.round((+mr.Cost || 0) * mult);
-          if (CHAR.play.cash < cost
-              && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-          u.mods.push(name); logCash(`Fitted ${name} to ${u.label || u.name}`, -cost);
-        },
+        groups: modGroups(unitScopedMods, mnc, null, `${cfg.nameKey} Mods`),
+        onAdd: name => { if (buyMod(name, u.label || u.name)) u.mods.push(name); },
         onRemove: () => {}, rerender: renderSheet, afterAdd: () => playChangedRecalc(),
       });
 
@@ -3345,7 +3410,7 @@ function shRigging(body) {
         modRows.length ? el("div", { class: "sub" }, el("b", {}, "Mods:"), ...modRows) : null,
         el("div", { class: "sh-unit-add" },
           el("div", { class: "sub" }, el("b", {}, "Add weapon"), addWeapon),
-          el("div", { class: "sub" }, el("b", {}, "Add mod"), addMod)));
+          el("div", { class: "sub" }, el("b", {}, "Add unit mod"), addMod)));
 
       card.append(el("div", { class: "sh-unit" },
         el("div", {},

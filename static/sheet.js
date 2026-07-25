@@ -908,6 +908,39 @@ async function backToChargen() {
 }
 
 /* ------------------------------------------------ overview */
+// Drag-to-reorder a table row backed by `arr` (the row represents `item`, an
+// element of arr). Dropping onto another reorderable row of the same array moves
+// item there, persists, and re-renders. Non-reorderable rows (cyberguns, granted
+// armor) simply don't call this, so they stay put.
+let dragRowState = null;
+function enableRowReorder(tr, arr, item, onReorder) {
+  tr.setAttribute("draggable", "true");
+  tr.classList.add("sh-drag-row");
+  tr.title = "Drag to reorder";
+  tr.addEventListener("dragstart", e => {
+    dragRowState = { arr, item };
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", ""); } catch { /* some browsers require data */ }
+    tr.classList.add("dragging");
+  });
+  tr.addEventListener("dragend", () => { tr.classList.remove("dragging"); dragRowState = null; });
+  tr.addEventListener("dragover", e => {
+    if (dragRowState && dragRowState.arr === arr) { e.preventDefault(); tr.classList.add("drag-over"); }
+  });
+  tr.addEventListener("dragleave", () => tr.classList.remove("drag-over"));
+  tr.addEventListener("drop", e => {
+    tr.classList.remove("drag-over");
+    if (!dragRowState || dragRowState.arr !== arr) return;
+    e.preventDefault();
+    const from = arr.indexOf(dragRowState.item), to = arr.indexOf(item);
+    dragRowState = null;
+    if (from >= 0 && to >= 0 && from !== to) {
+      arr.splice(to, 0, arr.splice(from, 1)[0]);
+      onReorder();
+    }
+  });
+}
+
 // Cyberguns are augments with a chosen gun; surface them as read-only weapons
 // on the Overview loadout and the Gear weapons list.
 function equippedCyberguns() {
@@ -1073,14 +1106,16 @@ function shOverview(body) {
         });
         if (w.upgr1 && r.Upgr1_Eff) modLines.push(`Upgrade 1 — ${r.Upgr1_Eff}`);
         if (w.upgr2 && r.Upgr2_Eff) modLines.push(`Upgrade 2 — ${r.Upgr2_Eff}`);
-        wt.append(el("tr", {},
+        const wtr = el("tr", {},
           el("td", {}, el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : ""))),
           el("td", { class: "sub" },
             `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0} · ZR ${r.ZR || 0}`
             + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
           el("td", { class: "sub" }, modLines.length
             ? el("div", {}, ...modLines.map(l => el("div", {}, l)))
-            : "—")));
+            : "—"));
+        enableRowReorder(wtr, CHAR.weapons, w, () => playChanged());
+        wt.append(wtr);
       });
       cyberguns.forEach(cg => {
         const g = cg.gun;
@@ -1098,10 +1133,12 @@ function shOverview(body) {
       at.append(el("tr", {}, el("th", {}, "Armor"), el("th", {}, "B / I"), el("th", {}, "Notes")));
       wornArmor.forEach(a => {
         const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
-        at.append(el("tr", {},
+        const atr = el("tr", {},
           el("td", {}, el("b", {}, a.name)),
           el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
-          el("td", { class: "sub" }, (a.extras || []).length ? a.extras.join(", ") : "—")));
+          el("td", { class: "sub" }, (a.extras || []).length ? a.extras.join(", ") : "—"));
+        enableRowReorder(atr, CHAR.armor, a, () => playChanged());
+        at.append(atr);
       });
       // Armor granted by cyber/bioware augments, innate heritage, or amps.
       armorSources.forEach(s => {

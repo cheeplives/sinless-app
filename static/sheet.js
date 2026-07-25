@@ -2574,6 +2574,22 @@ function shMagic(body) {
   const type = CALC.magic.type;
   const play = CHAR.play;
 
+  // House rule: gear/weapon ZR is a spellcasting dice penalty (−1d per full
+  // point), not a ZP cost. Surface the current penalty at the top of the tab.
+  if (RULES.houseRule("zr") === "houserule" && type !== "Hedge") {
+    const gearZr = CALC.zoetics.gear_zr || 0;
+    const pen = Math.floor(gearZr);
+    body.append(pen > 0
+      ? el("div", { class: "sh-callout warn" },
+          el("b", {}, `ZR Casting Penalty: −${pen}d `),
+          `on all spellcasting rolls (Channeling, Conjuring, Sorcery). `
+          + `${gearZr} ${gearZr === 1 ? "point" : "points"} of gear/weapon ZR — −1d per full point.`)
+      : el("div", { class: "sh-callout info" },
+          el("b", {}, "ZR Casting Penalty: none. "),
+          `Each full point of gear/weapon ZR is −1d on spellcasting rolls `
+          + `(Channeling, Conjuring, Sorcery). Currently ${gearZr} ZR.`));
+  }
+
   const zp = CALC.zoetics.zp;
   const allSpells = [
     ...CHAR.magic.spells.map(s => ({ ...s, inPlay: false })),

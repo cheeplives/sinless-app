@@ -429,6 +429,23 @@ function chipValue(key) {
 }
 const chip = (key, magic) => el("span", Object.assign({ class: "chip", "data-chip": key }, magic ? { "data-magic": "1" } : {}), "\u2026");
 
+/* ZR house rule: each full point of gear/weapon ZR is \u22121d on spellcasting rolls
+ * (Channeling, Conjuring, Sorcery). Renders the current penalty as a note for
+ * the Magic tab \u2014 an alert when active, a plain reminder when not yet triggered. */
+function zrCastingPenaltyNote() {
+  const gearZr = CALC.zoetics.gear_zr || 0;
+  const pen = Math.floor(gearZr);
+  return pen > 0
+    ? el("div", { class: "alert warn" },
+        el("b", {}, `ZR Casting Penalty: \u2212${pen}d `),
+        `on all spellcasting rolls (Channeling, Conjuring, Sorcery). `
+        + `${gearZr} ${gearZr === 1 ? "point" : "points"} of gear/weapon ZR \u2014 \u22121d per full point.`)
+    : el("p", { class: "hint" },
+        el("b", {}, "ZR Casting Penalty: none. "),
+        `Each full point of gear/weapon ZR is \u22121d on spellcasting rolls `
+        + `(Channeling, Conjuring, Sorcery). Currently ${gearZr} ZR.`);
+}
+
 /* ------------------------------------------------ tabs */
 const TABS = [
   ["priorities", "Priorities"],
@@ -1017,6 +1034,11 @@ function tabMagic(p) {
   p.append(el("h2", {}, `Magic \u2014 ${type} `,
     (type === "Mage" || type === "Archmage") ? chip("force", true) : null,
     (type === "Amp" || type === "Archmage") ? chip("zp", true) : null));
+
+  // House rule: gear/weapon ZR imposes a spellcasting dice penalty (\u22121d per full
+  // point) instead of reducing ZP. Surface it here on the Magic tab.
+  if (RULES.houseRule("zr") === "houserule" && type !== "Hedge")
+    p.append(zrCastingPenaltyNote());
 
   if (type === "Hedge") {
     p.append(el("p", { class: "hint" },

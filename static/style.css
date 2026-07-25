@@ -642,6 +642,8 @@ label.opt input{margin-top:3px}
 .sh-callout{border-left:3px solid var(--bad);background:rgba(255,93,108,.08);padding:8px 12px;
   margin-bottom:12px;font-size:13px;border-radius:0 6px 6px 0}
 .sh-callout.lifestyle{border-color:var(--manon-dim);background:rgba(157,123,255,.07);margin-top:10px}
+.sh-callout.warn{border-color:var(--amber);background:var(--alert-warn-bg)}
+.sh-callout.info{border-color:var(--line);background:transparent;color:var(--dim)}
 .sh-ls-effect{font-size:11px;color:var(--dim);max-width:340px;margin-top:3px}
 .sh-inline-adjust{display:inline-flex;align-items:center;gap:6px}
 .sh-cash-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}

@@ -1057,7 +1057,8 @@ function shOverview(body) {
   const equippedWeapons = CHAR.weapons.filter(w => w.equipped !== false);
   const cyberguns = equippedCyberguns();
   const wornArmor = CHAR.armor.filter(a => a.active !== false);
-  if (equippedWeapons.length || cyberguns.length || wornArmor.length) {
+  if (equippedWeapons.length || cyberguns.length || wornArmor.length
+      || (CALC.combat.armor_sources || []).length) {
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
@@ -1091,15 +1092,23 @@ function shOverview(body) {
       });
       loadout.append(wt);
     }
-    if (wornArmor.length) {
+    const armorSources = CALC.combat.armor_sources || [];
+    if (wornArmor.length || armorSources.length) {
       const at = el("table");
-      at.append(el("tr", {}, el("th", {}, "Worn armor"), el("th", {}, "B / I"), el("th", {}, "Extras")));
+      at.append(el("tr", {}, el("th", {}, "Armor"), el("th", {}, "B / I"), el("th", {}, "Notes")));
       wornArmor.forEach(a => {
         const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
         at.append(el("tr", {},
           el("td", {}, el("b", {}, a.name)),
           el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
           el("td", { class: "sub" }, (a.extras || []).length ? a.extras.join(", ") : "—")));
+      });
+      // Armor granted by cyber/bioware augments, innate heritage, or amps.
+      armorSources.forEach(s => {
+        at.append(el("tr", {},
+          el("td", {}, el("b", {}, s.name), el("span", { class: "sh-tag" }, "granted")),
+          el("td", { class: "num" }, `${s.b} / ${s.i}`),
+          el("td", { class: "sub" }, s.unstrippable ? "unstrippable" : "—")));
       });
       loadout.append(el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
         el("span", { class: "sub" }, `Total armor: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I`)), at);

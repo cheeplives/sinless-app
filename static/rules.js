@@ -1779,6 +1779,21 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
                          + Math.max(1, Math.floor(finalAttributes.Willpower / 2)) + conditionBonus);
 
   const hasChelonian = amp.powers_taken.has("Aspect of the Chelonian");
+  // Itemised non-worn armor (cyber/bioware augments, innate heritage, amp) so
+  // the Overview loadout can list each source, not just the combined total.
+  const armorSources = [];
+  for (const [row, count] of augments.rows) {
+    const b = toInt(asNumber(row["Ballistic Armor"])) * count;
+    const i = toInt(asNumber(row["Impact Armor"])) * count;
+    if (b || i) armorSources.push({ name: row.Name, b, i,
+      unstrippable: !!toInt(asNumber(row.ImpArmMin)) });
+  }
+  if (heritage.ballistic_armor || heritage.impact_armor)
+    armorSources.push({ name: "Innate (heritage)", b: heritage.ballistic_armor,
+      i: heritage.impact_armor, unstrippable: true });
+  if (hasChelonian)
+    armorSources.push({ name: "Aspect of the Chelonian", b: CHELONIAN_BALLISTIC_ARMOR,
+      i: CHELONIAN_IMPACT_ARMOR });
   const simpleActions = amp.powers_taken.has("Adrenaline Boost")
     ? ADRENALINE_BOOST_SIMPLE_ACTIONS : DEFAULT_SIMPLE_ACTIONS;
   const meleeExploit = (augments.melee_exploit_bonus
@@ -1812,6 +1827,7 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
     impact_armor: (armorImpact + augments.impact_armor
                    + heritage.impact_armor
                    + (hasChelonian ? CHELONIAN_IMPACT_ARMOR : 0)),
+    armor_sources: armorSources,
     // Highest single ballistic source (armor doesn't stack for this cap).
     max_ballistic: Math.max(armorBallisticMax || 0, augments.ballistic_armor_max || 0,
                             heritage.ballistic_armor_max || 0,
@@ -2049,7 +2065,7 @@ function calculate(character) {
   // --- Zoetic bookkeeping ---------------------------------------------------
   const isSynthetic = character.heritage.type === "Synthetic";
   const augmentZr = isSynthetic ? 0.0 : round2(augments.zoetic_rating);
-  const gearZr = gearZoeticRating(character, data);
+  const gearZr = round2(gearZoeticRating(character, data));
   const zrTotal = round2(augmentZr + gearZr);
   const hasAmpPowers = amp.powers_taken.size > 0;
   const houseZr = houseRule("zr") === "houserule";

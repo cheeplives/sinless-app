@@ -301,6 +301,10 @@ function refreshLoadList() {
 }
 
 function budgetRow(label, remaining, budget) {
+  // Round away floating-point dust from summed fractional budgets (e.g. Body
+  // Index 14 − 15.8 = −1.8000000000000007).
+  const round2 = n => (typeof n === "number" ? Math.round(n * 100) / 100 : n);
+  remaining = round2(remaining); budget = round2(budget);
   const cls = remaining < 0 ? "neg" : remaining === 0 ? "zero" : "";
   return el("div", { class: "budget" },
     el("span", { class: "lbl" }, label),
@@ -341,7 +345,9 @@ function renderRail() {
   if (m.type === "Mage" || m.type === "Archmage")
     rb.append(budgetRow("Starting Force", m.force_remaining, m.start_force));
   if (m.type === "Amp" || m.type === "Archmage")
-    rb.append(budgetRow("Amp ZP", m.amp_zp_remaining, m.amp_zp_budget));
+    rb.append(budgetRow("Amp ZP",
+      RULES.houseRule("zr") === "houserule" ? CALC.zoetics.zp_remaining : m.amp_zp_remaining,
+      m.amp_zp_budget));
   if (m.type === "Speaker") {   // Archmages buy Speaker options with Force instead
     rb.append(budgetRow("Infusion pts", m.infusion_pts.remaining, m.infusion_pts.budget));
     rb.append(budgetRow("Relationship pts", m.relationship_pts.remaining, m.relationship_pts.budget));
@@ -410,7 +416,11 @@ function chipValue(key) {
     case "know": return { text: `${CALC.knowledge.remaining} / ${CALC.knowledge.budget} pts left`, cls: CALC.knowledge.remaining < 0 ? "neg" : "" };
     case "etq": return { text: `${CALC.etiquette_points.remaining} / ${CALC.etiquette_points.budget} pts left`, cls: CALC.etiquette_points.remaining < 0 ? "neg" : "" };
     case "force": return { text: `${m.force_remaining} / ${m.start_force} Force left`, cls: m.force_remaining < 0 ? "neg" : "" };
-    case "zp": return { text: `${m.amp_zp_remaining} / ${m.amp_zp_budget} ZP left`, cls: m.amp_zp_remaining < 0 ? "neg" : "" };
+    case "zp": {
+      // House rule: ZP left is the current total (base − Cyber − Amp), not just base − Amp.
+      const zpLeft = RULES.houseRule("zr") === "houserule" ? CALC.zoetics.zp_remaining : m.amp_zp_remaining;
+      return { text: `${zpLeft} / ${m.amp_zp_budget} ZP left`, cls: zpLeft < 0 ? "neg" : "" };
+    }
     case "inf": return { text: `${m.infusion_pts.remaining} / ${m.infusion_pts.budget} left`, cls: m.infusion_pts.remaining < 0 ? "neg" : "" };
     case "rel": return { text: `${m.relationship_pts.remaining} / ${m.relationship_pts.budget} left`, cls: m.relationship_pts.remaining < 0 ? "neg" : "" };
     case "cash": return { text: `${fmt(CALC.budget.remaining)} left`, cls: CALC.budget.remaining < 0 ? "neg" : "" };
@@ -490,7 +500,8 @@ function unspentSummary() {
   add("Etiquette points", CALC.etiquette_points.remaining);
   const m = CALC.magic;
   if (m.type === "Mage" || m.type === "Archmage") add("Starting Force", m.force_remaining);
-  if (m.type === "Amp" || m.type === "Archmage") add("Amp ZP", m.amp_zp_remaining);
+  if (m.type === "Amp" || m.type === "Archmage")
+    add("Amp ZP", RULES.houseRule("zr") === "houserule" ? CALC.zoetics.zp_remaining : m.amp_zp_remaining);
   if (m.type === "Speaker") {   // Archmage speaker spends already count against Force
     add("Infusion points", m.infusion_pts.remaining);
     add("Relationship points", m.relationship_pts.remaining);
@@ -1069,7 +1080,7 @@ function tabMagic(p) {
   }
 
   if (type === "Amp" || type === "Archmage") {
-    p.append(el("h2", {}, "Amp Powers ", chip("zp", true)));
+    p.append(el("h2", {}, "Amp Powers"));
     p.append(el("p", { class: "hint" },
       type === "Amp"
         ? "Amps pay half the listed ZP cost. Attribute Boost/Increase and Expertise need a target and can be taken multiple times."

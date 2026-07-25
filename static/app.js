@@ -985,6 +985,13 @@ function tabStats(p) {
   if (CALC.martial_art.style) {
     CALC.martial_art.levels.forEach(l =>
       mcard.append(el("div", { class: "stat-line" }, `Level ${l.Level}`, el("b", {}, l.Effect))));
+    const applied = CALC.martial_art.mods.applied;
+    if (applied.length)
+      mcard.append(el("div", { class: "stat-line" },
+        "Applied to stats", el("b", {}, applied.join(" · "))));
+    else if (!CALC.martial_art.levels.length)
+      mcard.append(el("p", { class: "hint" },
+        "Raise Martial Arts to unlock this style's level effects."));
   }
   p.append(mcard);
 
@@ -1253,7 +1260,7 @@ function tabAugments(p) {
       const need = limbUnmet(r);
       const bioBanned = syntheticNoBio && r.Type === "Bioware";
       const banned = bioBanned ? "Synthetics cannot install Bioware" : avail.bannedReason(r.Name);
-      const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final);
+      const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
       // Cybergun: one per cyberarm, so it stays visible after the first install
       // and disables at capacity rather than hiding.
       const isCybergun = r.Name === "Cybergun Installation";
@@ -1319,7 +1326,7 @@ function tabAugments(p) {
         gunSel.value = it.gunType || "";
       }
       // Cyber melee implants show their computed ½ STR + bonus damage number.
-      const implantDmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final);
+      const implantDmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
       const effectText = gun
         ? [r.Effect || "", `${gun.Type}: Acc ${gun.Acc} · DMG ${gun.Dmg} · Ammo ${gun.Ammo} · ${gun.Modes} · Pen ${gun.Pen} · Rarity ${gun.Rarity}`].filter(Boolean).join(" · ")
         : [r.Effect || "", implantDmg !== "" ? `DMG ${implantDmg}` : ""].filter(Boolean).join(" · ");

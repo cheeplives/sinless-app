@@ -618,8 +618,11 @@ function augmentLimbRequirement(row) {
  * meleeDamage adds ½ STR by default, or the row's "STR Mult" (0 = fixed damage,
  * e.g. the Eye Laser). Returns "" for augments with no built-in attack.
  */
-function augmentMeleeDamage(row, strength) {
+function augmentMeleeDamage(row, strength, martialMods) {
   if (!row || row.Damage === undefined || row.Damage === "") return "";
+  // Way of the Tank L6 overrides spur damage to full STR + N (e.g. "6+STR").
+  if (martialMods && martialMods.spurs_str_bonus != null && /spurs?/i.test(row.Name || ""))
+    return String(strength + martialMods.spurs_str_bonus);
   return meleeDamage(row, strength);
 }
 
@@ -1889,23 +1892,58 @@ function derivePoolNotes(heritage, augments, amp, martialArt) {
   if (amp.powers_taken.has("Perfect Situational Awareness")) {
     notes.Brawn.push("+3d dodge/soak/resistance (Perfect Situational Awareness)");
   }
-  for (const level of martialArt.levels) {
-    const effect = level.Effect || "";
-    if (effect.toLowerCase().includes("soak")) {
-      notes.Brawn.push(`${martialArt.style} L${level.Level}: ${effect}`);
-    }
-  }
+  // Escalating soak tiers replace each other, so show the single effective bonus
+  // (computed in martialArtStatMods) rather than one note per unlocked tier.
+  if (martialArt.mods && martialArt.mods.soak_bonus)
+    notes.Brawn.push(`+${martialArt.mods.soak_bonus}d Soak (${martialArt.style})`);
   return notes;
+}
+
+/**
+ * Parse the cumulative unlocked levels of a martial art for the effects that map
+ * to a tracked numeric stat, so they can be applied (not just shown as text):
+ *   - Dodge dice  (Weirding Way +1d→+2d)  — escalating tiers *replace*, take best
+ *   - Soak dice   (Shibumi +1d→+6d)       — escalating tiers *replace*, take best
+ *   - Movement    (Weirding Way +2m base)  — additive metres
+ *   - Recoil      (Gun-Kata "Ignore Recoil") — flag
+ *   - Unarmed dmg (Shibumi "Unarmed deals Str+N") — surfaced as a note
+ *   - Spurs dmg   (Way of the Tank "Spurs do N+STR") — overrides spur damage
+ * Conditional dodge ("+4d vs 1 Tgt") is left as flavour text, not a flat bonus.
+ */
+function martialArtStatMods(levels) {
+  const mods = { dodge_bonus: 0, soak_bonus: 0, move_bonus: 0,
+    recoil_ignored: false, unarmed_damage: "", spurs_str_bonus: null, applied: [] };
+  for (const lvl of levels) {
+    const eff = lvl.Effect || "";
+    let m = eff.match(/([+-]?\d+)\s*d\b[^.]*?\bdodge\b/i);
+    if (m && !/\b(vs|if)\b/i.test(eff)) mods.dodge_bonus = Math.max(mods.dodge_bonus, toInt(m[1]));
+    m = eff.match(/([+-]?\d+)\s*d\b[^.]*?\bsoak\b/i);
+    if (m) mods.soak_bonus = Math.max(mods.soak_bonus, toInt(m[1]));
+    m = eff.match(/([+-]?\d+)\s*m\b[^.]*?mov/i);
+    if (m) mods.move_bonus += toInt(m[1]);
+    if (/ignore\s+recoil/i.test(eff)) mods.recoil_ignored = true;
+    m = eff.match(/unarmed[^.]*?str\s*\+\s*(\d+)/i);
+    if (m) mods.unarmed_damage = `STR+${m[1]}`;
+    m = eff.match(/spurs?[^.]*?(\d+)\s*\+\s*str/i);
+    if (m) mods.spurs_str_bonus = toInt(m[1]);
+  }
+  if (mods.dodge_bonus) mods.applied.push(`+${mods.dodge_bonus}d Dodge`);
+  if (mods.soak_bonus) mods.applied.push(`+${mods.soak_bonus}d Soak`);
+  if (mods.move_bonus) mods.applied.push(`+${mods.move_bonus}m Movement`);
+  if (mods.recoil_ignored) mods.applied.push("Recoil ignored");
+  if (mods.unarmed_damage) mods.applied.push(`Unarmed ${mods.unarmed_damage} physical`);
+  if (mods.spurs_str_bonus != null) mods.applied.push(`Spurs STR+${mods.spurs_str_bonus}`);
+  return mods;
 }
 
 function resolveMartialArt(character, data, skills) {
   const style = character.martial_art;
-  if (!style) return { style: "", levels: [] };
+  if (!style) return { style: "", levels: [], rank: 0, mods: martialArtStatMods([]) };
   const rank = Math.max(0, Math.min(SKILL_RANK_CAP,
     (skills["Martial Arts"] || { points: 0 }).points));
   const levels = data.martial_arts.filter(row =>
     row.Style === style && toInt(asNumber(row.Level)) <= rank);
-  return { style, levels };
+  return { style, levels, rank, mods: martialArtStatMods(levels) };
 }
 
 // ============================================================== play mode (post-finalize)
@@ -2134,6 +2172,15 @@ function calculate(character) {
   for (const [k, v] of Object.entries(combat)) {
     if (k !== "physical" && k !== "stun") combatOut[k] = v;
   }
+
+  // Apply the martial art's stat modifiers (gated by Martial Arts rank via the
+  // cumulative levels resolved above) on top of heritage/augment bonuses.
+  const maMods = martialArt.mods;
+  combatOut.dodge_bonus += maMods.dodge_bonus;
+  combatOut.soak_bonus += maMods.soak_bonus;
+  combatOut.move += maMods.move_bonus;
+  if (maMods.recoil_ignored) combatOut.recoil_ignored = 1;
+  combatOut.martial_notes = maMods.applied;
 
   // Some sources zero out condition-track wound penalties (Pain Nullifier
   // augment, the Shibumi martial art, …). Detect data-driven: any effect text

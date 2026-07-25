@@ -1054,7 +1054,10 @@ function shOverview(body) {
     statLine("Armor B / I", `${c.ballistic_armor} / ${c.impact_armor}`),
     statLine("Max B / Min I", `${c.max_ballistic} / ${c.min_impact}`),
     statLine("Simple actions", String(c.simple_actions)),
-    statLine("Recoil capacity", String(c.recoil_capacity)),
+    statLine("Recoil capacity",
+      c.recoil_ignored ? `${c.recoil_capacity} · recoil ignored` : String(c.recoil_capacity)),
+    c.martial_notes && c.martial_notes.length
+      ? statLine("Martial art", c.martial_notes.join(" · ")) : null,
     c.melee_exploit ? statLine("Melee exploit", `+${c.melee_exploit}`) : null,
     c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`) : null,
     c.soak_bonus ? statLine("Soak bonus", `+${c.soak_bonus}`) : null,
@@ -1383,6 +1386,10 @@ function shSkills(body) {
   maCard.append(el("div", { class: "add-row" }, el("span", { class: "sub" }, "Style"), maSel));
   if (CALC.martial_art.style) {
     CALC.martial_art.levels.forEach(l => maCard.append(statLine(`Level ${l.Level}`, l.Effect)));
+    const applied = CALC.martial_art.mods.applied;
+    maCard.append(applied.length
+      ? statLine("Applied to stats", applied.join(" · "))
+      : el("p", { class: "hint" }, "Raise Martial Arts to unlock this style's level effects."));
   } else {
     maCard.append(el("p", { class: "hint" }, maPts > 0
       ? "Pick a style to see its level effects."
@@ -2331,7 +2338,7 @@ function shAugments(body) {
     // Cybergun shows its chosen gun's stats; melee implants show computed damage.
     const gun = a.name === "Cybergun Installation" && a.gunType
       ? (DATA.tables.cyberguns || []).find(g => g.Type === a.gunType) : null;
-    const implantDmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final);
+    const implantDmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
     const effectText = gun
       ? [r.Effect || "", `${gun.Type}: Acc ${gun.Acc} · DMG ${gun.Dmg} · Ammo ${gun.Ammo} · ${gun.Modes} · Pen ${gun.Pen} · Rarity ${gun.Rarity}`].filter(Boolean).join(" · ")
       : [r.Effect || "", implantDmg !== "" ? `DMG ${implantDmg}` : ""].filter(Boolean).join(" · ");
@@ -2414,7 +2421,7 @@ function shAugments(body) {
         const bioBanned = syntheticNoBio && r.Type === "Bioware";
         const banned = bioBanned ? "Synthetics cannot install Bioware" : augAvail.bannedReason(r.Name);
         const need = buyLimbNeed(r);
-        const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final);
+        const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
         const isCybergun = r.Name === "Cybergun Installation";
         let disabled = !!need;
         let reason = banned || (need ? `Requires ${need} installed` : "");
@@ -3436,10 +3443,13 @@ function buildMarkdown() {
     `**Move** ${c.move}m${moveSpecial() ? ` (${moveSpecial()})` : ""}${altMoves ? ` [${altMoves}]` : ""}`,
     `**Init** ${initEx.dice}d+${initEx.bonus}`,
     `**Actions** ${c.simple_actions}`,
-    `**Recoil** ${c.recoil_capacity}`,
+    `**Recoil** ${c.recoil_capacity}${c.recoil_ignored ? " (ignored)" : ""}`,
     c.dodge_bonus ? `**Dodge** +${c.dodge_bonus}` : null,
+    c.soak_bonus ? `**Soak** +${c.soak_bonus}d` : null,
     c.physical_damage_reduction ? `**Soak** −${c.physical_damage_reduction}` : null,
   ].filter(Boolean).join(" · "));
+  if (CALC.martial_art.style && (c.martial_notes || []).length)
+    L.push(`**${CALC.martial_art.style}**: ${c.martial_notes.join(" · ")}`);
   L.push("");
   const notes = dossierNotes();
   if (notes.length) { for (const note of notes) L.push(`> ⚠ ${note}`); L.push(""); }
@@ -3516,7 +3526,7 @@ function buildMarkdown() {
     L.push("");
     allAugments.forEach(a => {
       const r = DATA.tables.augments.find(x => x.Name === a.name) || {};
-      const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final);
+      const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
       const gun = (a.name === "Cybergun Installation" && a.gunType) ? ` — ${a.gunType}` : "";
       L.push(`- ${a.name}${(a.count || 1) > 1 ? ` ×${a.count}` : ""}${gun}${dmg !== "" ? ` — DMG ${dmg}` : ""}`);
     });

@@ -3359,7 +3359,11 @@ function buildMarkdown() {
   L.push("");
   L.push(`**Physical:** ${CALC.condition.physical} boxes · **Stun:** ${CALC.condition.stun} boxes`);
   const altMoves = (c.move_modes || []).map(m => `${m.mode} ${m.meters}m`).join(", ");
-  L.push(`**Move:** ${c.move} m${moveSpecial() ? " (" + moveSpecial() + ")" : ""}${altMoves ? ` · **Alt move:** ${altMoves}` : ""} · **Armor:** ${c.ballistic_armor}B / ${c.impact_armor}I · **Simple actions:** ${c.simple_actions}`);
+  L.push(`**Move:** ${c.move} m${moveSpecial() ? " (" + moveSpecial() + ")" : ""}${altMoves ? ` · **Alt move:** ${altMoves}` : ""} · **Armor:** ${c.ballistic_armor}B / ${c.impact_armor}I`);
+  const initEx = sheetInitiative();
+  L.push(`**Initiative:** ${initEx.dice}d+${initEx.bonus} · **Simple actions:** ${c.simple_actions} · **Recoil capacity:** ${c.recoil_capacity}`
+    + (c.dodge_bonus ? ` · **Dodge bonus:** +${c.dodge_bonus}` : "")
+    + (c.physical_damage_reduction ? ` · **Damage soak:** −${c.physical_damage_reduction} phys` : ""));
   L.push("");
   L.push("*Wound rule: every 3 boxes marked on either track = −1 die on tasks, cumulative. Biotech can remove these penalties during combat.*");
   L.push("");
@@ -3373,6 +3377,14 @@ function buildMarkdown() {
     if (!trained.length) continue;
     L.push(`**${pool} (${CALC.pools[pool]}d)**: `
       + trained.map(([n]) => `${n} ${CALC.skills[n].final}`).join(" · "));
+    L.push("");
+  }
+  const skillNoteLines = [];
+  for (const [n, s] of Object.entries(CALC.skills))
+    if (s.notes && s.notes.length) skillNoteLines.push(`- **${n}** — ${s.notes.join("; ")}`);
+  if (skillNoteLines.length) {
+    L.push("*Situational skill dice:*");
+    skillNoteLines.forEach(line => L.push(line));
     L.push("");
   }
   const etqList = Object.entries(CHAR.etiquettes || {}).filter(([, v]) => v > 0);
@@ -3424,18 +3436,39 @@ function buildMarkdown() {
   if (allAugments.length) {
     L.push("## Augments");
     L.push("");
-    allAugments.forEach(a => L.push(`- ${a.name}${(a.count || 1) > 1 ? ` ×${a.count}` : ""}`));
+    allAugments.forEach(a => {
+      const r = DATA.tables.augments.find(x => x.Name === a.name) || {};
+      const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final);
+      const gun = (a.name === "Cybergun Installation" && a.gunType) ? ` — ${a.gunType}` : "";
+      L.push(`- ${a.name}${(a.count || 1) > 1 ? ` ×${a.count}` : ""}${gun}${dmg !== "" ? ` — DMG ${dmg}` : ""}`);
+    });
+    if (c.sense_notes && c.sense_notes.length)
+      L.push(`- *Senses & immunities:* ${c.sense_notes.map(s => s.name).join(", ")}`);
     L.push("");
   }
-  if (CHAR.weapons.length) {
+  const cyberguns = equippedCyberguns();
+  if (CHAR.weapons.length || cyberguns.length) {
     L.push("## Weapons");
     L.push("");
     CHAR.weapons.forEach(w => {
       const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
-      L.push(`- **${w.name}**${(calcRow.smart ?? w.smart) ? " (smart)" : ""} — DMG ${calcRow.Damage ?? r.Damage ?? "—"}, Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}, Pen ${r.Pen || 0}`
-        + ((w.mods || []).length ? ` (${w.mods.join(", ")})` : ""));
+      const smart = (calcRow.smart ?? w.smart) ? " (smart)" : "";
+      const isMelee = r.Type === "Melee";
+      const ammo = calcRow.Ammo ?? r.Ammo;
+      const stats = [`DMG ${calcRow.Damage ?? r.Damage ?? "—"}`,
+                     isMelee ? `Reach ${r.Reach || 0}` : `Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}`,
+                     `Pen ${r.Pen || 0}`,
+                     (!isMelee && ammo) ? `Ammo ${ammo}` : null,
+                     (!isMelee && r["Firing modes"]) ? r["Firing modes"] : null].filter(Boolean).join(" · ");
+      L.push(`- **${w.name}**${smart} — ${stats}`
+        + ((w.mods || []).length ? ` — mods: ${w.mods.join(", ")}` : ""));
     });
+    cyberguns.forEach(cg => {
+      const g = cg.gun;
+      L.push(`- **${cg.name}** (smart) — DMG ${g.Dmg} · Acc ${g.Acc} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`);
+    });
+    if (c.optics_notes && c.optics_notes.length) L.push(`- *Optics:* ${c.optics_notes.join(" · ")}`);
     L.push("");
   }
   if (CHAR.armor.length) {

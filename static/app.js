@@ -227,6 +227,47 @@ function refreshHouseRulesPanel() {
   }
 }
 
+/* Modal shown when starting a NEW character: pick its house rules up front.
+ * `initial` seeds the selects (defaults to the rules a fresh character gets).
+ * Resolves to the chosen house_rules object, or null if the user cancels. */
+function promptHouseRules(initial) {
+  return new Promise(resolve => {
+    const chosen = {};
+    for (const def of RULES.HOUSE_RULE_DEFS)
+      chosen[def.id] = (initial && initial[def.id]) || def.default;
+
+    const backdrop = el("div", { class: "mount-modal-backdrop" });
+    const done = val => { document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(val); };
+    const onKey = e => { if (e.key === "Escape") done(null); };
+
+    const rows = RULES.HOUSE_RULE_DEFS.map(def => {
+      const help = el("div", { class: "settings-help" });
+      const setHelp = v => { help.textContent = (def.options.find(o => o.value === v) || {}).help || ""; };
+      const sel = el("select", {
+        onchange: e => { chosen[def.id] = e.target.value; setHelp(e.target.value); } },
+        ...def.options.map(o => el("option", { value: o.value }, o.label)));
+      sel.value = chosen[def.id];
+      setHelp(sel.value);
+      return el("label", { class: "settings-rule" }, el("span", {}, def.label), sel, help);
+    });
+
+    const modal = el("div", { class: "card mount-modal", style: "max-width:460px" },
+      el("h3", {}, "House rules for this character"),
+      el("p", { class: "hint" },
+        "Choose the optional rules for your new character. You can change these any time in ⚙ Settings."),
+      ...rows,
+      el("div", { style: "display:flex;gap:8px;margin-top:14px" },
+        el("button", { class: "btn-add", onclick: () => done(chosen) }, "Create character"),
+        el("button", { class: "btn", onclick: () => done(null) }, "Cancel")));
+    backdrop.append(modal);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) done(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(backdrop);
+    const first = modal.querySelector("select");
+    if (first) first.focus();
+  });
+}
+
 function scheduleRecalc() {
   clearTimeout(calcTimer);
   calcTimer = setTimeout(recalc, RECALC_DEBOUNCE_MS);

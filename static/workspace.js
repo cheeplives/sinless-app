@@ -246,8 +246,16 @@ async function openCharacter(char) {
 }
 
 async function newCharacterTab() {
+  const char = RULES.defaultCharacter();
+  // Let the player pick this character's house rules before it opens. Cancelling
+  // the picker aborts creation. (Falls back to defaults if the modal is absent.)
+  if (typeof promptHouseRules === "function") {
+    const chosen = await promptHouseRules(char.house_rules);
+    if (!chosen) return;
+    char.house_rules = chosen;
+  }
   leaveTab(activeTabObj());
-  WORKSPACE.tabs.push({ char: RULES.defaultCharacter(), view: defaultView() });
+  WORKSPACE.tabs.push({ char, view: defaultView() });
   WORKSPACE.active = WORKSPACE.tabs.length - 1;
   CHAR = activeTabObj().char;
   restoreView(activeTabObj());

@@ -2306,8 +2306,7 @@ function shAugments(body) {
     const r = DATA.tables.augments.find(x => x.Name === a.name) || {};
     const isSkillsoft = a.name.startsWith("Skillsoft");
     const hasZr = !!(+r.ZR);
-    const alphaZr = hasZr
-      ? Math.max(0, Math.ceil((+r.ZR - Math.max(+r.ZR * 0.2, 0.1)) * 10) / 10) : 0;
+    const alphaZr = hasZr ? RULES.augmentEffZr(r, { alpha: true }) : 0;
     // Going alpha adds max(base cost, 1000) — mirrors rules.js effCost (min
     // applied to raw cost, then × the gear multiplier) so the play-mode cash
     // ledger stays in step with the recalculated total.

@@ -644,8 +644,11 @@ function augmentLevel(name) {
 function augmentEffZr(row, entry) {
   const base = asNumber(row.ZR);
   if (!(entry && entry.alpha && base)) return base;
+  // Alpha grade reduces ZR by 20% or 0.1, whichever is larger. round2 clears
+  // float dust before the ceil so e.g. 0.4−0.1 = 0.30000000000000004 rounds to
+  // 0.3 rather than getting ceil'd up to 0.4.
   const reduction = Math.max(base * 0.2, 0.1);
-  return Math.max(0, Math.ceil((base - reduction) * 10) / 10);
+  return Math.max(0, Math.ceil(round2(base - reduction) * 10) / 10);
 }
 function augmentEffCost(row, entry) {
   const base = asNumber(row.Cost);

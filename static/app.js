@@ -1393,8 +1393,7 @@ function tabAugments(p) {
         : [r.Effect || "", implantDmg !== "" ? `DMG ${implantDmg}` : ""].filter(Boolean).join(" · ");
       // Alpha grade: only augments that carry ZR can go bleeding-edge.
       const hasZr = !!(+r.ZR);
-      const alphaZr = hasZr
-        ? Math.max(0, Math.ceil((+r.ZR - Math.max(+r.ZR * 0.2, 0.1)) * 10) / 10) : 0;
+      const alphaZr = hasZr ? RULES.augmentEffZr(r, { alpha: true }) : 0;
       const costOf = () => RULES.augmentEffCost(r, it) * (it.count || 1);
       const costCell = el("td", { class: "num" }, fmt(costOf()));
       const zrCell = el("td", { class: "num" },

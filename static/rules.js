@@ -168,7 +168,7 @@ const HOUSE_RULE_DEFS = [
     options: [
       { value: "classic", label: "Classic",
         help: "Per-augment ZR; cyber eyes/ears absorb 0.5, each cyberlimb 1.0." },
-      { value: "houserule", label: "House rule",
+      { value: "houserule", label: "ZR Casting Penalty",
         help: "Gear/weapon ZR doesn't touch ZP — it's −1d per full point on casting rolls (Channeling/Conjuring/Sorcery). Cyber ZR reduces ZP directly (may go negative; Synthetics exempt). At ZP ≤ 0 only Rituals work." },
     ] },
   { id: "engineering", label: "Engineering skills", default: "single",

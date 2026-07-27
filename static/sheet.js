@@ -912,41 +912,22 @@ async function backToChargen() {
 // element of arr). Dropping onto another reorderable row of the same array moves
 // item there, persists, and re-renders. Non-reorderable rows (cyberguns, granted
 // armor) simply don't call this, so they stay put.
-let dragRowState = null;
-// Drag-to-reorder for a table row. `group` identifies which rows can be dropped
-// on each other (an array, or a shared token string). By default the item is
-// spliced within `group` (an array); pass `onMove(from, to)` to handle reordering
-// yourself — e.g. cyberguns, whose order spans two source arrays.
-function enableRowReorder(tr, group, item, onReorder, onMove) {
-  tr.setAttribute("draggable", "true");
-  tr.classList.add("sh-drag-row");
-  tr.title = "Drag to reorder";
-  tr.addEventListener("dragstart", e => {
-    dragRowState = { group, item };
-    e.dataTransfer.effectAllowed = "move";
-    try { e.dataTransfer.setData("text/plain", ""); } catch { /* some browsers require data */ }
-    tr.classList.add("dragging");
-  });
-  tr.addEventListener("dragend", () => { tr.classList.remove("dragging"); dragRowState = null; });
-  tr.addEventListener("dragover", e => {
-    if (dragRowState && dragRowState.group === group) { e.preventDefault(); tr.classList.add("drag-over"); }
-  });
-  tr.addEventListener("dragleave", () => tr.classList.remove("drag-over"));
-  tr.addEventListener("drop", e => {
-    tr.classList.remove("drag-over");
-    if (!dragRowState || dragRowState.group !== group) return;
-    e.preventDefault();
-    const from = dragRowState.item;
-    dragRowState = null;
-    if (from === item) return;
-    if (onMove) { onMove(from, item); }
-    else {
-      const fi = group.indexOf(from), ti = group.indexOf(item);
-      if (fi < 0 || ti < 0 || fi === ti) return;
-      group.splice(ti, 0, group.splice(fi, 1)[0]);
-    }
-    onReorder();
-  });
+// Row reordering via ▲/▼ buttons. Native <tr> drag-and-drop is unreliable in
+// tables (drag-image / drop hit-testing quirks) and dead on touch, so loadout
+// rows reorder with explicit buttons instead. swapInList swaps two items'
+// positions in their backing array; reorderHandle renders the up/down control.
+function swapInList(arr, a, b) {
+  const ia = arr.indexOf(a), ib = arr.indexOf(b);
+  if (ia < 0 || ib < 0 || ia === ib) return;
+  [arr[ia], arr[ib]] = [arr[ib], arr[ia]];
+}
+function reorderHandle(up, down, canUp, canDown) {
+  const mk = (label, fn, ok, title) => el("button", {
+    class: "sh-reorder-btn", title, ...(ok ? {} : { disabled: "1" }),
+    onclick: e => { e.stopPropagation(); if (ok) fn(); } }, label);
+  return el("span", { class: "sh-reorder" },
+    mk("▲", up, canUp, "Move up"),
+    mk("▼", down, canDown, "Move down"));
 }
 
 // Cyberguns are augments with a chosen gun; surface them as read-only weapons
@@ -1120,7 +1101,7 @@ function shOverview(body) {
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
       wt.append(el("tr", {}, el("th", {}, "Equipped weapon"), el("th", {}, "Stats"), el("th", {}, "Mods & upgrades")));
-      equippedWeapons.forEach(w => {
+      equippedWeapons.forEach((w, wi) => {
         const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
         const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
         // each mod/upgrade on its own line, with its effect spelled out
@@ -1130,34 +1111,39 @@ function shOverview(body) {
         });
         if (w.upgr1 && r.Upgr1_Eff) modLines.push(`Upgrade 1 — ${r.Upgr1_Eff}`);
         if (w.upgr2 && r.Upgr2_Eff) modLines.push(`Upgrade 2 — ${r.Upgr2_Eff}`);
+        const handle = reorderHandle(
+          () => { swapInList(CHAR.weapons, w, equippedWeapons[wi - 1]); playChanged(); },
+          () => { swapInList(CHAR.weapons, w, equippedWeapons[wi + 1]); playChanged(); },
+          wi > 0, wi < equippedWeapons.length - 1);
         const wtr = el("tr", {},
-          el("td", {}, el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : ""))),
+          el("td", {}, handle, el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : ""))),
           el("td", { class: "sub" },
             `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0} · ZR ${r.ZR || 0}`
             + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
           el("td", { class: "sub" }, modLines.length
             ? el("div", {}, ...modLines.map(l => el("div", {}, l)))
             : "—"));
-        enableRowReorder(wtr, CHAR.weapons, w, () => playChanged());
         wt.append(wtr);
       });
-      cyberguns.forEach(cg => {
+      cyberguns.forEach((cg, ci) => {
         const g = cg.gun;
+        // Cyberguns share one order across chargen + play-bought augments, stored
+        // as cgOrder on each source augment; moving one rewrites the whole sequence.
+        const moveCg = dir => {
+          const list = equippedCyberguns();
+          const i = list.findIndex(x => x.src === cg.src), j = i + dir;
+          if (i < 0 || j < 0 || j >= list.length) return;
+          [list[i], list[j]] = [list[j], list[i]];
+          list.forEach((it, k) => { it.src.cgOrder = k; });
+          playChanged();
+        };
+        const handle = reorderHandle(() => moveCg(-1), () => moveCg(1),
+          ci > 0, ci < cyberguns.length - 1);
         const cgtr = el("tr", {},
-          el("td", {}, el("b", {}, cg.name + " (smart)")),
+          el("td", {}, handle, el("b", {}, cg.name + " (smart)")),
           el("td", { class: "sub" },
             `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
           el("td", { class: "sub" }, "Implanted (Augments tab)"));
-        // Cyberguns share one order across chargen + play-bought augments, so
-        // reordering rewrites cgOrder on every source augment in the new sequence.
-        enableRowReorder(cgtr, "cyberguns", cg, () => playChanged(), (from, to) => {
-          const list = equippedCyberguns();
-          const fi = list.findIndex(x => x.src === from.src);
-          const ti = list.findIndex(x => x.src === to.src);
-          if (fi < 0 || ti < 0 || fi === ti) return;
-          list.splice(ti, 0, list.splice(fi, 1)[0]);
-          list.forEach((it, i) => { it.src.cgOrder = i; });
-        });
         wt.append(cgtr);
       });
       loadout.append(wt);
@@ -1166,13 +1152,16 @@ function shOverview(body) {
     if (wornArmor.length || armorSources.length) {
       const at = el("table");
       at.append(el("tr", {}, el("th", {}, "Armor"), el("th", {}, "B / I"), el("th", {}, "Notes")));
-      wornArmor.forEach(a => {
+      wornArmor.forEach((a, ai) => {
         const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
+        const handle = reorderHandle(
+          () => { swapInList(CHAR.armor, a, wornArmor[ai - 1]); playChanged(); },
+          () => { swapInList(CHAR.armor, a, wornArmor[ai + 1]); playChanged(); },
+          ai > 0, ai < wornArmor.length - 1);
         const atr = el("tr", {},
-          el("td", {}, el("b", {}, a.name)),
+          el("td", {}, handle, el("b", {}, a.name)),
           el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
           el("td", { class: "sub" }, (a.extras || []).length ? a.extras.join(", ") : "—"));
-        enableRowReorder(atr, CHAR.armor, a, () => playChanged());
         at.append(atr);
       });
       // Armor granted by cyber/bioware augments, innate heritage, or amps.

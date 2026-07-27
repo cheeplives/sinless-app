@@ -914,13 +914,7 @@ async function backToChargen() {
 // armor) simply don't call this, so they stay put.
 // Row reordering via ▲/▼ buttons. Native <tr> drag-and-drop is unreliable in
 // tables (drag-image / drop hit-testing quirks) and dead on touch, so loadout
-// rows reorder with explicit buttons instead. swapInList swaps two items'
-// positions in their backing array; reorderHandle renders the up/down control.
-function swapInList(arr, a, b) {
-  const ia = arr.indexOf(a), ib = arr.indexOf(b);
-  if (ia < 0 || ib < 0 || ia === ib) return;
-  [arr[ia], arr[ib]] = [arr[ib], arr[ia]];
-}
+// rows reorder with explicit buttons instead. reorderHandle renders the control.
 function reorderHandle(up, down, canUp, canDown) {
   const mk = (label, fn, ok, title) => el("button", {
     class: "sh-reorder-btn", title, ...(ok ? {} : { disabled: "1" }),
@@ -928,6 +922,25 @@ function reorderHandle(up, down, canUp, canDown) {
   return el("span", { class: "sh-reorder" },
     mk("▲", up, canUp, "Move up"),
     mk("▼", down, canDown, "Move down"));
+}
+// A unified loadout list can span different backing stores (equipped weapons,
+// cybergun augments, worn armor, derived granted-armor rows). Each item exposes
+// getOrder()/setOrder(v) onto its own store and an `ins` insertion index used as
+// the tiebreak before any custom order exists. loadoutSort orders the list;
+// loadoutMove swaps two neighbours and renumbers every item's stored order.
+function loadoutSort(items) {
+  return items.sort((a, b) => {
+    const ao = Number.isFinite(a.getOrder()) ? a.getOrder() : 1e6 + a.ins;
+    const bo = Number.isFinite(b.getOrder()) ? b.getOrder() : 1e6 + b.ins;
+    return ao - bo;
+  });
+}
+function loadoutMove(items, i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= items.length) return;
+  [items[i], items[j]] = [items[j], items[i]];
+  items.forEach((it, k) => it.setOrder(k));
+  playChanged();
 }
 
 // Cyberguns are augments with a chosen gun; surface them as read-only weapons
@@ -1101,75 +1114,85 @@ function shOverview(body) {
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
       wt.append(el("tr", {}, el("th", {}, "Equipped weapon"), el("th", {}, "Stats"), el("th", {}, "Mods & upgrades")));
-      equippedWeapons.forEach((w, wi) => {
-        const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
-        const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
-        // each mod/upgrade on its own line, with its effect spelled out
-        const modLines = (w.mods || []).map(m => {
-          const mr = DATA.tables.weapon_mods.find(x => x.Modification === m);
-          return (mr && mr.Effect) ? `${m} — ${mr.Effect}` : m;
-        });
-        if (w.upgr1 && r.Upgr1_Eff) modLines.push(`Upgrade 1 — ${r.Upgr1_Eff}`);
-        if (w.upgr2 && r.Upgr2_Eff) modLines.push(`Upgrade 2 — ${r.Upgr2_Eff}`);
-        const handle = reorderHandle(
-          () => { swapInList(CHAR.weapons, w, equippedWeapons[wi - 1]); playChanged(); },
-          () => { swapInList(CHAR.weapons, w, equippedWeapons[wi + 1]); playChanged(); },
-          wi > 0, wi < equippedWeapons.length - 1);
-        const wtr = el("tr", {},
-          el("td", {}, handle, el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : ""))),
-          el("td", { class: "sub" },
-            `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0} · ZR ${r.ZR || 0}`
-            + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
-          el("td", { class: "sub" }, modLines.length
-            ? el("div", {}, ...modLines.map(l => el("div", {}, l)))
-            : "—"));
-        wt.append(wtr);
-      });
-      cyberguns.forEach((cg, ci) => {
-        const g = cg.gun;
-        // Cyberguns share one order across chargen + play-bought augments, stored
-        // as cgOrder on each source augment; moving one rewrites the whole sequence.
-        const moveCg = dir => {
-          const list = equippedCyberguns();
-          const i = list.findIndex(x => x.src === cg.src), j = i + dir;
-          if (i < 0 || j < 0 || j >= list.length) return;
-          [list[i], list[j]] = [list[j], list[i]];
-          list.forEach((it, k) => { it.src.cgOrder = k; });
-          playChanged();
-        };
-        const handle = reorderHandle(() => moveCg(-1), () => moveCg(1),
-          ci > 0, ci < cyberguns.length - 1);
-        const cgtr = el("tr", {},
-          el("td", {}, handle, el("b", {}, cg.name + " (smart)")),
-          el("td", { class: "sub" },
-            `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
-          el("td", { class: "sub" }, "Implanted (Augments tab)"));
-        wt.append(cgtr);
+      // Weapons and cyberguns share ONE ordered list so a cybergun can sit
+      // anywhere among the weapons (order stored as `lo` on each backing object).
+      const items = [];
+      equippedWeapons.forEach((w, idx) => items.push({
+        ins: idx, getOrder: () => w.lo, setOrder: v => { w.lo = v; },
+        cells: () => {
+          const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
+          const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
+          const modLines = (w.mods || []).map(m => {
+            const mr = DATA.tables.weapon_mods.find(x => x.Modification === m);
+            return (mr && mr.Effect) ? `${m} — ${mr.Effect}` : m;
+          });
+          if (w.upgr1 && r.Upgr1_Eff) modLines.push(`Upgrade 1 — ${r.Upgr1_Eff}`);
+          if (w.upgr2 && r.Upgr2_Eff) modLines.push(`Upgrade 2 — ${r.Upgr2_Eff}`);
+          return {
+            name: el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
+            stats: el("td", { class: "sub" },
+              `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0} · ZR ${r.ZR || 0}`
+              + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
+            last: el("td", { class: "sub" }, modLines.length
+              ? el("div", {}, ...modLines.map(l => el("div", {}, l))) : "—"),
+          };
+        },
+      }));
+      cyberguns.forEach((cg, idx) => items.push({
+        ins: 1000 + idx, getOrder: () => cg.src.lo, setOrder: v => { cg.src.lo = v; },
+        cells: () => {
+          const g = cg.gun;
+          return {
+            name: el("b", {}, cg.name + " (smart)"),
+            stats: el("td", { class: "sub" },
+              `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
+            last: el("td", { class: "sub" }, "Implanted (Augments tab)"),
+          };
+        },
+      }));
+      loadoutSort(items);
+      items.forEach((it, i) => {
+        const c = it.cells();
+        const handle = reorderHandle(() => loadoutMove(items, i, -1), () => loadoutMove(items, i, 1),
+          i > 0, i < items.length - 1);
+        wt.append(el("tr", {}, el("td", {}, handle, c.name), c.stats, c.last));
       });
       loadout.append(wt);
     }
     const armorSources = CALC.combat.armor_sources || [];
     if (wornArmor.length || armorSources.length) {
+      // Worn armor + granted (cyber/bioware/heritage/amp) armor share ONE ordered
+      // list. Worn order lives on the armor object (`lo`); granted rows are derived
+      // each recalc, so their order is stored by source name in a play-state map.
+      const gmap = (CHAR.play.granted_armor_order = CHAR.play.granted_armor_order || {});
       const at = el("table");
       at.append(el("tr", {}, el("th", {}, "Armor"), el("th", {}, "B / I"), el("th", {}, "Notes")));
-      wornArmor.forEach((a, ai) => {
-        const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
-        const handle = reorderHandle(
-          () => { swapInList(CHAR.armor, a, wornArmor[ai - 1]); playChanged(); },
-          () => { swapInList(CHAR.armor, a, wornArmor[ai + 1]); playChanged(); },
-          ai > 0, ai < wornArmor.length - 1);
-        const atr = el("tr", {},
-          el("td", {}, handle, el("b", {}, a.name)),
-          el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
-          el("td", { class: "sub" }, (a.extras || []).length ? a.extras.join(", ") : "—"));
-        at.append(atr);
-      });
-      // Armor granted by cyber/bioware augments, innate heritage, or amps.
-      armorSources.forEach(s => {
-        at.append(el("tr", {},
-          el("td", {}, el("b", {}, s.name), el("span", { class: "sh-tag" }, "granted")),
-          el("td", { class: "num" }, `${s.b} / ${s.i}`),
-          el("td", { class: "sub" }, s.unstrippable ? "unstrippable" : "—")));
+      const items = [];
+      wornArmor.forEach((a, idx) => items.push({
+        ins: idx, getOrder: () => a.lo, setOrder: v => { a.lo = v; },
+        cells: () => {
+          const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
+          return {
+            name: el("b", {}, a.name),
+            stats: el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
+            last: el("td", { class: "sub" }, (a.extras || []).length ? a.extras.join(", ") : "—"),
+          };
+        },
+      }));
+      armorSources.forEach((s, idx) => items.push({
+        ins: 1000 + idx, getOrder: () => gmap[s.name], setOrder: v => { gmap[s.name] = v; },
+        cells: () => ({
+          name: el("span", {}, el("b", {}, s.name), el("span", { class: "sh-tag" }, "granted")),
+          stats: el("td", { class: "num" }, `${s.b} / ${s.i}`),
+          last: el("td", { class: "sub" }, s.unstrippable ? "unstrippable" : "—"),
+        }),
+      }));
+      loadoutSort(items);
+      items.forEach((it, i) => {
+        const c = it.cells();
+        const handle = reorderHandle(() => loadoutMove(items, i, -1), () => loadoutMove(items, i, 1),
+          i > 0, i < items.length - 1);
+        at.append(el("tr", {}, el("td", {}, handle, c.name), c.stats, c.last));
       });
       loadout.append(el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
         el("span", { class: "sub" }, `Total armor: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I`)), at);

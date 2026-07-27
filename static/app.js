@@ -1795,7 +1795,7 @@ function tabWeapons(p) {
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" },
-            `${r.Type} \u00b7 Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}${calcRow.smartlink ? " (smart)" : ""} \u00b7 DMG ${calcRow.Damage ?? r.Damage} \u00b7 ${r["Firing modes"] || "melee"} \u00b7 Pen ${r.Pen || 0} \u00b7 ZR ${r.ZR || 0} \u00b7 Weight ${r.Weight || 0}`
+            `${r.Type} \u00b7 Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}${calcRow.smartlink ? " (smart)" : ""} \u00b7 DMG ${calcRow.Damage ?? r.Damage} \u00b7 ${r["Firing modes"] || "melee"} \u00b7 Pen ${r.Pen || 0} \u00b7 Conceal ${r.Conceal || 0} \u00b7 ZR ${r.ZR || 0} \u00b7 Weight ${r.Weight || 0}`
             + (isThrown ? ` \u00b7 \u00d7${it.qty || 1}` : "")),
           canMod ? fittedCategoryEditor({
             id: `wmods-${i}-${it.name}`,

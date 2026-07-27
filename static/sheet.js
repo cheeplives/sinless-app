@@ -1131,7 +1131,7 @@ function shOverview(body) {
           return {
             name: el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
             stats: el("td", { class: "sub" },
-              `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0} · ZR ${r.ZR || 0}`
+              `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0}`
               + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
             last: el("td", { class: "sub" }, modLines.length
               ? el("div", {}, ...modLines.map(l => el("div", {}, l))) : "—"),
@@ -2027,7 +2027,7 @@ function shGear(body) {
       items: rows.map(r => ({ name: r.Weapon, cost: Math.round((+r.Cost || 0) * mult),
         sub: (r.Type === "Melee" ? `Reach ${r.Reach || 0}` : `Acc ${r.Accuracy || 0}`)
           + ` · DMG ${r.Type === "Melee" ? RULES.meleeDamage(r, CALC.attributes.Strength.final) : (r.Damage || "—")}`
-          + ` · Pen ${r.Pen || 0} · ZR ${r.ZR || 0} · wt ${r.Weight || 0}` })),
+          + ` · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · wt ${r.Weight || 0}` })),
     }));
   const cyberguns = equippedCyberguns();
   if (CHAR.weapons.length || cyberguns.length) {
@@ -2043,7 +2043,7 @@ function shGear(body) {
           el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type)),
           shMountEditor(w, r, w.equipped !== false)),
         el("td", { class: "sub" },
-          `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
+          `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
           ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
         el("td", {}, el("input", { type: "checkbox", ...(w.equipped !== false ? { checked: 1 } : {}),
           onchange: async e => { w.equipped = e.target.checked; await playChangedRecalc(); } })),
@@ -3717,6 +3717,7 @@ function buildMarkdown() {
       const stats = [`DMG ${calcRow.Damage ?? r.Damage ?? "—"}`,
                      isMelee ? `Reach ${r.Reach || 0}` : `Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}`,
                      `Pen ${r.Pen || 0}`,
+                     `Conceal ${r.Conceal || 0}`,
                      (!isMelee && ammo) ? `Ammo ${ammo}` : null,
                      (!isMelee && r["Firing modes"]) ? r["Firing modes"] : null].filter(Boolean).join(" · ");
       L.push(`- **${w.name}**${smart} — ${stats}`

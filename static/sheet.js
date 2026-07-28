@@ -861,38 +861,86 @@ function sheetMenu() {
 
   const wrap = el("div", { class: "sh-menu" }, toggle);
   if (sheetMenuOpen) {
+    const ro = !!(activeTabObj() && activeTabObj().readonly);
+    const synced = typeof SYNC !== "undefined" && SYNC.enabled && SYNC.enabled();
+
+    // Group 1 — Load / Save / New (character files). Load is the same picker as
+    // the header; Save mirrors it (incl. the "Saved ✓" flash) and stays open so
+    // the confirmation is visible. Save is hidden on a read-only shared view —
+    // use "Save a copy" in the banner instead.
+    const loadSel = el("select", { class: "btn-select sh-mi-load", onchange: async e => {
+      const name = e.target.value;
+      if (!name) return;
+      const loaded = STORAGE.loadCharacter(name);
+      if (!loaded) { e.target.value = ""; return; }
+      sheetMenuOpen = false;
+      await openCharacter(RULES.mergeDefaults(loaded));
+      e.target.value = "";
+    } }, el("option", { value: "" }, "Load…"),
+      ...STORAGE.listCharacters().map(n => el("option", { value: n }, n)));
+    const saveBtn = !ro ? el("button", { class: "btn sh-mi-save", onclick: () => {
+      if (!CHAR.name) { alert("Give the character a street name first."); return; }
+      STORAGE.saveCharacter(CHAR);
+      if (typeof refreshLoadList === "function") refreshLoadList();
+      saveBtn.textContent = "Saved ✓";
+      setTimeout(() => { saveBtn.textContent = "Save"; }, 1200);
+    } }, "Save") : null;
+    const newBtn = el("button", { class: "btn", onclick: () => {
+      sheetMenuOpen = false; newCharacterTab();
+    } }, "New");
+
+    // Group 2 — Import / Export.
+    const importBtn = el("button", { class: "btn sh-mi-load", onclick: () => importInput.click() }, "Import JSON");
+    const exportJsonBtn = el("button", { class: "btn sh-mi-save", onclick: act(() => {
+      const blob = new Blob([JSON.stringify(CHAR, null, 2)], { type: "application/json" });
+      const a = el("a", { href: URL.createObjectURL(blob),
+        download: (CHAR.name || "character") + ".json" });
+      a.click();
+    }) }, "Export JSON");
+    const exportMdBtn = el("button", { class: "btn sh-mi-save", onclick: act(exportMarkdown) }, "Export Markdown (Scabard)");
+
+    // Group 3 — Sharing / Shared characters / Homebrew (sharing + gallery need a backend).
+    const sharingBtn = (synced && !ro && CHAR.name)
+      ? el("button", { class: "btn ghost", onclick: act(toggleSharing) },
+          SYNC.isPublic(STORAGE.sanitizeName(CHAR.name))
+            ? "Sharing: Public ✓ — make private"
+            : "Sharing: Private — make public")
+      : null;
+    const sharedBtn = synced
+      ? el("button", { class: "btn ghost", onclick: act(openSharedGallery) }, "Shared characters") : null;
+    const homebrewBtn = el("button", { class: "btn sh-mi-brew", onclick: act(enterHomebrew) }, "Homebrew");
+
+    // Group 4 — Back to Chargen / Revert / Delete.
+    const backBtn = el("button", { class: "btn ghost", onclick: act(backToChargen) }, "← Back to Chargen");
+    const revertBtn = el("button", { class: "btn warn", onclick: act(revertToChargenEnd) }, "Revert to Post-Chargen");
+    const deleteBtn = el("button", { class: "btn warn", disabled: CHAR.name ? null : "1",
+      title: CHAR.name ? "Permanently delete this character's save" : "Character has no name — nothing saved to delete",
+      onclick: act(() => deleteSavedCharacter(CHAR.name)) }, "Delete Character");
+
+    // Group 5 — Admin / Sign out (danger red; only when signed in).
+    const adminBtn = (synced && SYNC.isAdmin())
+      ? el("button", { class: "btn sh-mi-danger", onclick: act(openAdminPanel) }, "Admin") : null;
+    const signOutBtn = synced
+      ? el("button", { class: "btn sh-mi-danger", onclick: act(doSignOut) }, "Sign out") : null;
+
+    const groups = [
+      [loadSel, saveBtn, newBtn],
+      [importBtn, exportJsonBtn, exportMdBtn],
+      [sharingBtn, sharedBtn, homebrewBtn],
+      [backBtn, revertBtn, deleteBtn],
+      [adminBtn, signOutBtn],
+    ].map(g => g.filter(Boolean)).filter(g => g.length);
+
+    const panel = el("div", { class: "sh-menu-panel", role: "menu" });
+    groups.forEach((g, i) => {
+      if (i > 0) panel.append(el("div", { class: "sh-menu-sep" }));
+      g.forEach(b => panel.append(b));
+    });
+    panel.append(importInput);
+
     wrap.append(
       el("div", { class: "sh-menu-backdrop", onclick: () => { sheetMenuOpen = false; renderSheet(); } }),
-      el("div", { class: "sh-menu-panel", role: "menu" },
-        el("button", { class: "btn ghost", onclick: act(backToChargen) }, "← Back to Chargen"),
-        el("button", { class: "btn ghost", onclick: act(enterHomebrew) }, "Homebrew"),
-        el("button", { class: "btn warn", onclick: act(revertToChargenEnd) }, "Revert to Post-Chargen"),
-        el("button", { class: "btn", onclick: act(exportMarkdown) }, "Export Markdown (Scabard)"),
-        el("button", { class: "btn ghost", onclick: act(() => {
-          const blob = new Blob([JSON.stringify(CHAR, null, 2)], { type: "application/json" });
-          const a = el("a", { href: URL.createObjectURL(blob),
-            download: (CHAR.name || "character") + ".json" });
-          a.click();
-        }) }, "Export JSON"),
-        el("button", { class: "btn ghost", onclick: () => importInput.click() }, "Import JSON"),
-        el("button", { class: "btn warn", disabled: CHAR.name ? null : "1",
-          title: CHAR.name ? "Permanently delete this character's save" : "Character has no name — nothing saved to delete",
-          onclick: act(() => deleteSavedCharacter(CHAR.name)) }, "Delete Character"),
-        // Sharing + account controls appear only when signed in to a backend.
-        (typeof SYNC !== "undefined" && SYNC.enabled && SYNC.enabled()
-          && !(activeTabObj() && activeTabObj().readonly) && CHAR.name)
-          ? el("button", { class: "btn ghost", onclick: act(toggleSharing) },
-              SYNC.isPublic(STORAGE.sanitizeName(CHAR.name))
-                ? "Sharing: Public ✓ — make private"
-                : "Sharing: Private — make public")
-          : null,
-        (typeof SYNC !== "undefined" && SYNC.enabled && SYNC.enabled())
-          ? el("button", { class: "btn ghost", onclick: act(openSharedGallery) }, "Shared characters") : null,
-        (typeof SYNC !== "undefined" && SYNC.enabled && SYNC.enabled() && SYNC.isAdmin())
-          ? el("button", { class: "btn ghost", onclick: act(openAdminPanel) }, "Admin") : null,
-        (typeof SYNC !== "undefined" && SYNC.enabled && SYNC.enabled())
-          ? el("button", { class: "btn ghost", onclick: act(doSignOut) }, "Sign out") : null,
-        importInput));
+      panel);
   }
   return wrap;
 }

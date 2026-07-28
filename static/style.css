@@ -677,7 +677,15 @@ label.opt input{margin-top:3px}
 .sh-menu-panel{position:absolute;top:44px;left:0;z-index:46;display:flex;flex-direction:column;gap:6px;
   background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;min-width:220px;
   box-shadow:0 12px 28px rgba(0,0,0,.5)}
-.sh-menu-panel .btn{width:100%;text-align:left}
+.sh-menu-panel .btn,.sh-menu-panel .btn-select{width:100%;text-align:left}
+/* thin divider between the menu's logical groups (Load/Save/New, Import/Export, …) */
+.sh-menu-sep{height:1px;background:var(--line);margin:2px 0;flex:none}
+/* menu-item accent classes — theme-aware: load/import teal, save/export green,
+   homebrew accent-purple, admin/sign-out danger red. */
+.btn.sh-mi-load,.btn-select.sh-mi-load{border-color:var(--slot-overbarrel);color:var(--slot-overbarrel)}
+.btn.sh-mi-save{border-color:var(--ok);color:var(--ok)}
+.btn.sh-mi-brew{border-color:var(--manon);color:var(--manon)}
+.btn.sh-mi-danger{border-color:var(--bad);color:var(--bad)}
 .chip.ok{color:var(--ok);border-color:var(--ok)}
 /* Mount-augment picker: the grouped browser opens in a small modal so the
    host item's row stays compact. */

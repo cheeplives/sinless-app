@@ -267,6 +267,17 @@ const EXTRA_ARM_GEAR_COST_MULTIPLIER = 1.5;
 const HACKING_RATING_COST = 5000;
 const HACKING_RATING_MAX = 6;
 
+// The small-heritage gear surcharge (Small Uplifts and the Green "Smol" bane
+// carry GearCostMultiplier 1.4) only applies to physical kit a small body must
+// be fitted for: Weapons, Armor, Vehicles, and cybertechtronic Augments.
+// Bioware (grown to fit), Drones, Rigs, Decks/Programs, misc Gear, and
+// Lifestyle pay face value. Both the engine and the play-mode buy screens read
+// this through surchargeFor() so the two never disagree.
+const SURCHARGED_KINDS = new Set(["weapon", "armor", "vehicle", "cyberware"]);
+function surchargeFor(kind, baseMultiplier) {
+  return SURCHARGED_KINDS.has(kind) ? (baseMultiplier || 1) : 1;
+}
+
 // ============================================================== data access
 function loadData() {
   return BUNDLE.tables;
@@ -896,6 +907,9 @@ function tallyAugments(character, data, warnings, errors) {
     zoetic_rating_raw: round2(rawZr),
     body_index: sumBy(owned, ([row, count]) => asNumber(row.BI) * count),
     cost: sumBy(owned, ([row, count, entry]) => effCost(row, entry) * count),
+    // Bioware is grown to fit, so it never carries the small-heritage surcharge.
+    bioware_cost: sumBy(owned, ([row, count, entry]) =>
+      row.Type === "Bioware" ? effCost(row, entry) * count : 0),
     skillsoft_levels: skillsoftLevels,
     knowledge_points_bonus: knowledgePointsBonus,
     has_hyperthyroid: ownedNames.has("Hyperthyroid"),
@@ -1769,14 +1783,13 @@ function priceDronesAndVehicles(character, data, gearCostMultiplier, warnings) {
                          ["vehicle_energy_weapons", "Vehicle Energy Weapon"],
                          ["vehicle_mods", "Vehicle Mod"]];
 
-  const priceAll = (entries, tableKey, nameColumn, weaponTables, check) => {
+  const priceAll = (entries, tableKey, nameColumn, weaponTables, check, mult) => {
     let total = 0.0;
     const summaries = [];
     for (const entry of entries) {
       const row = findRow(data[tableKey], nameColumn, entry.name);
       if (!row) continue;
-      const [cost, summary] = priceFittedVehicle(entry, row, data, weaponTables,
-                                                 gearCostMultiplier);
+      const [cost, summary] = priceFittedVehicle(entry, row, data, weaponTables, mult);
       check(summary, warnings);
       total += cost;
       summaries.push(summary);
@@ -1784,10 +1797,13 @@ function priceDronesAndVehicles(character, data, gearCostMultiplier, warnings) {
     return [total, summaries];
   };
 
+  // The small-heritage surcharge covers vehicles (base + fitted weapons/mods)
+  // but not drones — a small pilot doesn't change a remote drone's price.
   const [droneCost, drones] = priceAll(character.drones, "drones", "Drone",
-                                       droneTables, checkDroneLimits);
+                                       droneTables, checkDroneLimits, 1);
   const [vehicleCost, vehicles] = priceAll(character.vehicles, "vehicles", "Vehicle",
-                                           vehicleTables, checkVehicleLimits);
+                                           vehicleTables, checkVehicleLimits,
+                                           surchargeFor("vehicle", gearCostMultiplier));
   return { drones, vehicles, cost: droneCost + vehicleCost };
 }
 
@@ -2158,9 +2174,14 @@ function calculate(character) {
     errors.push("Too Many Biomods: Body Index exceeds Body.");
   }
 
+  // Small-heritage surcharge applies to physical kit only (see surchargeFor):
+  // Weapons, Armor, Vehicles and cybertechtronic Augments pay it; Bioware,
+  // Drones, Rigs, Decks/Programs, Gear and Lifestyle pay face value.
   const gearCostMultiplier = heritage.gear_cost_multiplier;
-  const weapons = priceWeapons(character, data, gearCostMultiplier, warnings, finalAttributes.Strength);
-  const armor = priceArmor(character, data, gearCostMultiplier, warnings);
+  const weapons = priceWeapons(character, data,
+    surchargeFor("weapon", gearCostMultiplier), warnings, finalAttributes.Strength);
+  const armor = priceArmor(character, data,
+    surchargeFor("armor", gearCostMultiplier), warnings);
   if (heritage.traits.some(row => row.Name === "Tough")
       && armor.items.some(item => item.Slot === "Under" && item.active)) {
     warnings.push("Tough (Blighted boon) occupies the Under armor slot — "
@@ -2179,12 +2200,17 @@ function calculate(character) {
                   + internalSlotOccupants.join(", ")
                   + " all occupy the internal armor slot.");
   }
-  const decking = priceDecking(character, data, gearCostMultiplier, warnings);
-  const rig = priceRig(character, data, gearCostMultiplier, warnings);
+  const decking = priceDecking(character, data, 1, warnings);
+  const rig = priceRig(character, data, 1, warnings);
+  // priceDronesAndVehicles applies the surcharge to vehicles only (drones pay
+  // face value) — it splits internally, so it takes the raw multiplier.
   const vehicles = priceDronesAndVehicles(character, data, gearCostMultiplier, warnings);
-  const misc = priceMiscGearAndLifestyle(character, data, gearCostMultiplier,
+  const misc = priceMiscGearAndLifestyle(character, data, 1,
                                          augments.has_hyperthyroid);
-  const augmentCost = round2(augments.cost * gearCostMultiplier);
+  // Cybertechtronic augments are surcharged; Bioware pays face value.
+  const cyberAugmentCost = augments.cost - augments.bioware_cost;
+  const augmentCost = round2(augments.bioware_cost
+    + cyberAugmentCost * surchargeFor("cyberware", gearCostMultiplier));
 
   // --- Zoetic bookkeeping ---------------------------------------------------
   const isSynthetic = character.heritage.type === "Synthetic";
@@ -2387,6 +2413,7 @@ return {
   augmentLimbRequirement, augmentMeleeDamage,
   HOUSE_RULE_DEFS, houseRule, setHouseRule,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS,
+  surchargeFor,
 };
 
 })();

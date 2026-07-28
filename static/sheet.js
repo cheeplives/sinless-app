@@ -1970,7 +1970,9 @@ function shMountEditor(host, hostRow, hostActive) {
 
 function shGear(body) {
   const play = CHAR.play;
-  const mult = CALC.budget.gear_cost_multiplier || 1;
+  // Weapons & armor carry the small-heritage surcharge; general gear does not.
+  const mult = RULES.surchargeFor("weapon", CALC.budget.gear_cost_multiplier || 1);
+  const gearMult = RULES.surchargeFor("gear", CALC.budget.gear_cost_multiplier || 1);
   const overdrawOK = (name, cost) => CHAR.play.cash >= cost
     || confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`);
 
@@ -2237,14 +2239,14 @@ function shGear(body) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([cls, rows]) => ({
       label: cls,
-      items: rows.map(r => ({ name: r.Item, cost: Math.round((+r.Cost || 0) * mult),
+      items: rows.map(r => ({ name: r.Item, cost: Math.round((+r.Cost || 0) * gearMult),
         sub: [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || ""]
           .filter(Boolean).join(" · ") })),
     }));
   const buySection = el("div", { class: "card sh-card", id: "gear-buy" },
     el("h3", {}, "Buy equipment"),
     el("p", { class: "hint" }, "Everything purchasable from woolongs, grouped by type. "
-      + (mult > 1 ? `Heritage surcharge ×${mult} applied. ` : "")
+      + (mult > 1 ? `Heritage surcharge ×${mult} applies to weapons & armor (not general gear). ` : "")
       + "Augments are bought on the Augments tab; decks, programs, rigs, drones and vehicles on the Decking and Rigging tabs."));
   const buyBlock = (title, browser) =>
     buySection.append(el("div", { class: "sh-unit-add" }, el("b", {}, title), browser));
@@ -2269,7 +2271,7 @@ function shGear(body) {
     } }));
   buyBlock("Gear", categoryBrowser({ id: "sh-buy-gear", groups: gearBuyGroups,
     rerender: renderSheet, afterAdd: () => {},
-    onAdd: name => buyGear(name, mult) }));
+    onAdd: name => buyGear(name, gearMult) }));
   body.append(buySection);
 
   // ===== Activity (cash ledger) — moved to the bottom
@@ -2344,13 +2346,15 @@ function shAugments(body) {
   });
   const augmentRow = ({ ref: a, inPlay }) => {
     const r = DATA.tables.augments.find(x => x.Name === a.name) || {};
+    // Cybertechtronic augments are surcharged; Bioware is grown to fit (face value).
+    const augMult = RULES.surchargeFor(r.Type === "Bioware" ? "bioware" : "cyberware", mult);
     const isSkillsoft = a.name.startsWith("Skillsoft");
     const hasZr = !!(+r.ZR);
     const alphaZr = hasZr ? RULES.augmentEffZr(r, { alpha: true }) : 0;
     // Going alpha adds max(base cost, 1000) — mirrors rules.js effCost (min
     // applied to raw cost, then × the gear multiplier) so the play-mode cash
     // ledger stays in step with the recalculated total.
-    const alphaExtra = Math.round(Math.max(+r.Cost || 0, 1000) * mult);
+    const alphaExtra = Math.round(Math.max(+r.Cost || 0, 1000) * augMult);
     const alphaCell = hasZr
       ? el("label", { class: "opt", title: `α-cyber grade: ZR ${alphaZr} (−20%, min −0.1), cost ×2 (min +${CURRENCY_SYMBOL}1,000)` },
           el("input", { type: "checkbox", ...(a.alpha ? { checked: 1 } : {}),
@@ -2387,7 +2391,7 @@ function shAugments(body) {
     // each unit adds a Knowledge skill point. Chargen-installed ones (or
     // other augments) show a static count; the chargen record is immutable
     // in play, so extra copies are bought in play instead.
-    const unitCost = Math.round((+r.Cost || 0) * mult);
+    const unitCost = Math.round((+r.Cost || 0) * augMult);
     const countCell = (inPlay && a.name === "Knowledge Skillsoft")
       ? el("td", { class: "num" }, el("span", { class: "stepper" },
           el("button", { title: "Remove one (refunded)", onclick: async () => {
@@ -2503,7 +2507,9 @@ function shAugments(body) {
           note = "at capacity";
         }
         return {
-          name: r.Name, cost: Math.round((+r.Cost || 0) * mult),
+          name: r.Name,
+          cost: Math.round((+r.Cost || 0)
+            * RULES.surchargeFor(r.Type === "Bioware" ? "bioware" : "cyberware", mult)),
           sub: `ZR ${r.ZR || 0} · BI ${r.BI || 0}${dmg !== "" ? " · DMG " + dmg : ""}${r.Effect ? " · " + r.Effect : ""}`,
           banned: !!banned,
           disabled,
@@ -2515,7 +2521,7 @@ function shAugments(body) {
   body.append(el("div", { class: "card sh-card" },
     el("h3", {}, "Buy augments"),
     el("p", { class: "hint" },
-      (mult > 1 ? `Heritage surcharge ×${mult} applied. ` : "")
+      (mult > 1 ? `Heritage surcharge ×${mult} applies to cybertechtronic augments (Bioware pays face value). ` : "")
       + "Installed augments appear above, grouped by type."),
     el("div", { class: "sh-unit-add" },
       categoryBrowser({ id: "sh-buy-augments", groups: augBuyGroups,
@@ -2619,7 +2625,9 @@ async function buyAugment(name, mult) {
     if (arms === 0) { alert("Can't install a Cybergun: requires a Cyberarm."); return; }
     if (guns >= arms) { alert(`Can't install another Cybergun: one per cyberarm (${guns}/${arms}).`); return; }
   }
-  const cost = Math.round(r.Cost * mult);
+  // Bioware is grown to fit and never carries the small-heritage surcharge.
+  const cost = Math.round(r.Cost
+    * RULES.surchargeFor(r.Type === "Bioware" ? "bioware" : "cyberware", mult));
   const z = CALC.zoetics;
   const newBI = z.body_index + (+r.BI || 0);
   const newZR = z.cyber_zr + z.amp_zr + (+r.ZR || 0);
@@ -2933,7 +2941,9 @@ function shDecking(body) {
     dk.active_deck = decks[0].name;
   const active = DATA.tables.decks.find(x => x.Name === dk.active_deck);
 
-  const mult = CALC.budget.gear_cost_multiplier || 1;
+  // Decks, deck mods, programs and hacking levels are not physical kit — the
+  // small-heritage surcharge never applies (surchargeFor("deck") → 1).
+  const mult = RULES.surchargeFor("deck", CALC.budget.gear_cost_multiplier || 1);
   // Buy browsers collect here and render at the bottom of the tab.
   const deckBuySection = el("div", { class: "card sh-card", id: "deck-buy" },
     el("h3", {}, "Buy decks & programs"));
@@ -3203,7 +3213,10 @@ function unitAttachments(cfg, unit) {
 function shRigging(body) {
   const rg = CHAR.play.rigging;
   rg.linked = rg.linked || {};
-  const mult = CALC.budget.gear_cost_multiplier || 1;
+  // The small-heritage surcharge applies to vehicles (below, via unitBlock) but
+  // not to VCRs/rigs or drones — those pay face value.
+  const base = CALC.budget.gear_cost_multiplier || 1;
+  const rigMult = RULES.surchargeFor("rig", base);
   if (CHAR.rigs.length && !CHAR.rigs.some(r => r.name === rg.active_rig))
     rg.active_rig = CHAR.rigs[0].name;
 
@@ -3227,7 +3240,7 @@ function shRigging(body) {
       groups: modGroups(DATA.tables.rig_mods, "Rig Mod", null, "Rig Mods"),
       onAdd: name => {
         const mr = DATA.tables.rig_mods.find(m => m["Rig Mod"] === name) || {};
-        const cost = Math.round((+mr.Cost || 0) * mult);
+        const cost = Math.round((+mr.Cost || 0) * rigMult);
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
         r.mods.push(name);
@@ -3261,14 +3274,14 @@ function shRigging(body) {
     rigCard.append(el("p", { class: "hint" }, "No rigs owned — drones are piloted unlinked."));
   // buy a new VCR in play
   const rigGroups = [{ label: "Vehicle Control Rigs", items: DATA.tables.rigs.map(x => ({
-    name: x["Rig Type"], cost: Math.round((+x.Cost || 0) * mult),
+    name: x["Rig Type"], cost: Math.round((+x.Cost || 0) * rigMult),
     sub: `+${x["Bonus Dice"]}d · Links ${x.Links} · Cores ${x.Cores}` })) }];
   rigBuySection.append(el("div", { class: "sh-unit-add" }, el("b", {}, "Buy VCR"),
     categoryBrowser({ id: "buy-rigs", groups: rigGroups,
       rerender: renderSheet, afterAdd: () => playChangedRecalc(),
       onAdd: name => {
         const row = DATA.tables.rigs.find(x => x["Rig Type"] === name) || {};
-        const cost = Math.round((+row.Cost || 0) * mult);
+        const cost = Math.round((+row.Cost || 0) * rigMult);
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
         CHAR.rigs.push({ name, mods: [] });
@@ -3315,6 +3328,8 @@ function shRigging(body) {
   }
 
   const unitBlock = (cfg, list, calcArr) => {
+    // Vehicles (base + fitted weapons/mods) carry the surcharge; drones don't.
+    const mult = cfg.table === "vehicles" ? RULES.surchargeFor("vehicle", base) : 1;
     const card = el("div", { class: "card sh-card" }, el("h3", {}, cfg.title));
     list.forEach((u, i) => {
       const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === u.name) || {};

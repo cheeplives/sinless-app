@@ -104,6 +104,13 @@ mail failure never blocks the admin action, and only an actual status change
 sends (re-approving/re-revoking doesn't re-send; admins are never emailed on
 revoke). The approval message's sign-in link uses `base_url`.
 
+Not receiving them? Run the CLI diagnostic from the site directory:
+`php api/tools/mail-test.php you@example.com`. It prints which config file was
+actually loaded (a common gotcha: editing `api/config.php` when the live config
+is `~/sinless-config.php`), whether the block is switched on, and whether
+`mail()` accepted the message — separating config problems from delivery
+(SPF/DKIM/spam) problems.
+
 ## 6. First run
 
 1. Visit the site → login gate → sign in with the account you listed in

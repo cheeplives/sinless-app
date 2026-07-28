@@ -730,13 +730,13 @@ function poolState(pool) {
   play.pool_kismet = play.pool_kismet || {};
   const kismetDice = Math.max(0, play.pool_kismet[pool] || 0);   // permanent, never removed
   const base = CALC.pools[pool];   // already includes permanent Kismet dice
-  const boost = Math.max(0, play.pool_boost[pool] || 0);   // temporary bonus dice
-  const max = base + boost;
+  const boost = play.pool_boost[pool] || 0;   // temporary bonus/penalty dice (may be negative)
+  const max = Math.max(0, base + boost);      // effective pool never drops below 0
   const used = Math.max(0, Math.min(play.pool_used[pool] || 0, max));
   return {
     kismetDice, boost, max, used, remaining: max - used,
     setUsed: v => { play.pool_used[pool] = Math.max(0, Math.min(max, v)); playChanged(); },
-    setBoost: v => { play.pool_boost[pool] = Math.max(0, v); playChanged(); },
+    setBoost: v => { play.pool_boost[pool] = v; playChanged(); },   // negatives allowed (penalties)
   };
 }
 
@@ -781,9 +781,12 @@ function headerPoolTile(pool) {
       btn("↺", () => setUsed(0), "Reset pool to full")),
     el("div", { class: "sh-pool-boost", onclick: e => e.stopPropagation() },
       el("span", { class: "sub" }, "temp"),
-      btn("−", () => setBoost(boost - 1), "Reduce temporary bonus dice"),
-      el("b", { title: "Temporary bonus dice", style: boost ? "color:var(--ok)" : "" }, `+${boost}`),
-      btn("+", () => setBoost(boost + 1), "Add temporary bonus dice")),
+      btn("−", () => setBoost(boost - 1), "Reduce temporary dice (can go negative)"),
+      el("b", { title: "Temporary bonus/penalty dice",
+        style: boost > 0 ? "color:var(--ok)" : boost < 0 ? "color:var(--bad)" : "" },
+        boost > 0 ? `+${boost}` : boost < 0 ? `−${Math.abs(boost)}` : "+0"),
+      btn("+", () => setBoost(boost + 1), "Add temporary dice"),
+      boost ? btn("↺", () => setBoost(0), "Reset temporary dice to 0") : null),
     ...notes.map(n => el("div", { class: "sh-pool-note" }, n)));
 }
 
@@ -1074,8 +1077,8 @@ function shOverview(body) {
     c.martial_notes && c.martial_notes.length
       ? statLine("Martial art", c.martial_notes.join(" · ")) : null,
     c.melee_exploit ? statLine("Melee exploit", `+${c.melee_exploit}`) : null,
-    c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`) : null,
-    c.soak_bonus ? statLine("Soak bonus", `+${c.soak_bonus}`) : null,
+    c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
+    c.soak_bonus ? statLine("Soak bonus", `+${c.soak_bonus}`, (c.soak_sources || []).join(" · ")) : null,
     statLine("Carried weight", String(c.carried_weight)));
   const dodgeCard = el("div", { class: "card sh-card sh-counter" },
     el("h3", {}, "Dodge Dice"),
@@ -1094,10 +1097,10 @@ function shOverview(body) {
           el("span", { style: "text-align:right" }, lvl.Effect || ""))))
     : null;
 
+  // Flat card list in a balanced multi-column flow (see .sh-ov-grid): columns
+  // fill to equal height and reflow 3→2→1 by width, so no column is overloaded.
   body.append(el("div", { class: "sh-ov-grid" },
-    el("div", {}, poolCard),
-    el("div", {}, cond, maCard),
-    el("div", {}, initCard, dodgeCard, combatCard)));
+    ...[poolCard, cond, maCard, initCard, dodgeCard, combatCard].filter(Boolean)));
 
   // Heritage / uplift special abilities (e.g. a Bat's Echolocation) — surfaced
   // here on the Overview, not just buried on the Notes tab.
@@ -1221,8 +1224,9 @@ function shOverview(body) {
   body.append(notesCard(3));
 }
 
-function statLine(label, value) {
-  return el("div", { class: "stat-line" }, label, el("b", {}, value));
+function statLine(label, value, title) {
+  return el("div", title ? { class: "stat-line", title } : { class: "stat-line" },
+    label, el("b", {}, value));
 }
 function miniCounter(label, get, set, min = 0, max = 9999) {
   const clamp = n => Math.max(min, Math.min(max, n));

@@ -143,6 +143,7 @@ const ADRENALINE_BOOST_SIMPLE_ACTIONS = 3;
 const COMBAT_MASTERY_MELEE_EXPLOIT_BONUS = 2;
 const WIRED_REFLEXES_MELEE_EXPLOITS_BY_RANK = { 1: 1, 2: 2, 3: 2 };
 const COVERT_SYNTHSKIN_DODGE_BONUS = 1;
+const PERFECT_SITUATIONAL_AWARENESS_BONUS = 3;   // +3d dodge AND soak (amp power)
 const GYROMOUNT_RECOIL_BONUS = 2;
 const PLATELET_DAMAGE_REDUCTION = 1;
 // Augments granting a special sense or immunity (no numeric stat) — surfaced as
@@ -1069,6 +1070,10 @@ function tallyAmpPowers(character, data, magicType, warnings, errors) {
       expertiseSkills.add(target);
     } else if (row.Name === "Eyes of the Raptor") {
       skillBonus["Firearms"] = (skillBonus["Firearms"] || 0) + 2;
+    } else if (row.Name === "Might of the Bear") {
+      skillBonus["Unarmed Combat"] = (skillBonus["Unarmed Combat"] || 0) + 2;
+    } else if (row.Name === "Sting of the Scorpion") {
+      skillBonus["Melee Weapons"] = (skillBonus["Melee Weapons"] || 0) + 2;
     } else if (row.Name === "Hidden Presence") {
       skillBonus["Shadow"] = (skillBonus["Shadow"] || 0) + 2;
       skillBonus["Subterfuge"] = (skillBonus["Subterfuge"] || 0) + 2;
@@ -1852,6 +1857,10 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
                          + Math.max(1, Math.floor(finalAttributes.Willpower / 2)) + conditionBonus);
 
   const hasChelonian = amp.powers_taken.has("Aspect of the Chelonian");
+  // Perfect Situational Awareness grants +3d on dodge AND soak — fold it into
+  // both combat bonuses (it was previously only a Brawn pool note).
+  const psaBonus = amp.powers_taken.has("Perfect Situational Awareness")
+    ? PERFECT_SITUATIONAL_AWARENESS_BONUS : 0;
   // Itemised non-worn armor (cyber/bioware augments, innate heritage, amp) so
   // the Overview loadout can list each source, not just the combined total.
   const armorSources = [];
@@ -1907,8 +1916,8 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
                             hasChelonian ? CHELONIAN_BALLISTIC_ARMOR : 0),
     // Impact armor that can't be stripped: un-strippable augments + innate heritage.
     min_impact: (augments.impact_armor_min || 0) + (heritage.impact_armor || 0),
-    dodge_bonus: heritage.dodge_bonus + augments.dodge_bonus,
-    soak_bonus: heritage.soak_bonus,
+    dodge_bonus: heritage.dodge_bonus + augments.dodge_bonus + psaBonus,
+    soak_bonus: heritage.soak_bonus + psaBonus,
     carried_weight: round2(carriedWeight),
   };
 }
@@ -2253,6 +2262,22 @@ function calculate(character) {
   combatOut.move += maMods.move_bonus;
   if (maMods.recoil_ignored) combatOut.recoil_ignored = 1;
   combatOut.martial_notes = maMods.applied;
+
+  // Per-source breakdowns so the Combat box can show where each Soak/Dodge die
+  // comes from — every contributing source in one place (the sweep).
+  const hasPsa = amp.powers_taken.has("Perfect Situational Awareness");
+  const fmtSrc = list => list.filter(([, d]) => d).map(([label, d]) => `${label} +${d}`);
+  combatOut.soak_sources = fmtSrc([
+    ["Heritage", heritage.soak_bonus],
+    ["Perfect Situational Awareness", hasPsa ? PERFECT_SITUATIONAL_AWARENESS_BONUS : 0],
+    [martialArt.style || "Martial art", maMods.soak_bonus],
+  ]);
+  combatOut.dodge_sources = fmtSrc([
+    ["Heritage", heritage.dodge_bonus],
+    ["Augments", augments.dodge_bonus],
+    ["Perfect Situational Awareness", hasPsa ? PERFECT_SITUATIONAL_AWARENESS_BONUS : 0],
+    [martialArt.style || "Martial art", maMods.dodge_bonus],
+  ]);
 
   // Some sources zero out condition-track wound penalties (Pain Nullifier
   // augment, the Shibumi martial art, …). Detect data-driven: any effect text

@@ -597,8 +597,18 @@ label.opt input{margin-top:3px}
 .sh-poolskill b{font-family:var(--mono);min-width:34px;text-align:right}
 .sh-skilltable{width:100%}
 .sh-skilltable th{font-size:10px}
-.sh-skilltable td,.sh-skilltable th{padding:4px 6px}
+.sh-skilltable td,.sh-skilltable th{padding:4px 6px;vertical-align:top}
+.sh-skilltable td.num{white-space:nowrap}
 .sh-skilltable tr.dim td{color:var(--dim)}
+/* editable specialization on the Skills tab: name + inline chip, input beneath */
+.sh-spec-line{display:flex;align-items:center;gap:6px}
+.sh-spec-chip{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;line-height:1;
+  letter-spacing:.04em;color:var(--dim);border:1px solid var(--line);border-radius:9px;
+  padding:2px 6px;cursor:pointer;user-select:none;white-space:nowrap}
+.sh-spec-chip:hover{border-color:var(--manon-dim)}
+.sh-spec-chip.on{color:var(--manon);border-color:var(--manon)}
+.sh-spec-chip input{margin:0;width:11px;height:11px}
+.sh-spec-input{margin-top:4px;width:100%;max-width:170px;font-size:11px;padding:2px 6px}
 
 .sh-track{margin-top:10px}
 .sh-track-head{display:flex;justify-content:space-between;font-family:var(--disp);font-size:12px;

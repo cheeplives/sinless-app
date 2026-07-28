@@ -1321,7 +1321,7 @@ function skillTableRow(name, dim = false, editable = false) {
   // carry one. Read-only views just show the note.
   let nameCell, specText = null;
   if (editable && s.final > 0) {
-    const specToggle = el("label", { class: "skill-spec-toggle" },
+    const specToggle = el("label", { class: "sh-spec-chip" + (specOn ? " on" : ""), title: "Specialize this skill (−1 / +1)" },
       el("input", { type: "checkbox", ...(specOn ? { checked: 1 } : {}),
         onchange: e => {
           const entry = CHAR.skill_specializations[name] ??= { on: false, text: "" };
@@ -1329,9 +1329,9 @@ function skillTableRow(name, dim = false, editable = false) {
           playChanged();
         } }),
       el("span", {}, "Spec"));
-    nameCell = el("div", { class: "skill-name-line" }, name, specToggle);
+    nameCell = el("div", { class: "sh-spec-line" }, el("span", {}, name), specToggle);
     if (specOn)
-      specText = el("input", { type: "text", class: "skill-spec-text",
+      specText = el("input", { type: "text", class: "sh-spec-input",
         value: (spec && spec.text) || "", placeholder: "Specialization…",
         oninput: e => { (CHAR.skill_specializations[name] ??= { on: true, text: "" }).text = e.target.value; schedulePlaySave(); } });
   } else {

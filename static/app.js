@@ -1148,7 +1148,7 @@ function tabMagic(p) {
         label: school,
         items: rows.map(s => ({
           name: s.Name,
-          sub: `Drain ${s.Drain || "?"}${s.Duration ? " · " + s.Duration : ""}`,
+          sub: `Drain ${s.Drain || "?"}${s.Duration ? " · " + s.Duration : ""}${s.Effect ? " · " + s.Effect : ""}`,
           hidden: ownedSpells.has(s.Name),   // already-known spells drop out
         })),
       }));

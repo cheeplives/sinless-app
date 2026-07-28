@@ -1304,9 +1304,10 @@ function skillTableHeader() {
     el("th", { class: "num" }, "Final"));
 }
 
-function skillTableRow(name, dim = false) {
+function skillTableRow(name, dim = false, editable = false) {
   const s = CALC.skills[name];
-  const spec = (CHAR.skill_specializations || {})[name];
+  CHAR.skill_specializations ??= {};
+  const spec = CHAR.skill_specializations[name];
   const specOn = !!(spec && spec.on) && s.final > 0;
   const rating = specOn ? `${s.final - 1} / ${s.final + 1}`
     : s.final > 0 ? String(s.final)
@@ -1314,9 +1315,32 @@ function skillTableRow(name, dim = false) {
   // group_value already folds the bonus in; the Group column shows just the
   // group-derived dice so Pts + Bonus + Group reads as Final.
   const groupDice = s.points === 0 && s.group_value != null ? s.group_value - s.bonus : 0;
+
+  // Editable specialization (Skills tab only): a "Spec" toggle plus a text field;
+  // a specialized skill splits its rating into −1 / +1. Only trained skills can
+  // carry one. Read-only views just show the note.
+  let nameCell, specText = null;
+  if (editable && s.final > 0) {
+    const specToggle = el("label", { class: "skill-spec-toggle" },
+      el("input", { type: "checkbox", ...(specOn ? { checked: 1 } : {}),
+        onchange: e => {
+          const entry = CHAR.skill_specializations[name] ??= { on: false, text: "" };
+          entry.on = e.target.checked;
+          playChanged();
+        } }),
+      el("span", {}, "Spec"));
+    nameCell = el("div", { class: "skill-name-line" }, name, specToggle);
+    if (specOn)
+      specText = el("input", { type: "text", class: "skill-spec-text",
+        value: (spec && spec.text) || "", placeholder: "Specialization…",
+        oninput: e => { (CHAR.skill_specializations[name] ??= { on: true, text: "" }).text = e.target.value; schedulePlaySave(); } });
+  } else {
+    nameCell = name;
+    if (specOn && spec.text) specText = el("span", { class: "sub skill-spec-note" }, ` — ${spec.text}`);
+  }
+
   return el("tr", dim ? { class: "dim" } : {},
-    el("td", {}, name,
-      specOn && spec.text ? el("span", { class: "sub skill-spec-note" }, ` — ${spec.text}`) : null,
+    el("td", {}, nameCell, specText,
       (s.notes && s.notes.length) ? el("div", { class: "sub" }, "✦ " + s.notes.join(" · ")) : null),
     el("td", { class: "num sub" }, s.points ? String(s.points) : ""),
     el("td", { class: "num sub" }, s.bonus ? (s.bonus > 0 ? `+${s.bonus}` : String(s.bonus)) : ""),
@@ -1358,7 +1382,7 @@ function shSkills(body) {
     else {
       const t = el("table", { class: "sh-skilltable" });
       t.append(skillTableHeader());
-      for (const [name] of trained) t.append(skillTableRow(name));
+      for (const [name] of trained) t.append(skillTableRow(name, false, true));
       col.append(t);
     }
     grid.append(col);
@@ -2688,10 +2712,12 @@ function shMagic(body) {
       const learnable = DATA.tables.spells.filter(r =>
         !known.has(r.Name) && (type === "Archmage" || !CHAR.magic.school || r.School === CHAR.magic.school));
       if (learnable.length) {
+        const shortEff = s => (s && s.length > 90) ? s.slice(0, 89) + "…" : (s || "");
         const spellSel = el("select", {},
           el("option", { value: "" }, "Learn new spell…"),
-          ...learnable.map(r => el("option", { value: r.Name },
-            `${r.Name} (${r.School}) — ${fmt(Math.round(+r.Cost || 0))}/Force`)));
+          ...learnable.map(r => el("option", { value: r.Name, title: r.Effect || "" },
+            `${r.Name} (${r.School}) — ${fmt(Math.round(+r.Cost || 0))}/Force`
+            + (r.Effect ? ` — ${shortEff(r.Effect)}` : ""))));
         const forceSel = el("select", {},
           ...[1, 2, 3, 4, 5, 6].map(f => el("option", { value: String(f) }, `Force ${f}`)));
         wrap.append(el("div", { class: "add-row" }, spellSel, forceSel,

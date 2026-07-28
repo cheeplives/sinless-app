@@ -1682,9 +1682,14 @@ const HEAVY_FITTING_WEIGHT = 4;
 const CARGO_PER_WEIGHT_BLOCK = 3;
 const VEHICLE_MIN_CARGO = 1;
 const VEHICLE_WEAPON_BODY_DIVISOR = 3;
+// Vehicle Condition scales the base price (not fitted weapons/mods).
+const VEHICLE_CONDITIONS = ["Pristine", "Good", "Fair", "Poor"];
+const VEHICLE_CONDITION_FACTORS = { Pristine: 1, Good: 0.75, Fair: 0.5, Poor: 0.25 };
 
 function priceFittedVehicle(entry, baseRow, data, weaponAndModTables, gearCostMultiplier) {
-  let cost = asNumber(baseRow.Cost);
+  // Vehicle Condition scales the BASE price only (not fitted weapons/mods).
+  // Drones have no condition field, so the factor is 1 for them.
+  let cost = asNumber(baseRow.Cost) * (VEHICLE_CONDITION_FACTORS[entry.condition] || 1);
   const fitted = [];
   // Unit mods may be plain names (unit-scoped) or {name, weapon} (attached to a
   // specific mounted weapon); either way we price by the mod's name.
@@ -2381,6 +2386,7 @@ return {
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost,
   augmentLimbRequirement, augmentMeleeDamage,
   HOUSE_RULE_DEFS, houseRule, setHouseRule,
+  VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS,
 };
 
 })();

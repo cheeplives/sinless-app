@@ -3466,6 +3466,7 @@ function shRigging(body) {
                 + ` · weapons ${summary.weapon_count ?? u.weapons.length}/${summary.weapon_cap ?? cfg.capOf(r)}`;
             })()),
           r.Effect ? el("div", { class: "sub", style: "color:var(--manon)" }, r.Effect) : null,
+          cfg.table === "vehicles" ? vehicleConditionSelect(u, () => playChangedRecalc()) : null,
           details,
           activeRig ? linkToggle : null),
         el("div", { class: "sh-unit-ctr" },

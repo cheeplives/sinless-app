@@ -2020,6 +2020,19 @@ function fittedEditor(it, weaponTables, guard) {
     effectOf: describeFitting,
   });
 }
+/* Vehicle Condition selector — scales the base price only (Pristine ×1, Good
+ * ×0.75, Fair ×0.5, Poor ×0.25). Shared by chargen and the play sheet; `onChange`
+ * is the caller's recompute/re-render. */
+function vehicleConditionSelect(it, onChange) {
+  it.condition = it.condition || "Pristine";
+  const sel = el("select", { onchange: e => { it.condition = e.target.value; onChange(); } },
+    ...RULES.VEHICLE_CONDITIONS.map(c =>
+      el("option", { value: c }, `${c} (×${RULES.VEHICLE_CONDITION_FACTORS[c]})`)));
+  sel.value = it.condition;
+  return el("label", { class: "sub", style: "display:inline-flex;align-items:center;gap:6px;margin-top:4px" },
+    el("span", {}, "Condition"), sel);
+}
+
 function tabDrones(p) {
   p.append(el("h2", {}, "Rigs ", chip("cash")));
   p.append(listEditor({
@@ -2108,6 +2121,7 @@ function tabDrones(p) {
               `Move ${r.Move} \u00b7 Body ${r.Body} \u00b7 Handling ${r.Handling}` +
               (r.Frame ? ` \u00b7 ${r.Frame}` : "") + (r.Effect ? ` \u00b7 ${r.Effect}` : "")),
             el("div", { class: "sub", style: overLimit ? "color:var(--bad)" : "" }, limits),
+            kind === "vehicle" ? vehicleConditionSelect(it, refresh) : null,
             fittedEditor(it, wtabs, guard)),
           el("td", { class: "num" }, el("b", {}, fmt(calcRow.cost ?? r.Cost))),
           el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));

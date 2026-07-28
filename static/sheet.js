@@ -3328,8 +3328,10 @@ function shRigging(body) {
   }
 
   const unitBlock = (cfg, list, calcArr) => {
-    // Vehicles (base + fitted weapons/mods) carry the surcharge; drones don't.
-    const mult = cfg.table === "vehicles" ? RULES.surchargeFor("vehicle", base) : 1;
+    // Only a vehicle's base chassis carries the small-heritage surcharge; fitted
+    // weapons/mods (and everything on a drone) pay face value.
+    const baseMult = cfg.table === "vehicles" ? RULES.surchargeFor("vehicle", base) : 1;
+    const mult = 1;   // fitted weapons & mods — never surcharged
     const card = el("div", { class: "card sh-card" }, el("h3", {}, cfg.title));
     list.forEach((u, i) => {
       const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === u.name) || {};
@@ -3498,14 +3500,14 @@ function shRigging(body) {
 
     // buy a new unit — rendered in the bottom Buy section
     const buyGroups = [{ label: cfg.title, items: DATA.tables[cfg.table].map(x => ({
-      name: x[cfg.nameKey], cost: Math.round((+x.Cost || 0) * mult),
+      name: x[cfg.nameKey], cost: Math.round((+x.Cost || 0) * baseMult),
       sub: `Body ${x.Body} · Move ${x.Move} · Handling ${x.Handling}` })) }];
     rigBuySection.append(el("div", { class: "sh-unit-add" }, el("b", {}, `Buy new ${cfg.title.toLowerCase().replace(/s$/, "")}`),
       categoryBrowser({ id: `buy-${cfg.table}`, groups: buyGroups,
         rerender: renderSheet, afterAdd: () => playChangedRecalc(),
         onAdd: name => {
           const row = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === name) || {};
-          const cost = Math.round((+row.Cost || 0) * mult);
+          const cost = Math.round((+row.Cost || 0) * baseMult);
           if (CHAR.play.cash < cost
               && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
           list.push({ name, weapons: [], mods: [] });

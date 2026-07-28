@@ -1701,9 +1701,11 @@ const VEHICLE_CONDITIONS = ["Pristine", "Good", "Fair", "Poor"];
 const VEHICLE_CONDITION_FACTORS = { Pristine: 1, Good: 0.75, Fair: 0.5, Poor: 0.25 };
 
 function priceFittedVehicle(entry, baseRow, data, weaponAndModTables, gearCostMultiplier) {
-  // Vehicle Condition scales the BASE price only (not fitted weapons/mods).
-  // Drones have no condition field, so the factor is 1 for them.
-  let cost = asNumber(baseRow.Cost) * (VEHICLE_CONDITION_FACTORS[entry.condition] || 1);
+  // Vehicle Condition AND the small-heritage surcharge scale the BASE price
+  // only — fitted weapons/mods always pay face value. Drones have no condition
+  // field and pass gearCostMultiplier 1, so both are no-ops for them.
+  let cost = asNumber(baseRow.Cost) * (VEHICLE_CONDITION_FACTORS[entry.condition] || 1)
+             * gearCostMultiplier;
   const fitted = [];
   // Unit mods may be plain names (unit-scoped) or {name, weapon} (attached to a
   // specific mounted weapon); either way we price by the mod's name.
@@ -1722,7 +1724,7 @@ function priceFittedVehicle(entry, baseRow, data, weaponAndModTables, gearCostMu
       }
     }
   }
-  cost = round2(cost * gearCostMultiplier);
+  cost = round2(cost);
   const summary = { name: entry.name, fitted: fitted.map(f => f.name),
                     fitted_detail: fitted, cost };
   for (const field of ["Move", "Body", "Handling", "Frame", "Cargo", "Impact",
@@ -1797,8 +1799,9 @@ function priceDronesAndVehicles(character, data, gearCostMultiplier, warnings) {
     return [total, summaries];
   };
 
-  // The small-heritage surcharge covers vehicles (base + fitted weapons/mods)
-  // but not drones — a small pilot doesn't change a remote drone's price.
+  // The small-heritage surcharge covers a vehicle's base chassis (priceFittedVehicle
+  // applies it to the base only, not fitted weapons/mods) but not drones — a
+  // small pilot doesn't change a remote drone's price.
   const [droneCost, drones] = priceAll(character.drones, "drones", "Drone",
                                        droneTables, checkDroneLimits, 1);
   const [vehicleCost, vehicles] = priceAll(character.vehicles, "vehicles", "Vehicle",

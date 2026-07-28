@@ -2270,7 +2270,8 @@ function tabGear(p) {
   if (CALC.budget.gear_cost_multiplier > 1)
     p.append(el("p", { class: "hint" },
       `Heritage surcharge \u00d7${CALC.budget.gear_cost_multiplier} on weapons, armor, `
-      + "vehicles and cybertechtronic augments (Bioware, drones, rigs, decks, gear and lifestyle unaffected)."));
+      + "vehicle chassis and cybertechtronic augments (vehicle mods/weapons, Bioware, "
+      + "drones, rigs, decks, gear and lifestyle unaffected)."));
 }
 
 // Deferred to DOMContentLoaded so every later script (sheet.js, workspace.js)

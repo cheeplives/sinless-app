@@ -65,17 +65,19 @@ return [
   // Leave empty to disable notifications.
   'approval_webhook_url' => '',
 
-  // --- Approval email -------------------------------------------------------
-  // When an admin approves a pending user, email that user to let them know.
-  // Uses PHP mail() (fire-and-forget; a failure never blocks the approval).
-  // For deliverability the 'from' MUST be an address on a domain your host is
+  // --- Account status email -------------------------------------------------
+  // When an admin approves (or revokes) a user, email them about it. Uses PHP
+  // mail() (fire-and-forget; a failure never blocks the admin action). For
+  // deliverability the 'from' MUST be an address on a domain your host is
   // authorized to send for (e.g. your site's domain), so SPF/DKIM align — a
-  // gmail.com From from a shared host will be spam-filtered. Set enabled=false
-  // (or leave 'from' empty) to disable. The sign-in link uses 'base_url' above.
+  // gmail.com From from a shared host will be spam-filtered. One switch covers
+  // both events: set enabled=false (or leave 'from' empty) to disable. The
+  // approval message's sign-in link uses 'base_url' above.
   'approval_email' => [
-    'enabled'  => false,
-    'from'     => 'Sinless <noreply@example.com>',
-    'subject'  => 'Your Sinless account is approved',
+    'enabled'        => false,
+    'from'           => 'Sinless <noreply@example.com>',
+    'subject'        => 'Your Sinless account is approved',
+    'revoke_subject' => 'Your Sinless account access was removed',
     // 'reply_to' => 'you@example.com',   // optional
   ],
 

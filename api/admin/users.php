@@ -43,22 +43,28 @@ if ($targetId === (int) $admin['id']) {
   json_error(400, 'cannot_modify_self');   // don't let an admin lock themselves out
 }
 
-if ($action === 'approve') {
-  // Read prior state first so we only email on an actual transition into
-  // 'approved' (re-approving an already-approved user must not re-send).
-  $sel = db()->prepare('SELECT email, display_name, status FROM users WHERE id = ?');
-  $sel->execute([$targetId]);
-  $target = $sel->fetch();
-  if (!$target) json_error(404, 'user_not_found');
+// Read prior state first so we only email on an ACTUAL status transition
+// (re-approving / re-revoking must not re-send).
+$sel = db()->prepare('SELECT email, display_name, status, is_admin FROM users WHERE id = ?');
+$sel->execute([$targetId]);
+$target = $sel->fetch();
+if (!$target) json_error(404, 'user_not_found');
 
+if ($action === 'approve') {
   $st = db()->prepare("UPDATE users SET status = 'approved', approved_at = NOW() WHERE id = ?");
   $st->execute([$targetId]);
 
   if (($target['status'] ?? '') !== 'approved' && !empty($target['email'])) {
-    send_approval_email((string) $target['email'], (string) ($target['display_name'] ?? ''));
+    send_account_email('approved', (string) $target['email'], (string) ($target['display_name'] ?? ''));
   }
 } else {
   $st = db()->prepare("UPDATE users SET status = 'revoked' WHERE id = ? AND is_admin = 0");
   $st->execute([$targetId]);
+
+  // The UPDATE no-ops on admins (is_admin = 0 guard); mirror that here so an
+  // admin target is never emailed, and only send on a real transition.
+  if (!(int) $target['is_admin'] && ($target['status'] ?? '') !== 'revoked' && !empty($target['email'])) {
+    send_account_email('revoked', (string) $target['email'], (string) ($target['display_name'] ?? ''));
+  }
 }
 json_out(['ok' => true]);

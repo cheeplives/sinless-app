@@ -291,32 +291,42 @@ function http_request(string $method, string $url, array $opts = []): array {
   return ['status' => $status, 'body' => (string) $body, 'error' => $err];
 }
 
-/** Notify a user (by email) that their account was approved. Fire-and-forget:
- * never throws, and a mail failure must never break the admin approval action.
- * Uses PHP mail(), which works on shared hosting (e.g. DreamHost) when the From
- * is an address on a domain the host is authorized to send for, so SPF/DKIM
- * align and the message doesn't land in spam.
+/** Notify a user (by email) that an admin changed their account status —
+ * $kind is 'approved' or 'revoked'. Fire-and-forget: never throws, and a mail
+ * failure must never break the admin action. Uses PHP mail(), which works on
+ * shared hosting (e.g. DreamHost) when the From is an address on a domain the
+ * host is authorized to send for, so SPF/DKIM align and it doesn't land in spam.
  *
- * Off unless the config 'approval_email' block sets both enabled=true and a
- * 'from' address — existing deployments whose config predates this key simply
- * don't send. User input (to address) is validated and never placed in a
- * header, so there is no header-injection surface. */
-function send_approval_email(string $toEmail, string $displayName): void {
+ * Both events share one on/off switch: off unless the config 'approval_email'
+ * block sets enabled=true and a 'from' address — existing deployments whose
+ * config predates this key simply don't send. User input (to address) is
+ * validated and never placed in a header, so there is no header-injection
+ * surface; $displayName only ever appears in the body. */
+function send_account_email(string $kind, string $toEmail, string $displayName): void {
   $cfg = (array) cfg('approval_email', []);
   if (empty($cfg['enabled']) || empty($cfg['from'])) return;
   $toEmail = trim($toEmail);
   if (!filter_var($toEmail, FILTER_VALIDATE_EMAIL)) return;
 
-  $from    = (string) $cfg['from'];
-  $subject = (string) ($cfg['subject'] ?? 'Your Sinless account is approved');
-  $appUrl  = rtrim((string) cfg('base_url', ''), '/') . '/';
-  $name    = trim($displayName) !== '' ? trim($displayName) : 'there';
+  $from   = (string) $cfg['from'];
+  $appUrl = rtrim((string) cfg('base_url', ''), '/') . '/';
+  $name   = trim($displayName) !== '' ? trim($displayName) : 'there';
 
-  $body = "Hi $name,\n\n"
-        . "Good news — your Sinless Character Dossier account has been approved. "
-        . "You can sign in and start building characters now:\n\n"
-        . "  $appUrl\n\n"
-        . "See you in the sprawl.\n";
+  if ($kind === 'revoked') {
+    $subject = (string) ($cfg['revoke_subject'] ?? 'Your Sinless account access was removed');
+    $body = "Hi $name,\n\n"
+          . "Your access to the Sinless Character Dossier has been removed by an "
+          . "administrator. Your saved characters are kept and will be available "
+          . "again if your access is restored.\n\n"
+          . "If you think this was a mistake, reach out to whoever runs your group.\n";
+  } else {
+    $subject = (string) ($cfg['subject'] ?? 'Your Sinless account is approved');
+    $body = "Hi $name,\n\n"
+          . "Good news — your Sinless Character Dossier account has been approved. "
+          . "You can sign in and start building characters now:\n\n"
+          . "  $appUrl\n\n"
+          . "See you in the sprawl.\n";
+  }
 
   // Envelope sender (-f) improves deliverability and routes bounces; pull the
   // bare address out of a possible "Name <addr>" From value.
@@ -336,10 +346,10 @@ function send_approval_email(string $toEmail, string $displayName): void {
   try {
     $params = filter_var($envelope, FILTER_VALIDATE_EMAIL) ? '-f' . $envelope : '';
     if (@mail($toEmail, $subject, $body, implode("\r\n", $headers), $params) === false) {
-      error_log('approval email: mail() returned false for ' . $toEmail);
+      error_log("account email ($kind): mail() returned false for " . $toEmail);
     }
   } catch (Throwable $e) {
-    error_log('approval email failed: ' . $e->getMessage());
+    error_log("account email ($kind) failed: " . $e->getMessage());
   }
 }
 

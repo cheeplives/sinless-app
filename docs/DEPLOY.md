@@ -55,7 +55,7 @@ Set at minimum:
 - `admin_identities` → **your** email (or `github:<id>`) so your first login is auto-approved as admin
 - `approval_webhook_url` → your Discord/Slack incoming webhook
 - `approval_email` *(optional)* → set `enabled => true` + a `from` on your own domain
-  to email users when you approve them (see HOSTING.md § Approval email)
+  to email users when you approve or revoke them (see HOSTING.md § Account status email)
 
 > **Recommended hardening — config above the web root.** Your home dir `~/` is
 > not web-served (only the domain folder is), so keeping the secret there means

@@ -569,7 +569,6 @@ label.opt input{margin-top:3px}
 /* pool tiles living in the sheet header (compact, with dice tracking) */
 /* pool bar: Save/Load/New at the left, the 1×4 pool row travelling across */
 .sh-poolbar{display:flex;gap:14px;align-items:stretch;margin-top:12px}
-.sh-poolbar .sh-actions{margin-left:0;align-self:center;flex-shrink:0}
 .sh-head-pools{display:flex;gap:12px;flex-wrap:nowrap;flex:1;justify-content:space-between}
 .sh-head-pools .sh-pool{flex:1;padding:12px 18px 10px;min-width:0;text-align:center}
 .sh-head-pools .sh-pool .k{font-size:13px}
@@ -587,7 +586,6 @@ label.opt input{margin-top:3px}
 .sh-pool-boost{display:flex;gap:4px;justify-content:center;align-items:center;margin-top:4px}
 .sh-pool-boost .sub{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
 .sh-pool-boost b{font-family:var(--mono);font-size:13px;min-width:22px}
-.sh-actions{display:flex;gap:8px;align-items:center;margin-left:auto}
 .sh-top{align-items:flex-start}
 .sh-pool-note{font-size:9.5px;color:var(--amber);margin-top:3px;max-width:150px;line-height:1.3}
 
@@ -686,6 +684,13 @@ label.opt input{margin-top:3px}
 .btn.sh-mi-save{border-color:var(--ok);color:var(--ok)}
 .btn.sh-mi-brew{border-color:var(--manon);color:var(--manon)}
 .btn.sh-mi-danger{border-color:var(--bad);color:var(--bad)}
+/* non-highlighted items: high-contrast (white in dark, near-black in light) outline */
+.btn.sh-mi-plain{border-color:var(--strong);color:var(--text)}
+/* Delete: solid red button, white text (--on-accent stays white in both themes) */
+.btn.sh-mi-delete{background:var(--bad);border-color:var(--bad);color:var(--on-accent)}
+.btn.sh-mi-delete:hover{background:var(--bad);border-color:var(--bad);filter:brightness(1.08)}
+.btn.sh-mi-delete[disabled]{opacity:.5;cursor:not-allowed}
+.btn.sh-mi-delete[disabled]:hover{filter:none}
 .chip.ok{color:var(--ok);border-color:var(--ok)}
 /* Mount-augment picker: the grouped browser opens in a small modal so the
    host item's row stays compact. */

@@ -626,9 +626,9 @@ function sheetHeader() {
   // Top band: identity (hamburger + name, details underneath) on the left,
   // description in the middle, meters on the right.
   const top = el("div", { class: "sh-top" }, ident, descField, right);
-  // Pool band: Save/Load/New on the left, then the four pool tiles as a single
-  // 1×4 row travelling across to sit under the meters.
-  const poolBar = el("div", { class: "sh-poolbar" }, sheetActions(), pools);
+  // Pool band: the four pool tiles as a single 1×4 row travelling across to sit
+  // under the meters. (Load/Save/New moved into the ☰ menu.)
+  const poolBar = el("div", { class: "sh-poolbar" }, pools);
 
   head.append(top, poolBar);
   return head;
@@ -690,30 +690,6 @@ function compactKismetPill() {
     el("b", {}, `${s.remaining}/${s.max}`),
     btn("−", () => s.setUsed(s.used + 1), "Spend a Kismet die"),
     btn("+", () => s.setUsed(s.used - 1), "Return a spent Kismet die"));
-}
-
-/* New / Load / Save on the sheet, mirroring the chargen rail. CHAR, recalc,
- * exitSheet, renderPanel and refreshLoadList are app.js globals. */
-function sheetActions() {
-  const saveBtn = el("button", { class: "btn", onclick: () => {
-    if (!CHAR.name) { alert("Give the character a street name first."); return; }
-    STORAGE.saveCharacter(CHAR);
-    if (typeof refreshLoadList === "function") refreshLoadList();
-    saveBtn.textContent = "Saved ✓";
-    setTimeout(() => { saveBtn.textContent = "Save"; }, 1200);
-  } }, "Save");
-  const loadSel = el("select", { class: "btn-select", onchange: async e => {
-    const name = e.target.value;
-    if (!name) return;
-    const loaded = STORAGE.loadCharacter(name);
-    if (!loaded) { e.target.value = ""; return; }
-    await openCharacter(RULES.mergeDefaults(loaded));
-    e.target.value = "";
-  } }, el("option", { value: "" }, "Load…"),
-    ...STORAGE.listCharacters().map(n => el("option", { value: n }, n)));
-  const newBtn = el("button", { class: "btn ghost",
-    onclick: () => { newCharacterTab(); } }, "New");
-  return el("div", { class: "sh-actions" }, saveBtn, loadSel, newBtn);
 }
 
 /* One pool tile in the header: shows dice remaining / max, lets the player
@@ -885,7 +861,7 @@ function sheetMenu() {
       saveBtn.textContent = "Saved ✓";
       setTimeout(() => { saveBtn.textContent = "Save"; }, 1200);
     } }, "Save") : null;
-    const newBtn = el("button", { class: "btn", onclick: () => {
+    const newBtn = el("button", { class: "btn sh-mi-plain", onclick: () => {
       sheetMenuOpen = false; newCharacterTab();
     } }, "New");
 
@@ -901,19 +877,19 @@ function sheetMenu() {
 
     // Group 3 — Sharing / Shared characters / Homebrew (sharing + gallery need a backend).
     const sharingBtn = (synced && !ro && CHAR.name)
-      ? el("button", { class: "btn ghost", onclick: act(toggleSharing) },
+      ? el("button", { class: "btn sh-mi-plain", onclick: act(toggleSharing) },
           SYNC.isPublic(STORAGE.sanitizeName(CHAR.name))
             ? "Sharing: Public ✓ — make private"
             : "Sharing: Private — make public")
       : null;
     const sharedBtn = synced
-      ? el("button", { class: "btn ghost", onclick: act(openSharedGallery) }, "Shared characters") : null;
+      ? el("button", { class: "btn sh-mi-plain", onclick: act(openSharedGallery) }, "Shared characters") : null;
     const homebrewBtn = el("button", { class: "btn sh-mi-brew", onclick: act(enterHomebrew) }, "Homebrew");
 
     // Group 4 — Back to Chargen / Revert / Delete.
-    const backBtn = el("button", { class: "btn ghost", onclick: act(backToChargen) }, "← Back to Chargen");
+    const backBtn = el("button", { class: "btn sh-mi-plain", onclick: act(backToChargen) }, "← Back to Chargen");
     const revertBtn = el("button", { class: "btn warn", onclick: act(revertToChargenEnd) }, "Revert to Post-Chargen");
-    const deleteBtn = el("button", { class: "btn warn", disabled: CHAR.name ? null : "1",
+    const deleteBtn = el("button", { class: "btn sh-mi-delete", disabled: CHAR.name ? null : "1",
       title: CHAR.name ? "Permanently delete this character's save" : "Character has no name — nothing saved to delete",
       onclick: act(() => deleteSavedCharacter(CHAR.name)) }, "Delete Character");
 

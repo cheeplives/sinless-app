@@ -73,6 +73,43 @@ CREATE TABLE IF NOT EXISTS custom_content (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
+-- homebrew_packs — named, shareable homebrew collections. A user may own many;
+-- each is independently public/private. `data` is {tableKey:[rows...]} JSON
+-- (opaque). custom_content (above) is kept for rollback; migration 004 seeds a
+-- "My Homebrew" pack from each user's legacy blob.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS homebrew_packs (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id     BIGINT UNSIGNED NOT NULL,
+  name        VARCHAR(120) NOT NULL DEFAULT 'Homebrew',
+  data        LONGTEXT     NOT NULL,
+  is_public   TINYINT(1)   NOT NULL DEFAULT 0,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_user (user_id),
+  KEY idx_public (is_public),
+  CONSTRAINT fk_hbpacks_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- homebrew_subscriptions — (user, pack) rows: which public packs a member has
+-- enabled to live-merge into their game data.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS homebrew_subscriptions (
+  user_id     BIGINT UNSIGNED NOT NULL,
+  pack_id     BIGINT UNSIGNED NOT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, pack_id),
+  KEY idx_pack (pack_id),
+  CONSTRAINT fk_hbsub_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_hbsub_pack FOREIGN KEY (pack_id)
+    REFERENCES homebrew_packs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
 -- rate_limits — fixed-window counters for lib.php rate_limit(). Keyed by
 -- (bucket, id) where id is a client IP (auth endpoints) or "u<user_id>"
 -- (writes). Stale rows are GC'd opportunistically; safe to truncate anytime.

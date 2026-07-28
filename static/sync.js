@@ -89,8 +89,13 @@ async function probe() {
 async function hydrate() {
   if (mode !== "signedin" || !csrf) return;   // offline (no csrf) → skip, use cache
   try {
-    const cc = await (await api("GET", "custom-content.php")).json();
-    if (cc && cc.data) STORAGE.cacheCustomContent(cc.data);
+    // Homebrew: pull my named packs + the packs I subscribe to (both with data).
+    try {
+      const mine = await (await api("GET", "homebrew.php")).json();
+      if (mine && Array.isArray(mine.packs)) STORAGE.cachePacks(mine.packs);
+      const subs = await (await api("GET", "homebrew-subscriptions.php")).json();
+      if (subs && Array.isArray(subs.subscriptions)) STORAGE.cacheSubs(subs.subscriptions);
+    } catch (e) { console.warn("homebrew hydrate incomplete:", e); }
 
     const list = (await (await api("GET", "characters.php")).json()).characters || [];
     for (const meta of list) {
@@ -192,6 +197,59 @@ async function fetchShared(id) {
   } catch { return null; }
 }
 
+/* ---- homebrew packs (server mirror; all owner-scoped or is_public-gated) --- */
+async function listMyPacks() {
+  if (!enabled() || !csrf) return null;                 // null = offline/unknown → keep cache
+  try { const r = await api("GET", "homebrew.php"); return r.ok ? ((await r.json()).packs || []) : null; }
+  catch { return null; }
+}
+async function createPack(name, data) {
+  if (!enabled() || !csrf) return null;
+  try { const r = await api("POST", "homebrew.php", { name, data }); return r.ok ? await r.json() : null; }
+  catch { return null; }
+}
+async function savePack(id, data, name) {
+  if (!enabled() || !csrf) return;
+  const body = { data }; if (name != null) body.name = name;
+  try { await api("PUT", "homebrew.php?id=" + encodeURIComponent(id), body); } catch { /* retry next save */ }
+}
+async function deletePack(id) {
+  if (!enabled() || !csrf) return;
+  try { await api("DELETE", "homebrew.php?id=" + encodeURIComponent(id)); } catch { /* ignore */ }
+}
+async function setPackVisibility(id, isPublic) {
+  if (!enabled() || !csrf) return null;
+  try {
+    const r = await api("POST", "homebrew.php?id=" + encodeURIComponent(id), { is_public: !!isPublic });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+async function listPublicPacks() {
+  if (!enabled()) return [];
+  try { const r = await api("GET", "homebrew.php?public=1"); return r.ok ? ((await r.json()).packs || []) : []; }
+  catch { return []; }
+}
+async function fetchPublicPack(id) {
+  if (!enabled()) return null;
+  try { const r = await api("GET", "homebrew.php?public_id=" + encodeURIComponent(id)); return r.ok ? await r.json() : null; }
+  catch { return null; }
+}
+async function listSubs() {
+  if (!enabled() || !csrf) return null;
+  try { const r = await api("GET", "homebrew-subscriptions.php"); return r.ok ? ((await r.json()).subscriptions || []) : null; }
+  catch { return null; }
+}
+async function subscribePack(id) {
+  if (!enabled() || !csrf) return false;
+  try { return (await api("POST", "homebrew-subscriptions.php?id=" + encodeURIComponent(id))).ok; }
+  catch { return false; }
+}
+async function unsubscribePack(id) {
+  if (!enabled() || !csrf) return false;
+  try { return (await api("DELETE", "homebrew-subscriptions.php?id=" + encodeURIComponent(id))).ok; }
+  catch { return false; }
+}
+
 /* ---- sign out ------------------------------------------------------------ */
 async function signOut() {
   const prefix = userPrefix();
@@ -210,6 +268,8 @@ window.addEventListener("online", () => { if (enabled()) flush(); });
 return {
   probe, hydrate, flush, onSave, onDelete, pushCustomContent, signOut,
   isPublic, setVisibility, listShared, fetchShared,
+  listMyPacks, createPack, savePack, deletePack, setPackVisibility,
+  listPublicPacks, fetchPublicPack, listSubs, subscribePack, unsubscribePack,
   userPrefix, enabled, isAdmin, api,
   get mode() { return mode; },
   get user() { return user; },

@@ -139,7 +139,13 @@ git pull --ff-only        # or ./deploy.sh  (pull + php -l)
 - App JS/CSS is served **network-first**, so browsers pick up changes on the next
   load. Bump `CACHE_VERSION` in `sw.js` when you want **offline** PWA clients
   force-refreshed (already the project habit).
-- If a future change ships a new `db/*.sql`, run it once like step 3.
+- If a future change ships a new `db/migrations/*.sql`, run it **once** after the
+  pull, e.g. the homebrew-packs change:
+  ```bash
+  mysql -u YOUR_DB_USER -p YOUR_DB_NAME < db/migrations/004_homebrew_packs.sql
+  ```
+  (Fresh installs get these tables from `db/schema.sql`; migration 004 also folds
+  each user's existing homebrew blob into a "My Homebrew" pack — run it only once.)
 
 ## Notes
 

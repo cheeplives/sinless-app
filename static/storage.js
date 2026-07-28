@@ -107,9 +107,60 @@ function saveCustomContent(content) {
   if (typeof SYNC !== "undefined" && SYNC.pushCustomContent) SYNC.pushCustomContent(content);
 }
 
+/* ---- homebrew packs (named, shareable) ----------------------------------
+ * Supersede the single custom:content blob. A pack is {id,name,is_public,data}
+ * with data = {tableKey:[rows]}. `subs` caches subscribed (read-only) packs.
+ * These are local caches; SYNC mirrors packs/subs to the server per user. */
+function packsKey() { return nsPrefix() + "homebrew:packs"; }
+function subsKey()  { return nsPrefix() + "homebrew:subs"; }
+
+let localPackSeq = 0;
+function newLocalPackId() {
+  return "local-" + Date.now().toString(36) + "-" + (++localPackSeq);
+}
+function emptyPackData() {
+  const d = {};
+  for (const t of CUSTOM_TABLES) d[t] = [];
+  return d;
+}
+function normalizePackData(data) {
+  const d = {};
+  for (const t of CUSTOM_TABLES) d[t] = (data && Array.isArray(data[t])) ? data[t] : [];
+  return d;
+}
+
+/* My packs. First load with none present migrates a legacy custom:content blob
+ * into a starter "My Homebrew" pack so nothing is lost. */
+function loadPacks() {
+  let parsed = null;
+  try { parsed = JSON.parse(localStorage.getItem(packsKey()) || "null"); } catch { /* corrupt */ }
+  if (Array.isArray(parsed))
+    return parsed.map(p => ({ id: p.id, name: p.name || "Homebrew",
+      is_public: !!p.is_public, data: normalizePackData(p.data) }));
+  const legacy = loadCustomContent();
+  if (CUSTOM_TABLES.some(t => (legacy[t] || []).length)) {
+    const pack = { id: newLocalPackId(), name: "My Homebrew", is_public: false, data: legacy };
+    cachePacks([pack]);
+    return [pack];
+  }
+  return [];
+}
+function cachePacks(packs) {
+  try { localStorage.setItem(packsKey(), JSON.stringify(packs)); } catch { /* quota */ }
+}
+function loadSubs() {
+  try {
+    const v = JSON.parse(localStorage.getItem(subsKey()) || "null");
+    return Array.isArray(v) ? v.map(p => ({ id: p.id, name: p.name, owner: p.owner,
+      data: normalizePackData(p.data) })) : [];
+  } catch { return []; }
+}
+function cacheSubs(subs) { try { localStorage.setItem(subsKey(), JSON.stringify(subs)); } catch { /* quota */ } }
+
 return { sanitizeName, listCharacters, loadCharacter, saveCharacter, deleteCharacter,
          cacheCharacter, loadCustomContent, saveCustomContent, cacheCustomContent,
-         CUSTOM_TABLES };
+         CUSTOM_TABLES, loadPacks, cachePacks, loadSubs, cacheSubs,
+         newLocalPackId, emptyPackData, normalizePackData };
 
 })();
 

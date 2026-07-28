@@ -350,6 +350,7 @@ function renderSheet() {
      rigging: shRigging, actions: shActions, notes: shNotes })[sheetTab](body);
   root.append(body);
   root.append(rollerOverlay());
+  root.append(scrollTopFab());
   // The full header scrolls away normally; once it leaves the viewport the
   // sticky bar grows a compact summary strip (pools / ZP / cash). The DOM is
   // rebuilt every render, so the observer is re-attached each time. The bar's
@@ -367,9 +368,27 @@ function renderSheet() {
   sheetHeadObserver = new IntersectionObserver(([entry]) => {
     sheetStickyScrolled = !entry.isIntersecting;
     bar.classList.toggle("scrolled", sheetStickyScrolled);
+    // The back-to-top FAB rides the same threshold as the shrunk header.
+    const fab = document.getElementById("sh-scrolltop");
+    if (fab) fab.classList.toggle("visible", sheetStickyScrolled);
     publishBarHeight();
   }, { rootMargin: `-${48 + wsH}px 0px 0px 0px` });
   sheetHeadObserver.observe(head);
+}
+
+/* Smoothly scroll the sheet back to the top. Shared by the back-to-top FAB and
+ * the compact sticky strip (click any non-interactive part of it). */
+function scrollSheetToTop() { window.scrollTo({ top: 0, behavior: "smooth" }); }
+
+/* Floating "back to top" button, lower-right, just left of the die-roller FAB.
+ * Hidden until the header shrinks away; the head observer toggles .visible. */
+function scrollTopFab() {
+  return el("button", {
+    id: "sh-scrolltop",
+    class: "sh-scrolltop" + (sheetStickyScrolled ? " visible" : ""),
+    title: "Back to top", "aria-label": "Back to top",
+    onclick: scrollSheetToTop,
+  }, "↑");
 }
 
 function counterBtn(label, fn, cls) {
@@ -652,7 +671,11 @@ function sheetStickyBar() {
     }, label));
   }
   const zp = zpMeterValues();
-  const compact = el("div", { class: "sh-compact" },
+  // Clicking any non-interactive part of the compact strip jumps back to the top
+  // (its +/- pills and the cash meter are <button>/[role=button], so they're
+  // excluded and keep working).
+  const compact = el("div", { class: "sh-compact", title: "Back to top",
+    onclick: e => { if (!e.target.closest("button, [role=button]")) scrollSheetToTop(); } },
     el("span", { class: "sh-compact-name" }, CHAR.name || "Unnamed"),
     ...POOL_ORDER.map(compactPoolPill),
     compactKismetPill(),

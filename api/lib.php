@@ -291,6 +291,58 @@ function http_request(string $method, string $url, array $opts = []): array {
   return ['status' => $status, 'body' => (string) $body, 'error' => $err];
 }
 
+/** Notify a user (by email) that their account was approved. Fire-and-forget:
+ * never throws, and a mail failure must never break the admin approval action.
+ * Uses PHP mail(), which works on shared hosting (e.g. DreamHost) when the From
+ * is an address on a domain the host is authorized to send for, so SPF/DKIM
+ * align and the message doesn't land in spam.
+ *
+ * Off unless the config 'approval_email' block sets both enabled=true and a
+ * 'from' address — existing deployments whose config predates this key simply
+ * don't send. User input (to address) is validated and never placed in a
+ * header, so there is no header-injection surface. */
+function send_approval_email(string $toEmail, string $displayName): void {
+  $cfg = (array) cfg('approval_email', []);
+  if (empty($cfg['enabled']) || empty($cfg['from'])) return;
+  $toEmail = trim($toEmail);
+  if (!filter_var($toEmail, FILTER_VALIDATE_EMAIL)) return;
+
+  $from    = (string) $cfg['from'];
+  $subject = (string) ($cfg['subject'] ?? 'Your Sinless account is approved');
+  $appUrl  = rtrim((string) cfg('base_url', ''), '/') . '/';
+  $name    = trim($displayName) !== '' ? trim($displayName) : 'there';
+
+  $body = "Hi $name,\n\n"
+        . "Good news — your Sinless Character Dossier account has been approved. "
+        . "You can sign in and start building characters now:\n\n"
+        . "  $appUrl\n\n"
+        . "See you in the sprawl.\n";
+
+  // Envelope sender (-f) improves deliverability and routes bounces; pull the
+  // bare address out of a possible "Name <addr>" From value.
+  $envelope = $from;
+  if (preg_match('/<([^>]+)>/', $from, $m)) $envelope = $m[1];
+
+  $headers = [
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: 8bit',
+    'From: ' . $from,
+    'Auto-Submitted: auto-generated',      // suppress auto-replies/vacation loops
+    'X-Auto-Response-Suppress: All',
+  ];
+  if (!empty($cfg['reply_to'])) $headers[] = 'Reply-To: ' . (string) $cfg['reply_to'];
+
+  try {
+    $params = filter_var($envelope, FILTER_VALIDATE_EMAIL) ? '-f' . $envelope : '';
+    if (@mail($toEmail, $subject, $body, implode("\r\n", $headers), $params) === false) {
+      error_log('approval email: mail() returned false for ' . $toEmail);
+    }
+  } catch (Throwable $e) {
+    error_log('approval email failed: ' . $e->getMessage());
+  }
+}
+
 /** Fire-and-forget signup alert to a Discord/Slack incoming webhook. Never
  * throws into the caller and uses tight timeouts so a slow hook can't stall
  * (or break) the login redirect. Both Discord and Slack accept {"content"|"text"}. */

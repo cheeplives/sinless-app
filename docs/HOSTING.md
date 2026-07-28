@@ -92,6 +92,16 @@ Paste it into `approval_webhook_url`. When a new person signs in and lands in th
 pending queue, the server posts a short alert there (fire-and-forget — a slow or
 failed webhook never blocks login).
 
+### Approval email (optional)
+
+To email a user when you approve them, fill in the `approval_email` block in the
+config (`enabled => true` plus a `from` address). For deliverability the `from`
+**must** be an address on a domain your host is authorized to send for — e.g.
+`Sinless <noreply@yourdomain.com>`, not a gmail.com address — so SPF/DKIM align
+and it doesn't get spam-filtered. It uses PHP `mail()` and is fire-and-forget: a
+mail failure never blocks the approval, and re-approving an already-approved user
+doesn't re-send. The sign-in link in the message uses `base_url`.
+
 ## 6. First run
 
 1. Visit the site → login gate → sign in with the account you listed in

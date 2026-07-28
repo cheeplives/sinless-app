@@ -65,6 +65,20 @@ return [
   // Leave empty to disable notifications.
   'approval_webhook_url' => '',
 
+  // --- Approval email -------------------------------------------------------
+  // When an admin approves a pending user, email that user to let them know.
+  // Uses PHP mail() (fire-and-forget; a failure never blocks the approval).
+  // For deliverability the 'from' MUST be an address on a domain your host is
+  // authorized to send for (e.g. your site's domain), so SPF/DKIM align — a
+  // gmail.com From from a shared host will be spam-filtered. Set enabled=false
+  // (or leave 'from' empty) to disable. The sign-in link uses 'base_url' above.
+  'approval_email' => [
+    'enabled'  => false,
+    'from'     => 'Sinless <noreply@example.com>',
+    'subject'  => 'Your Sinless account is approved',
+    // 'reply_to' => 'you@example.com',   // optional
+  ],
+
   // --- Session / cookie -----------------------------------------------------
   'session' => [
     'name'            => 'sinless_sid',

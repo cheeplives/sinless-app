@@ -134,7 +134,12 @@ function onTabPointerUp() {
 function renderWorkspaceBar() {
   const bar = $("#workspace-tabs");
   if (!bar) return;
+  // The ☰ character-actions menu (Load/Save/New, Import/Export, Homebrew,
+  // Admin, …) sits at the head of the tab strip so it's available in chargen
+  // and play alike. sheetMenu() is defined in sheet.js but is mode-aware.
+  const menu = (typeof sheetMenu === "function" && activeTabObj()) ? sheetMenu() : null;
   bar.replaceChildren(
+    ...(menu ? [menu] : []),
     el("div", { class: "ws-tabs" },
       ...WORKSPACE.tabs.map((tab, i) => {
         const active = i === WORKSPACE.active;
@@ -167,6 +172,15 @@ function renderWorkspaceBar() {
       })),
     el("button", { class: "ws-new", title: "Open a new character",
       "aria-label": "New character tab", onclick: newCharacterTab }, "+"));
+}
+
+/* Re-render after a global-menu action. The ☰ menu lives in the workspace
+ * strip and is available in both chargen and play, so redraw the strip (to
+ * reflect the menu's open/closed state) plus the play sheet when it's showing. */
+function rerenderApp() {
+  renderWorkspaceBar();
+  const sheet = $("#sheet");
+  if (sheet && !sheet.hidden && typeof renderSheet === "function") renderSheet();
 }
 
 /* ---- show the active tab's screen ---------------------------------------

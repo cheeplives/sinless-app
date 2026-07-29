@@ -292,51 +292,10 @@ function bindRail() {
     CHAR.name = e.target.value; renderWorkspaceBar(); persistWorkspace();
   });
   $("#char-player").addEventListener("input", e => { CHAR.player = e.target.value; persistWorkspace(); });
-  $("#btn-save").addEventListener("click", () => {
-    if (!CHAR.name) { alert("Give the character a street name first."); return; }
-    STORAGE.saveCharacter(CHAR);
-    refreshLoadList();
-  });
-  $("#btn-new").addEventListener("click", () => { newCharacterTab(); });
-  $("#btn-export").addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify(CHAR, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = el("a", { href: url, download: (CHAR.name || "character") + ".json" });
-    a.click();
-    URL.revokeObjectURL(url);   // release the blob; the click has already fired
-  });
-  $("#btn-homebrew").addEventListener("click", enterHomebrew);
-  $("#btn-import").addEventListener("click", () => $("#import-file").click());
-  $("#import-file").addEventListener("change", async e => {
-    const file = e.target.files[0];
-    e.target.value = "";   // allow re-importing the same file later
-    if (!file) return;
-    let parsed;
-    try { parsed = JSON.parse(await file.text()); } catch { parsed = null; }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !parsed.attributes) {
-      alert("That file doesn't look like an exported Sinless character.");
-      return;
-    }
-    const merged = RULES.mergeDefaults(parsed);
-    if (merged.name) STORAGE.saveCharacter(merged);   // so it shows in the Load list immediately
-    await openCharacter(merged);
-    refreshLoadList();
-  });
-  $("#load-select").addEventListener("change", async e => {
-    const name = e.target.value;
-    if (!name) return;
-    const loaded = STORAGE.loadCharacter(name);
-    if (!loaded) { e.target.value = ""; return; }
-    await openCharacter(RULES.mergeDefaults(loaded));
-    e.target.value = "";
-  });
-  $("#delete-select").addEventListener("change", async e => {
-    const name = e.target.value;
-    e.target.value = "";
-    if (!name) return;
-    await deleteSavedCharacter(name);
-  });
-  if (typeof mountAccountControls === "function") mountAccountControls();   // Sign out / Admin when signed in
+  // The character-action buttons (Save/Load/New/Import/Export/Homebrew) moved
+  // out of the rail into the workspace ☰ menu (sheetMenu), so there's nothing
+  // to wire here anymore. mountAccountControls() no-ops without .rail-actions.
+  if (typeof mountAccountControls === "function") mountAccountControls();
 }
 
 /* Permanently remove a saved character. If it's the one currently open,
@@ -352,11 +311,14 @@ async function deleteSavedCharacter(name) {
   await closeTabByName(name, false);
 }
 function refreshLoadList() {
+  // The rail's Load/Delete selects were removed (character actions live in the
+  // \u2630 menu, which rebuilds its own list each open). Guard in case they're gone.
   const names = STORAGE.listCharacters();
-  $("#load-select").replaceChildren(
+  const load = $("#load-select"), del = $("#delete-select");
+  if (load) load.replaceChildren(
     el("option", { value: "" }, "Load\u2026"),
     ...names.map(name => el("option", {}, name)));
-  $("#delete-select").replaceChildren(
+  if (del) del.replaceChildren(
     el("option", { value: "" }, "Delete\u2026"),
     ...names.map(name => el("option", {}, name)));
 }

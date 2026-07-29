@@ -597,7 +597,8 @@ function sheetHeader() {
     : null;
   const ident = el("div", { class: "sh-ident" },
     el("div", { class: "sh-ident-top" },
-      sheetMenu(),
+      // The ☰ menu now lives on the workspace tab strip (renderWorkspaceBar),
+      // so it's reachable from both chargen and play — not just here.
       el("div", { class: "sh-name" }, CHAR.name || "Unnamed"),
       sharingBadge()),
     CHAR.player ? el("div", { class: "sh-player" }, CHAR.player) : null,
@@ -865,13 +866,13 @@ function sheetMenu() {
   const act = fn => async () => {
     sheetMenuOpen = false;
     await fn();
-    if (!$("#sheet").hidden) renderSheet();
+    rerenderApp();
   };
 
   const toggle = el("button", {
     class: "sh-menu-btn", "aria-label": "Menu", "aria-haspopup": "true",
     "aria-expanded": String(sheetMenuOpen),
-    onclick: () => { sheetMenuOpen = !sheetMenuOpen; renderSheet(); },
+    onclick: () => { sheetMenuOpen = !sheetMenuOpen; renderWorkspaceBar(); },
   }, el("span", { class: "bar" }), el("span", { class: "bar" }), el("span", { class: "bar" }));
 
   const wrap = el("div", { class: "sh-menu" }, toggle);
@@ -912,7 +913,9 @@ function sheetMenu() {
         download: (CHAR.name || "character") + ".json" });
       a.click();
     }) }, "Export JSON");
-    const exportMdBtn = el("button", { class: "btn sh-mi-save", onclick: act(exportMarkdown) }, "Export Markdown (Scabard)");
+    // Export Markdown reads the finalized play sheet; only offer it in play mode.
+    const exportMdBtn = CHAR.finalized
+      ? el("button", { class: "btn sh-mi-save", onclick: act(exportMarkdown) }, "Export Markdown (Scabard)") : null;
 
     // Group 3 — Sharing / Shared characters / Homebrew (sharing + gallery need a backend).
     const sharingBtn = (synced && !ro && CHAR.name)
@@ -925,9 +928,12 @@ function sheetMenu() {
       ? el("button", { class: "btn sh-mi-plain", onclick: act(openSharedGallery) }, "Shared characters") : null;
     const homebrewBtn = el("button", { class: "btn sh-mi-brew", onclick: act(enterHomebrew) }, "Homebrew");
 
-    // Group 4 — Back to Chargen / Revert / Delete.
-    const backBtn = el("button", { class: "btn sh-mi-plain", onclick: act(backToChargen) }, "← Back to Chargen");
-    const revertBtn = el("button", { class: "btn warn", onclick: act(revertToChargenEnd) }, "Revert to Post-Chargen");
+    // Group 4 — Back to Chargen / Revert / Delete. Back/Revert only apply to a
+    // finalized character (they toggle play state), so hide them in chargen.
+    const backBtn = CHAR.finalized
+      ? el("button", { class: "btn sh-mi-plain", onclick: act(backToChargen) }, "← Back to Chargen") : null;
+    const revertBtn = CHAR.finalized
+      ? el("button", { class: "btn warn", onclick: act(revertToChargenEnd) }, "Revert to Post-Chargen") : null;
     const deleteBtn = el("button", { class: "btn sh-mi-delete", disabled: CHAR.name ? null : "1",
       title: CHAR.name ? "Permanently delete this character's save" : "Character has no name — nothing saved to delete",
       onclick: act(() => deleteSavedCharacter(CHAR.name)) }, "Delete Character");
@@ -954,7 +960,7 @@ function sheetMenu() {
     panel.append(importInput);
 
     wrap.append(
-      el("div", { class: "sh-menu-backdrop", onclick: () => { sheetMenuOpen = false; renderSheet(); } }),
+      el("div", { class: "sh-menu-backdrop", onclick: () => { sheetMenuOpen = false; renderWorkspaceBar(); } }),
       panel);
   }
   return wrap;

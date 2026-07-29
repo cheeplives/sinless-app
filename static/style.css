@@ -244,6 +244,13 @@ body.ws-reordering .ws-tab{transition:none}
   border:1px solid var(--line);border-radius:6px;background:var(--ink);
   color:var(--dim);cursor:pointer;font-size:18px;line-height:1}
 .ws-new:hover{color:var(--strong);border-color:var(--manon-dim);background:var(--panel-2)}
+/* ☰ character-actions menu hosted at the head of the workspace strip. The
+ * button + panel offset were tuned for the taller sheet header; shrink to fit
+ * the 40px strip and drop the panel just below the strip. */
+#workspace-tabs .sh-menu{align-self:center;margin-right:8px}
+#workspace-tabs .sh-menu-btn{width:34px;height:30px}
+#workspace-tabs .sh-menu-btn .bar{width:16px}
+#workspace-tabs .sh-menu-panel{top:37px}
 
 /* ---------- rail ---------- */
 #rail{background:linear-gradient(180deg,var(--rail-grad-1) 0%,var(--rail-grad-2) 100%);border-right:1px solid var(--line);

@@ -141,6 +141,7 @@ const BASE_MOVE_METERS = 6;
 const DEFAULT_SIMPLE_ACTIONS = 2;
 const ADRENALINE_BOOST_SIMPLE_ACTIONS = 3;
 const COMBAT_MASTERY_MELEE_EXPLOIT_BONUS = 2;
+const IRON_FIST_BASE_DAMAGE = 6;   // Iron Fist amp: unarmed = ½STR + 6, Reach 0
 const WIRED_REFLEXES_MELEE_EXPLOITS_BY_RANK = { 1: 1, 2: 2, 3: 2 };
 const COVERT_SYNTHSKIN_DODGE_BONUS = 1;
 const PERFECT_SITUATIONAL_AWARENESS_BONUS = 3;   // +3d dodge AND soak (amp power)
@@ -727,6 +728,28 @@ function augmentMeleeDamage(row, strength, martialMods) {
   if (martialMods && martialMods.spurs_str_bonus != null && /spurs?/i.test(row.Name || ""))
     return String(strength + martialMods.spurs_str_bonus);
   return meleeDamage(row, strength);
+}
+
+// Melee attacks a character carries without a hand weapon — cyber implants
+// (Hand Blade/Razors, Spurs, Fangs, …), and Amp powers such as Iron Fist that
+// grant a bare-handed strike. Surfaced on the Overview loadout beside carried
+// weapons so their auto-calculated (Strength-based) damage and Reach are visible
+// in one place. Each: { name, damage, reach, source }.
+function collectGrantedWeapons(augments, amp, strength, martialMods) {
+  const list = [];
+  // Cyber melee implants + Fangs: any owned augment with a structured Damage.
+  for (const [row, count] of augments.rows) {
+    const dmg = augmentMeleeDamage(row, strength, martialMods);
+    if (dmg === "") continue;
+    list.push({ name: count > 1 ? `${row.Name} ×${count}` : row.Name,
+      damage: dmg, reach: 0, source: "Cyberware" });
+  }
+  // Iron Fist (Amp power): unarmed strikes deal physical ½STR + 6 at Reach 0.
+  if (amp.powers_taken.has("Iron Fist")) {
+    list.push({ name: "Iron Fist", damage: meleeDamage({ Damage: IRON_FIST_BASE_DAMAGE }, strength),
+      reach: 0, source: "Amp Power" });
+  }
+  return list;
 }
 
 // Effect sums shared by body-installed augments (tallyAugments) and augments
@@ -2324,6 +2347,9 @@ function calculate(character) {
   combatOut.move += maMods.move_bonus;
   if (maMods.recoil_ignored) combatOut.recoil_ignored = 1;
   combatOut.martial_notes = maMods.applied;
+  // Natural / implanted / power-granted melee weapons for the Overview loadout.
+  combatOut.granted_weapons = collectGrantedWeapons(
+    augments, amp, finalAttributes.Strength, maMods);
 
   // Per-source breakdowns so the Combat box can show where each Soak/Dodge die
   // comes from — every contributing source in one place (the sweep).

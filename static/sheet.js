@@ -1158,8 +1158,9 @@ function shOverview(body) {
   const equippedWeapons = CHAR.weapons.filter(w => w.equipped !== false);
   const cyberguns = equippedCyberguns();
   const wornArmor = CHAR.armor.filter(a => a.active !== false);
+  const grantedWeapons = CALC.combat.granted_weapons || [];
   if (equippedWeapons.length || cyberguns.length || wornArmor.length
-      || (CALC.combat.armor_sources || []).length) {
+      || grantedWeapons.length || (CALC.combat.armor_sources || []).length) {
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
@@ -1208,6 +1209,18 @@ function shOverview(body) {
         wt.append(el("tr", {}, el("td", {}, handle, c.name), c.stats, c.last));
       });
       loadout.append(wt);
+    }
+    // Natural / implanted / power-granted melee weapons (Hand Razors, Spurs,
+    // Fangs, Iron Fist, …) — auto-calculated Strength-based damage and Reach.
+    if (grantedWeapons.length) {
+      const gt = el("table");
+      gt.append(el("tr", {}, el("th", {}, "Natural / cyber weapon"),
+        el("th", {}, "Stats"), el("th", {}, "Source")));
+      grantedWeapons.forEach(gw => gt.append(el("tr", {},
+        el("td", {}, el("b", {}, gw.name)),
+        el("td", { class: "sub" }, `Melee · DMG ${gw.damage} · Reach ${gw.reach}`),
+        el("td", { class: "sub" }, gw.source))));
+      loadout.append(gt);
     }
     const armorSources = CALC.combat.armor_sources || [];
     if (wornArmor.length || armorSources.length) {
@@ -3803,7 +3816,8 @@ function buildMarkdown() {
     L.push("");
   }
   const cyberguns = equippedCyberguns();
-  if (CHAR.weapons.length || cyberguns.length) {
+  const grantedWeapons = c.granted_weapons || [];
+  if (CHAR.weapons.length || cyberguns.length || grantedWeapons.length) {
     L.push("## Weapons");
     L.push("");
     CHAR.weapons.forEach(w => {
@@ -3824,6 +3838,9 @@ function buildMarkdown() {
     cyberguns.forEach(cg => {
       const g = cg.gun;
       L.push(`- **${cg.name}** (smart) — DMG ${g.Dmg} · Acc ${g.Acc} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`);
+    });
+    grantedWeapons.forEach(gw => {
+      L.push(`- **${gw.name}** — Melee · DMG ${gw.damage} · Reach ${gw.reach} (${gw.source})`);
     });
     if (c.optics_notes && c.optics_notes.length) L.push(`- *Optics:* ${c.optics_notes.join(" · ")}`);
     L.push("");

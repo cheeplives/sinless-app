@@ -1518,6 +1518,65 @@ function poolSkillList(pool) {
 
 /* ------------------------------------------------ skills tab (display only) */
 function shSkills(body) {
+  // Martial Arts are Brawn skills, one per style, so their rank and the "learn a
+  // style" control sit in the Brawn card with everything else Brawn; the unlocked
+  // level effects follow in their own card below the grid. A style never takes a
+  // specialization, so these rows carry no Spec toggle.
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const maList = CALC.martial_arts || [];
+  const unarmedRank = (CALC.skills["Unarmed Combat"] || { points: 0 }).points;
+  const allMaStyles = [...new Set(DATA.tables.martial_arts.map(r => r.Style))].sort();
+  const usedMaStyles = new Set(maList.map(m => m.style));
+
+  const appendMartialArtRows = t => {
+    t.append(el("tr", { class: "skill-group-row" },
+      el("td", { colspan: "5" }, "Martial Arts",
+        el("span", { class: "sub" }, "  — ≤ Unarmed Combat"))));
+    maList.forEach(ma => {
+      const atCap = ma.rank >= SKILL_KISMET_CAP || ma.rank >= unarmedRank;
+      const cost = skillRaiseCost(ma.rank);
+      const raise = ro ? null : el("button", { class: "btn small sh-ma-raise",
+        disabled: (atCap || CHAR.play.kismet < cost) ? "1" : null,
+        title: ma.rank >= unarmedRank ? "Cannot exceed Unarmed Combat rank"
+          : ma.rank >= SKILL_KISMET_CAP ? "Rank 6 is the Kismet cap"
+          : `Raise with Kismet (${cost})`,
+        onclick: async () => {
+          if (!spendKismet(`Raised Martial Arts (${ma.style}) to rank ${ma.rank + 1}`, cost,
+              { kind: "martial_art", name: ma.style })) return;
+          const adv = CHAR.play.martial_art_advances = CHAR.play.martial_art_advances || {};
+          adv[ma.style] = (adv[ma.style] || 0) + 1;
+          await playChangedRecalc();
+        } }, atCap ? "cap" : `+1 (${cost})`);
+      t.append(el("tr", {},
+        el("td", {}, el("div", { class: "sh-spec-line" }, el("span", {}, ma.style), raise)),
+        el("td", { class: "num sub" }, String(ma.rank)),
+        el("td", { class: "num sub" }, ""),
+        el("td", { class: "num sub" }, ""),
+        el("td", { class: "num" }, el("b", {}, String(ma.rank)))));
+    });
+    const addable = allMaStyles.filter(s => !usedMaStyles.has(s));
+    if (!ro && addable.length && unarmedRank >= 1) {
+      const addSel = el("select", { class: "btn-select" },
+        el("option", { value: "" }, "Add style…"),
+        ...addable.map(s => el("option", {}, s)));
+      t.append(el("tr", {}, el("td", { colspan: "5" },
+        el("div", { class: "add-row" }, addSel,
+          el("button", { class: "btn-add",
+            disabled: CHAR.play.kismet < NEW_SKILL_KISMET_COST ? "1" : null,
+            onclick: async () => {
+              const style = addSel.value; if (!style) return;
+              if (!spendKismet(`Learned Martial Arts style: ${style}`, NEW_SKILL_KISMET_COST,
+                  { kind: "martial_art", name: style })) return;
+              const adv = CHAR.play.martial_art_advances = CHAR.play.martial_art_advances || {};
+              adv[style] = (adv[style] || 0) + 1;
+              await playChangedRecalc();
+            } }, `Add (${NEW_SKILL_KISMET_COST})`)))));
+    } else if (!ro && unarmedRank < 1) {
+      t.append(el("tr", {}, el("td", { colspan: "5", class: "hint" },
+        "Train Unarmed Combat before learning a martial art.")));
+    }
+  };
+
   // Each pool gets its OWN card, laid out 2×2 (stacks to 1 column on phones),
   // so nothing crams into a single wide card at narrow widths.
   const grid = el("div", { class: "sh-skillgrid" });
@@ -1529,11 +1588,17 @@ function shSkills(body) {
       .filter(([n, m]) => m.pool === pool && (CALC.skills[n].final > 0 || CALC.skills[n].dice_bonus
         || (CALC.skills[n].notes && CALC.skills[n].notes.length)))
       .sort((a, b) => CALC.skills[b[0]].final - CALC.skills[a[0]].final);
-    if (!trained.length) card.append(el("p", { class: "hint" }, "No trained skills."));
+    // Brawn always renders its table -- the Martial Arts section lives in it, so
+    // it has to be reachable even with no trained Brawn skills.
+    const isBrawn = pool === "Brawn";
+    if (!trained.length && !isBrawn) card.append(el("p", { class: "hint" }, "No trained skills."));
     else {
       const t = el("table", { class: "sh-skilltable" });
       t.append(skillTableHeader());
       for (const [name] of trained) t.append(skillTableRow(name, false, true));
+      if (!trained.length)
+        t.append(el("tr", {}, el("td", { colspan: "5", class: "hint" }, "No trained skills.")));
+      if (isBrawn) appendMartialArtRows(t);
       card.append(t);
     }
     grid.append(card);
@@ -1591,54 +1656,24 @@ function shSkills(body) {
     }, "Add knowledge skill")));
   body.append(know);
 
-  // Martial Arts: one skill per style. Displayed here (per the design), and
-  // raised / learned in play with Kismet — each style capped by Unarmed Combat.
-  const ro = !!(activeTabObj() && activeTabObj().readonly);
-  const maList = CALC.martial_arts || [];
-  const unarmedRank = (CALC.skills["Unarmed Combat"] || { points: 0 }).points;
-  const allMaStyles = [...new Set(DATA.tables.martial_arts.map(r => r.Style))].sort();
-  const usedMaStyles = new Set(maList.map(m => m.style));
-  const maCard = el("div", { class: "card sh-card" }, el("h3", {}, "Martial Arts"));
-  if (!maList.length)
-    maCard.append(el("p", { class: "hint" }, "No martial arts learned."));
-  maList.forEach(ma => {
-    const atCap = ma.rank >= SKILL_KISMET_CAP || ma.rank >= unarmedRank;
-    const cost = skillRaiseCost(ma.rank);
-    maCard.append(el("div", { class: "sh-advrow" },
-      el("span", {}, el("b", {}, ma.style), el("span", { class: "sub" }, ` · rank ${ma.rank}`)),
-      ro ? null : el("button", { class: "btn small",
-        disabled: (atCap || CHAR.play.kismet < cost) ? "1" : null,
-        title: ma.rank >= unarmedRank ? "Cannot exceed Unarmed Combat rank"
-          : ma.rank >= SKILL_KISMET_CAP ? "Rank 6 is the Kismet cap" : null,
-        onclick: async () => {
-          if (!spendKismet(`Raised Martial Arts (${ma.style}) to rank ${ma.rank + 1}`, cost,
-              { kind: "martial_art", name: ma.style })) return;
-          const adv = CHAR.play.martial_art_advances = CHAR.play.martial_art_advances || {};
-          adv[ma.style] = (adv[ma.style] || 0) + 1;
-          await playChangedRecalc();
-        } }, atCap ? "cap" : `+1 (${cost})`)));
-    ma.levels.forEach(l => maCard.append(statLine(`Level ${l.Level}`, l.Effect)));
-    if (ma.mods.applied.length) maCard.append(statLine("Applied to stats", ma.mods.applied.join(" · ")));
-  });
-  const addable = allMaStyles.filter(s => !usedMaStyles.has(s));
-  if (!ro && addable.length && unarmedRank >= 1) {
-    const addSel = el("select", { class: "btn-select" },
-      el("option", { value: "" }, "Add martial art style…"),
-      ...addable.map(s => el("option", {}, s)));
-    maCard.append(el("div", { class: "add-row" }, addSel,
-      el("button", { class: "btn-add", disabled: CHAR.play.kismet < NEW_SKILL_KISMET_COST ? "1" : null,
-        onclick: async () => {
-          const style = addSel.value; if (!style) return;
-          if (!spendKismet(`Learned Martial Arts style: ${style}`, NEW_SKILL_KISMET_COST,
-              { kind: "martial_art", name: style })) return;
-          const adv = CHAR.play.martial_art_advances = CHAR.play.martial_art_advances || {};
-          adv[style] = (adv[style] || 0) + 1;
-          await playChangedRecalc();
-        } }, `Add style (${NEW_SKILL_KISMET_COST})`)));
-  } else if (!ro && unarmedRank < 1) {
-    maCard.append(el("p", { class: "hint" }, "Train Unarmed Combat before learning a martial art."));
+  // Style effects only — rank and "add style" live in the Brawn card above.
+  if (maList.length) {
+    const maCard = el("div", { class: "card sh-card" },
+      el("h3", {}, "Martial Art Style Effects"));
+    maList.forEach(ma => {
+      maCard.append(el("div", { class: "sh-h4", style: "margin:8px 0 2px" }, ma.style,
+        el("span", { class: "sub" }, ` · rank ${ma.rank}`)));
+      if (ma.levels.length) {
+        ma.levels.forEach(l => maCard.append(statLine(`Level ${l.Level}`, l.Effect)));
+        if (ma.mods.applied.length)
+          maCard.append(statLine("Applied to stats", ma.mods.applied.join(" · ")));
+      } else {
+        maCard.append(el("p", { class: "hint" },
+          "Raise this style's rank to unlock its level effects."));
+      }
+    });
+    body.append(maCard);
   }
-  body.append(maCard);
 }
 
 /* ------------------------------------------------ kismet tab */

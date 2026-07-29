@@ -966,7 +966,17 @@ function tabStats(p) {
   p.append(el("h2", {}, "Skills ", chip("skill")));
   p.append(el("p", { class: "hint" },
     "1 point per rank, max 6 at creation. Untrained skills in a group roll at the group's best skill \u22122. "
-    + "Martial Arts is chosen per style below."));
+    + "Martial Arts sits with the Brawn skills \u2014 one skill per style, 2 points per rank."));
+
+  // Martial arts: one independent Martial Arts skill per style. The style
+  // chooser and its rank live in the Brawn card with the other Brawn skills
+  // (appendMartialArtRows below); each style's unlocked level effects are listed
+  // in their own card under the grid. A style never takes a specialization, so
+  // these rows have no Spec toggle.
+  CHAR.martial_arts = CHAR.martial_arts || [];
+  const allStyles = [...new Set(DATA.tables.martial_arts.map(m => m.Style))].sort();
+  const usedStyles = new Set(CHAR.martial_arts.map(m => m.style).filter(Boolean));
+
   const GROUP_LABELS = { close_combat: "Close Combat", ranged_combat: "Ranged Combat",
     hacking: "Hacking", vehicle: "Vehicle", engineering: "Engineering" };
   const byPool = {};
@@ -1013,15 +1023,46 @@ function tabStats(p) {
         : null;
       return el("tr", { class: grouped ? "skill-grouped" : null },
         el("td", {},
-          el("div", { class: "skill-name-line" }, name,
-            name === "Martial Arts" ? el("span", { class: "sub" }, " \u00b72 pts/rank, \u2264 Unarmed Combat") : null,
-            specToggle),
+          el("div", { class: "skill-name-line" }, name, specToggle),
           specText,
           (s.notes && s.notes.length) ? el("div", { class: "sub" }, "\u2726 " + s.notes.join(" \u00b7 ")) : null),
         el("td", { class: "num" }, stepper(
           () => CHAR.skills[name] || 0,
           v => { CHAR.skills[name] = v; }, 0, 6)),
         bonusCell, finCell);
+    };
+
+    // Martial Arts rows, appended to the Brawn table: a style dropdown and a
+    // rank stepper per chosen style, plus an Add row. Each dropdown offers only
+    // styles not already taken. Rank is the Final rating (no group/bonus dice
+    // apply), and there's no Spec toggle.
+    const appendMartialArtRows = () => {
+      tbl.append(el("tr", { class: "skill-group-row" },
+        el("td", { colspan: "4" }, "Martial Arts",
+          el("span", { class: "sub" }, "  — 2 pts/rank, ≤ Unarmed Combat"))));
+      CHAR.martial_arts.forEach((ma, i) => {
+        const styleOpts = allStyles.filter(s => s === ma.style || !usedStyles.has(s));
+        const sel = el("select", { class: "ma-style-select",
+          onchange: e => { ma.style = e.target.value; refresh(); } },
+          el("option", { value: "" }, "Choose style…"),
+          ...styleOpts.map(s =>
+            el("option", { value: s, ...(ma.style === s ? { selected: 1 } : {}) }, s)));
+        tbl.append(el("tr", { class: "skill-grouped" },
+          el("td", {}, el("div", { class: "skill-name-line" }, sel,
+            el("button", { class: "row-del", title: "Remove this style",
+              onclick: () => { CHAR.martial_arts.splice(i, 1); refresh(); } }, "✕"))),
+          el("td", { class: "num" }, stepper(
+            () => ma.rank || 0, v => { ma.rank = v; refresh(); }, 0, 6)),
+          el("td", { class: "num sub" }, ""),
+          el("td", { class: "num" }, el("b", {}, String(ma.rank || 0)))));
+      });
+      const canAdd = usedStyles.size < allStyles.length;
+      tbl.append(el("tr", { class: "skill-grouped" },
+        el("td", { colspan: "4" },
+          el("button", { class: "btn-add", disabled: canAdd ? null : "1",
+            title: canAdd ? null : "Every martial art style is already chosen",
+            onclick: () => { CHAR.martial_arts.push({ style: "", rank: 0 }); refresh(); } },
+            "+ Add martial art style"))));
     };
 
     // grouped skills clustered under a subtle group header, then the rest,
@@ -1040,6 +1081,7 @@ function tabStats(p) {
       tbl.append(el("tr", { class: "skill-group-row" },
         el("td", { colspan: "4" }, "General")));
     ungrouped.forEach(n => tbl.append(skillRow(n, false)));
+    if (pool === "Brawn") appendMartialArtRows();
 
     card.append(tbl);
     grid.append(card);
@@ -1065,46 +1107,29 @@ function tabStats(p) {
   });
   p.append(rt);
 
-  // Martial arts: one independent Martial Arts skill per style (2 pts/rank, each
-  // ≤ Unarmed Combat). Add as many styles as exist; each dropdown offers only
-  // styles not already chosen.
-  CHAR.martial_arts = CHAR.martial_arts || [];
-  const allStyles = [...new Set(DATA.tables.martial_arts.map(m => m.Style))].sort();
-  const usedStyles = new Set(CHAR.martial_arts.map(m => m.style).filter(Boolean));
-  const mcard = el("div", { class: "card", style: "max-width:640px" },
-    el("h3", {}, "Martial Arts — one skill per style"),
-    el("p", { class: "hint" },
-      "Each style is its own Martial Arts skill: 2 points per rank, and no style may exceed your Unarmed Combat rank."));
-  if (!CHAR.martial_arts.length)
-    mcard.append(el("p", { class: "hint" }, "No martial arts chosen."));
-  CHAR.martial_arts.forEach((ma, i) => {
-    const styleOpts = allStyles.filter(s => s === ma.style || !usedStyles.has(s));
-    const sel = el("select", { onchange: e => { ma.style = e.target.value; refresh(); } },
-      el("option", { value: "" }, "Choose style…"),
-      ...styleOpts.map(s => el("option", { value: s, ...(ma.style === s ? { selected: 1 } : {}) }, s)));
-    const entry = el("div", { class: "ma-entry", style: "margin-top:10px;padding-top:8px;border-top:1px solid var(--line)" },
-      el("div", { class: "add-row" }, sel,
-        el("span", { class: "sub" }, "Rank"),
-        stepper(() => ma.rank || 0, v => { ma.rank = v; refresh(); }, 0, 6),
-        el("button", { class: "row-del", onclick: () => { CHAR.martial_arts.splice(i, 1); refresh(); } }, "✕")));
-    const resolved = (CALC.martial_arts || []).find(r => r.style === ma.style);
-    if (resolved && resolved.levels.length) {
-      resolved.levels.forEach(l =>
-        entry.append(el("div", { class: "stat-line" }, `Level ${l.Level}`, el("b", {}, l.Effect))));
-      if (resolved.mods.applied.length)
-        entry.append(el("div", { class: "stat-line" }, "Applied to stats", el("b", {}, resolved.mods.applied.join(" · "))));
-    } else if (ma.style) {
-      entry.append(el("p", { class: "hint" }, "Raise this style's rank to unlock its level effects."));
-    }
-    mcard.append(entry);
-  });
-  const canAdd = usedStyles.size < allStyles.length;
-  mcard.append(el("div", { class: "add-row", style: "margin-top:10px" },
-    el("button", { class: "btn-add", disabled: canAdd ? null : "1",
-      title: canAdd ? null : "Every martial art style is already chosen",
-      onclick: () => { CHAR.martial_arts.push({ style: "", rank: 0 }); refresh(); } },
-      "Add Additional Martial Art Style")));
-  p.append(mcard);
+  // Martial art style effects: the chooser and rank live in the Brawn card
+  // above, so this card only reports what each chosen style has unlocked.
+  const chosenStyles = CHAR.martial_arts.filter(ma => ma.style);
+  if (chosenStyles.length) {
+    const mcard = el("div", { class: "card", style: "max-width:640px" },
+      el("h3", {}, "Martial Art Style Effects"));
+    chosenStyles.forEach(ma => {
+      const resolved = (CALC.martial_arts || []).find(r => r.style === ma.style);
+      mcard.append(el("div", { class: "sh-h4", style: "margin:10px 0 2px" }, ma.style,
+        el("span", { class: "sub" }, ` · rank ${ma.rank || 0}`)));
+      if (resolved && resolved.levels.length) {
+        resolved.levels.forEach(l =>
+          mcard.append(el("div", { class: "stat-line" }, `Level ${l.Level}`, el("b", {}, l.Effect))));
+        if (resolved.mods.applied.length)
+          mcard.append(el("div", { class: "stat-line" }, "Applied to stats",
+            el("b", {}, resolved.mods.applied.join(" · "))));
+      } else {
+        mcard.append(el("p", { class: "hint" },
+          "Raise this style's rank to unlock its level effects."));
+      }
+    });
+    p.append(mcard);
+  }
 }
 
 /* ------------------------------------------------ 3b. knowledge & etiquette */

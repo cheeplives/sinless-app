@@ -394,6 +394,10 @@ tr.sh-ritual-trained td:first-child{border-left:2px solid var(--manon-dim);paddi
 .skill-spec-toggle input[type=checkbox]{margin:0}
 .skill-spec-text{margin-top:4px;width:100%;font-size:12px;padding:3px 6px}
 .skill-spec-note{color:var(--manon);font-style:italic}
+/* Martial-art rows live inside the Brawn skill table (chargen + sheet): keep the
+   style chooser and the Kismet raise button from stretching the skill column. */
+.ma-style-select{font-size:12px;padding:3px 5px;max-width:100%}
+.sh-ma-raise{margin-left:auto;flex:none}
 
 /* signature: priority grid */
 .prio-grid{display:grid;grid-template-columns:150px repeat(5,54px) 1fr;gap:6px;align-items:center;max-width:760px}

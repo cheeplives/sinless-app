@@ -37,7 +37,10 @@ const ATTRIBUTE_COLUMN = {  // Attribute name -> its column header in heritage_f
 const SKILLS = {
   // Brawn pool
   "Athletics": ["Brawn", null],
-  "Martial Arts": ["Brawn", null],
+  // NB: Martial Arts is NOT a normal skill — it's a per-style list on the
+  // character (character.martial_arts = [{style, rank}]), each style an
+  // independent skill at 2 pts/rank capped by Unarmed Combat. Handled in
+  // scoreSkills / resolveMartialArts, not this map.
   "Cybertech Combat": ["Brawn", "close_combat"],
   "Melee Weapons": ["Brawn", "close_combat"],
   "Throwing Weapons": ["Brawn", "close_combat"],
@@ -355,7 +358,7 @@ function defaultCharacter() {
     ritual_skills: {},
     knowledge_skills: [],
     etiquettes: {},
-    martial_art: "",
+    martial_arts: [],   // [{style, rank}] — each an independent Martial Arts skill
     magic: {
       chosen_type: "Amp",
       school: "",
@@ -404,6 +407,7 @@ function defaultCharacter() {
       notes: "",
       attribute_advances: {},
       skill_advances: {},
+      martial_art_advances: {},   // { style: +ranks } bought in play
       ritual_advances: {},
       zp_advances: 0,
       spell_force_advances: {},
@@ -439,6 +443,17 @@ function mergeDefaults(character) {
   };
 
   fill(character, defaults);
+
+  // Migrate the legacy single martial art (character.martial_art + the old
+  // "Martial Arts" skill rank) into the per-style list. Idempotent: once the
+  // list is populated and the legacy fields cleared, later runs are no-ops.
+  if (!Array.isArray(character.martial_arts)) character.martial_arts = [];
+  if (character.martial_arts.length === 0 && character.martial_art) {
+    const rank = Math.max(0, toInt(asNumber((character.skills || {})["Martial Arts"])));
+    character.martial_arts.push({ style: character.martial_art, rank });
+  }
+  if (character.skills && "Martial Arts" in character.skills) delete character.skills["Martial Arts"];
+  delete character.martial_art;
   return character;
 }
 
@@ -1253,10 +1268,17 @@ function scoreSkills(character, heritage, amp, augments, warnings, errors) {
   }
   let pointsSpent = sumBy(Object.values(skillPoints), points => Math.max(0, points));
 
-  const martialArtsPoints = Math.max(0, skillPoints["Martial Arts"] || 0);
-  pointsSpent += martialArtsPoints * (MARTIAL_ARTS_COST_MULTIPLIER - 1);
-  if (martialArtsPoints > Math.max(0, skillPoints["Unarmed Combat"] || 0)) {
-    errors.push("Martial Arts rank cannot exceed Unarmed Combat rank.");
+  // Martial arts: each chosen style is an independent skill at 2 pts/rank, and
+  // no style may exceed Unarmed Combat rank. (Martial Arts isn't in `skills`, so
+  // it's costed separately here.)
+  const unarmedRank = Math.max(0, skillPoints["Unarmed Combat"] || 0);
+  for (const ma of character.martial_arts || []) {
+    const rank = Math.max(0, toInt(asNumber(ma.rank)));
+    pointsSpent += rank * MARTIAL_ARTS_COST_MULTIPLIER;
+    if (rank > unarmedRank)
+      errors.push(`Martial Arts (${ma.style || "unnamed style"}) rank ${rank} cannot exceed Unarmed Combat rank ${unarmedRank}.`);
+    if (rank > SKILL_RANK_CAP)
+      warnings.push(`Martial Arts (${ma.style || "unnamed style"}): maximum ${SKILL_RANK_CAP} points at creation.`);
   }
 
   const ritualSkills = {};
@@ -2024,7 +2046,7 @@ function deriveInitiative(pools, finalAttributes, heritage, augments, amp, marti
     if (row) scan(name, row.Effect || "");
   }
   for (const level of martialArt.levels) {
-    scan(`${martialArt.style} L${level.Level}`, level.Effect || "");
+    scan(`${level.Style || martialArt.style} L${level.Level}`, level.Effect || "");
   }
   return { dice: pools.Focus, bonus: finalAttributes.Reaction, notes };
 }
@@ -2103,14 +2125,32 @@ function martialArtStatMods(levels) {
   return mods;
 }
 
-function resolveMartialArt(character, data, skills) {
-  const style = character.martial_art;
-  if (!style) return { style: "", levels: [], rank: 0, mods: martialArtStatMods([]) };
-  const rank = Math.max(0, Math.min(SKILL_RANK_CAP,
-    (skills["Martial Arts"] || { points: 0 }).points));
-  const levels = data.martial_arts.filter(row =>
-    row.Style === style && toInt(asNumber(row.Level)) <= rank);
-  return { style, levels, rank, mods: martialArtStatMods(levels) };
+// Resolve each of the character's martial-art styles to its unlocked levels +
+// stat mods. Returns a list of { style, rank, levels, mods }.
+function resolveMartialArts(character, data) {
+  const seen = new Set();
+  const list = [];
+  for (const ma of character.martial_arts || []) {
+    const style = (ma.style || "").trim();
+    if (!style || seen.has(style)) continue;   // ignore blanks / duplicate styles
+    seen.add(style);
+    const rank = Math.max(0, Math.min(SKILL_RANK_CAP, toInt(asNumber(ma.rank))));
+    const levels = data.martial_arts.filter(row =>
+      row.Style === style && toInt(asNumber(row.Level)) <= rank);
+    list.push({ style, rank, levels, mods: martialArtStatMods(levels) });
+  }
+  return list;
+}
+
+// Fold the per-style list into one object shaped like the old single martial
+// art, so combat / initiative / pool-note consumers keep working unchanged.
+// Cross-style stat bonuses combine via martialArtStatMods on the union of all
+// unlocked levels (max for dodge/soak, sum for movement).
+function aggregateMartialArts(list) {
+  const levels = list.flatMap(a => a.levels);
+  const styles = list.map(a => a.style);
+  return { style: styles.join(", "), styles, list, levels,
+    rank: maxOf(list.map(a => a.rank), 0), mods: martialArtStatMods(levels) };
 }
 
 // ============================================================== play mode (post-finalize)
@@ -2134,6 +2174,16 @@ function applyPlayAdvances(character) {
       character.skills[name] =
         toInt(asNumber(character.skills[name] || 0)) + toInt(asNumber(plus));
     }
+  }
+  // Martial-art ranks bought in play, per style. Raising an existing style adds
+  // to its rank; a style first learned in play is appended.
+  character.martial_arts = character.martial_arts || [];
+  for (const [style, plus] of Object.entries(play.martial_art_advances || {})) {
+    const add = toInt(asNumber(plus));
+    if (!style || add === 0) continue;
+    const entry = character.martial_arts.find(m => m.style === style);
+    if (entry) entry.rank = toInt(asNumber(entry.rank)) + add;
+    else character.martial_arts.push({ style, rank: add });
   }
   for (const [name, plus] of Object.entries(play.ritual_advances || {})) {
     character.ritual_skills[name] =
@@ -2344,7 +2394,8 @@ function calculate(character) {
     armor.ballistic_armor, armor.impact_armor,
     rig.rig_exploit_actions, armor.ballistic_armor_max);
 
-  const martialArt = resolveMartialArt(character, data, skillScoring.skills);
+  const martialArtsList = resolveMartialArts(character, data);
+  const martialArt = aggregateMartialArts(martialArtsList);   // combined, for combat consumers
   const initiative = deriveInitiative(pools, finalAttributes, heritage, augments, amp,
                                       martialArt, data);
   const poolNotes = derivePoolNotes(heritage, augments, amp, martialArt);
@@ -2461,7 +2512,8 @@ function calculate(character) {
     armor: armor.items,
     drones: vehicles.drones,
     vehicles: vehicles.vehicles,
-    martial_art: martialArt,
+    martial_art: martialArt,        // aggregate (combined styles) — combat consumers
+    martial_arts: martialArtsList,  // per-style list — UI display / editing
     budget: { starting_cash: priorities.starting_cash, categories: cashCategories,
               spent: cashSpent, remaining: cashRemaining,
               gear_cost_multiplier: gearCostMultiplier,

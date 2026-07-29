@@ -924,7 +924,7 @@ function tabStats(p) {
   p.append(el("h2", {}, "Skills ", chip("skill")));
   p.append(el("p", { class: "hint" },
     "1 point per rank, max 6 at creation. Untrained skills in a group roll at the group's best skill \u22122. "
-    + "Martial Arts costs 2 points per rank and can never exceed your Unarmed Combat rank."));
+    + "Martial Arts is chosen per style below."));
   const GROUP_LABELS = { close_combat: "Close Combat", ranged_combat: "Ranged Combat",
     hacking: "Hacking", vehicle: "Vehicle", engineering: "Engineering" };
   const byPool = {};
@@ -1023,26 +1023,46 @@ function tabStats(p) {
   });
   p.append(rt);
 
-  // martial art
-  const styles = [...new Set(DATA.tables.martial_arts.map(m => m.Style))];
-  const msel = el("select", { onchange: e => { CHAR.martial_art = e.target.value; refresh(); } },
-    el("option", { value: "" }, "None"), ...styles.map(s => el("option", {}, s)));
-  msel.value = CHAR.martial_art || "";
+  // Martial arts: one independent Martial Arts skill per style (2 pts/rank, each
+  // ≤ Unarmed Combat). Add as many styles as exist; each dropdown offers only
+  // styles not already chosen.
+  CHAR.martial_arts = CHAR.martial_arts || [];
+  const allStyles = [...new Set(DATA.tables.martial_arts.map(m => m.Style))].sort();
+  const usedStyles = new Set(CHAR.martial_arts.map(m => m.style).filter(Boolean));
   const mcard = el("div", { class: "card", style: "max-width:640px" },
-    el("h3", {}, "Martial art style (uses Martial Arts skill rank)"), msel);
-  if (CALC.martial_art.style) {
-    CALC.martial_art.levels.forEach(l =>
-      mcard.append(el("div", { class: "stat-line" }, `Level ${l.Level}`, el("b", {}, l.Effect))));
-    const applied = CALC.martial_art.mods.applied;
-    if (applied.length)
-      mcard.append(el("div", { class: "stat-line" },
-        "Applied to stats", el("b", {}, applied.join(" · "))));
-    else if (!CALC.martial_art.levels.length)
-      mcard.append(el("p", { class: "hint" },
-        "Raise Martial Arts to unlock this style's level effects."));
-  }
+    el("h3", {}, "Martial Arts — one skill per style"),
+    el("p", { class: "hint" },
+      "Each style is its own Martial Arts skill: 2 points per rank, and no style may exceed your Unarmed Combat rank."));
+  if (!CHAR.martial_arts.length)
+    mcard.append(el("p", { class: "hint" }, "No martial arts chosen."));
+  CHAR.martial_arts.forEach((ma, i) => {
+    const styleOpts = allStyles.filter(s => s === ma.style || !usedStyles.has(s));
+    const sel = el("select", { onchange: e => { ma.style = e.target.value; refresh(); } },
+      el("option", { value: "" }, "Choose style…"),
+      ...styleOpts.map(s => el("option", { value: s, ...(ma.style === s ? { selected: 1 } : {}) }, s)));
+    const entry = el("div", { class: "ma-entry", style: "margin-top:10px;padding-top:8px;border-top:1px solid var(--line)" },
+      el("div", { class: "add-row" }, sel,
+        el("span", { class: "sub" }, "Rank"),
+        stepper(() => ma.rank || 0, v => { ma.rank = v; refresh(); }, 0, 6),
+        el("button", { class: "row-del", onclick: () => { CHAR.martial_arts.splice(i, 1); refresh(); } }, "✕")));
+    const resolved = (CALC.martial_arts || []).find(r => r.style === ma.style);
+    if (resolved && resolved.levels.length) {
+      resolved.levels.forEach(l =>
+        entry.append(el("div", { class: "stat-line" }, `Level ${l.Level}`, el("b", {}, l.Effect))));
+      if (resolved.mods.applied.length)
+        entry.append(el("div", { class: "stat-line" }, "Applied to stats", el("b", {}, resolved.mods.applied.join(" · "))));
+    } else if (ma.style) {
+      entry.append(el("p", { class: "hint" }, "Raise this style's rank to unlock its level effects."));
+    }
+    mcard.append(entry);
+  });
+  const canAdd = usedStyles.size < allStyles.length;
+  mcard.append(el("div", { class: "add-row", style: "margin-top:10px" },
+    el("button", { class: "btn-add", disabled: canAdd ? null : "1",
+      title: canAdd ? null : "Every martial art style is already chosen",
+      onclick: () => { CHAR.martial_arts.push({ style: "", rank: 0 }); refresh(); } },
+      "Add Additional Martial Art Style")));
   p.append(mcard);
-
 }
 
 /* ------------------------------------------------ 3b. knowledge & etiquette */

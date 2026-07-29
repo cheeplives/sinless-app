@@ -1144,12 +1144,12 @@ function shOverview(body) {
       ? statLine("Alt movement", c.move_modes.map(m => `${m.mode} ${m.meters}m`).join(" · ")) : null,
     statLine("Armor B / I", `${c.ballistic_armor} / ${c.impact_armor}`),
     statLine("Max B / Min I", `${c.max_ballistic} / ${c.min_impact}`),
-    statLine("Simple actions", String(c.simple_actions)),
     statLine("Recoil capacity",
       c.recoil_ignored ? `${c.recoil_capacity} · recoil ignored` : String(c.recoil_capacity)),
     c.martial_notes && c.martial_notes.length
       ? statLine("Martial art", c.martial_notes.join(" · ")) : null,
-    c.melee_exploit ? statLine("Melee exploit", `+${c.melee_exploit}`) : null,
+    statLine("Simple actions", String(c.simple_actions)),
+    ...exploitLines(c.exploit_actions),
     c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
     c.soak_bonus ? statLine("Soak bonus", `+${c.soak_bonus}`, (c.soak_sources || []).join(" · ")) : null,
     statLine("Carried weight", String(c.carried_weight)));
@@ -1348,6 +1348,30 @@ function shOverview(body) {
 function statLine(label, value, title) {
   return el("div", title ? { class: "stat-line", title } : { class: "stat-line" },
     label, el("b", {}, value));
+}
+// Exploit actions (CALC.combat.exploit_actions), grouped by kind into one line
+// each — Melee / Move / Decking / Rigging / Control — with the granting sources
+// listed beneath the total (rules #1–7). Empty kinds are omitted.
+const EXPLOIT_KIND_ORDER = ["Melee", "Move", "Decking", "Rigging", "Control"];
+function exploitLines(actions) {
+  const byKind = {};
+  for (const a of actions || []) {
+    const g = (byKind[a.kind] = byKind[a.kind] || { total: 0, items: [] });
+    g.total += a.count;
+    g.items.push(a);
+  }
+  return EXPLOIT_KIND_ORDER.filter(k => byKind[k]).map(k => {
+    const g = byKind[k];
+    // Show each source's own count only when several sources share a kind — a
+    // lone source's count already equals the line total, so "(+n)" is noise.
+    const sources = g.items.map(a =>
+      g.items.length > 1 && a.count > 1 ? `${a.source} (+${a.count})` : a.source);
+    return el("div", { class: "stat-line" },
+      el("span", {}, `${k} exploit`),
+      el("span", { style: "text-align:right" },
+        el("b", {}, `+${g.total}`),
+        el("div", { class: "sub", style: "font-weight:400" }, sources.join(" · "))));
+  });
 }
 function miniCounter(label, get, set, min = 0, max = 9999) {
   const clamp = n => Math.max(min, Math.min(max, n));

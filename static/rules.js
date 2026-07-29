@@ -146,6 +146,13 @@ const ADRENALINE_BOOST_SIMPLE_ACTIONS = 3;
 const COMBAT_MASTERY_MELEE_EXPLOIT_BONUS = 2;
 const IRON_FIST_BASE_DAMAGE = 6;   // Iron Fist amp: unarmed = ½STR + 6, Reach 0
 const WIRED_REFLEXES_MELEE_EXPLOITS_BY_RANK = { 1: 1, 2: 2, 3: 2 };
+// Decks/Rigs grant one hacking/rigging exploit action per processing core.
+const CORE_EXPLOIT_COUNT = { Single: 1, Double: 2, Triple: 3, Quad: 4 };
+// Mage/Archmage summoning spells that grant a control exploit for the summoned
+// creature (one per spell known — the creature is directed with that action).
+const SUMMON_CONTROL_SPELLS = ["Create Darkenbeast", "Summon Elemental", "Bound Servant"];
+// A Speaker gets two control exploit actions per spirit slotted in a bond slot.
+const SPEAKER_BOND_CONTROL_EXPLOITS = 2;
 const COVERT_SYNTHSKIN_DODGE_BONUS = 1;
 const PERFECT_SITUATIONAL_AWARENESS_BONUS = 3;   // +3d dodge AND soak (amp power)
 const GYROMOUNT_RECOIL_BONUS = 2;
@@ -330,7 +337,6 @@ function hackActionSkill(skillCode) {
 // zpRemaining / casting-penalty branches in calculate() gated on houseRule("zr").
 const SOUND_FILTER_OBSERVATION_BONUS = 1;
 const MOVEMENT_ENHANCEMENT_METERS_PER_RATING = 2;
-const RIG_EXPLOIT_ACTIONS = 2;
 
 // --- gear & money --------------------------------------------------------------
 const SMART_WEAPON_COST_MULTIPLIER = 2;
@@ -943,6 +949,7 @@ function augmentEffectSums(owned) {
     // Highest single ballistic source (ballistic armor doesn't stack for the cap).
     ballistic_armor_max: maxOf(owned.map(([row]) => toInt(asNumber(row["Ballistic Armor"]))), 0),
     melee_exploit_bonus: WIRED_REFLEXES_MELEE_EXPLOITS_BY_RANK[wiredReflexesRank] || 0,
+    wired_reflexes_rank: wiredReflexesRank,
     internal_armor_slot_items: owned
       .filter(([row]) => row["Armor Slot"] === "Y")
       .map(([row]) => row.Name),
@@ -951,6 +958,10 @@ function augmentEffectSums(owned) {
       .map(([row]) => row.Effect),
     has_move_exploit: owned.some(([row]) =>
       row.Name.includes("Trackmobi") || row.Name.includes("Repulsors")),
+    // Named sources of the move exploit action, so the Overview can attribute it.
+    move_exploit_sources: owned
+      .filter(([row]) => row.Name.includes("Trackmobi") || row.Name.includes("Repulsors"))
+      .map(([row]) => row.Name),
   };
 }
 
@@ -1209,6 +1220,7 @@ function mergeMountedAugments(augments, mounted) {
   augments.physical_damage_reduction = Math.max(augments.physical_damage_reduction,
                                                  mounted.physical_damage_reduction || 0);
   augments.has_move_exploit = augments.has_move_exploit || mounted.has_move_exploit;
+  augments.move_exploit_sources.push(...(mounted.move_exploit_sources || []));
   augments.rows.push(...mounted.rows);
   augments.mounted_zr = mounted.mounted_zr;
   augments.mount_errors = mounted.mount_errors;
@@ -1849,7 +1861,6 @@ function rigStats(rigEntry, data) {
 
 function priceRig(character, data, gearCostMultiplier, warnings) {
   let totalCost = 0.0;
-  let rigExploitActions = 0;
   for (const entry of character.rigs) {
     const row = findRow(data.rigs, "Rig Type", entry.name);
     if (!row) continue;
@@ -1864,9 +1875,8 @@ function priceRig(character, data, gearCostMultiplier, warnings) {
                     + `${stats.modSlots} available.`);
     }
     totalCost += round2(cost * gearCostMultiplier);
-    rigExploitActions = RIG_EXPLOIT_ACTIONS;
   }
-  return { cost: totalCost, rig_exploit_actions: rigExploitActions };
+  return { cost: totalCost };
 }
 
 const HEAVY_FITTING_WEIGHT = 4;
@@ -2044,11 +2054,80 @@ function gearZoeticRating(character, data) {
   return round2(total);
 }
 
+// The character's single "active" deck/rig drives its exploit-action count (you
+// can only jack into one deck / pilot one rig at a time). Falls back to the first
+// owned item when nothing is flagged active yet, mirroring the play-tab default.
+function activeGearRow(owned, activeName, table, keyCol) {
+  if (!owned || !owned.length) return null;
+  let name = activeName;
+  if (!name || !owned.some(o => o.name === name)) name = owned[0].name;
+  return findRow(table, keyCol, name) || null;
+}
+
+// Every exploit action the character can bring to bear, itemised by kind and
+// source, for the Overview combat card. See rules #1–7 in the changelog:
+// Wired Reflexes / Combat Mastery (Melee), Trackmobi / Repulsors (Move), the
+// active Deck / Rig's cores (Decking / Rigging), and summon spells / slotted
+// bond spirits (Control).
+function deriveExploitActions(character, data, magicType, augments, amp) {
+  const actions = [];   // [{ kind, count, source }]
+
+  // --- Melee: Wired Reflexes (1 or 2 by rank) + Combat Mastery amp (+2).
+  if (augments.melee_exploit_bonus > 0) {
+    actions.push({ kind: "Melee", count: augments.melee_exploit_bonus,
+      source: augments.wired_reflexes_rank
+        ? `Wired Reflexes ${augments.wired_reflexes_rank}` : "Wired Reflexes" });
+  }
+  if (amp.powers_taken.has("Combat Mastery")) {
+    actions.push({ kind: "Melee", count: COMBAT_MASTERY_MELEE_EXPLOIT_BONUS,
+      source: "Combat Mastery (Amp)" });
+  }
+
+  // --- Move: each Trackmobi / Repulsors mount grants one.
+  for (const name of augments.move_exploit_sources || []) {
+    actions.push({ kind: "Move", count: 1, source: name });
+  }
+
+  // --- Decking: the active deck's cores (Single 1 … Quad 4).
+  const deck = activeGearRow(character.decks,
+    ((character.play || {}).decking || {}).active_deck, data.decks, "Name");
+  if (deck) {
+    const n = CORE_EXPLOIT_COUNT[deck.Core] || 0;
+    if (n) actions.push({ kind: "Decking", count: n,
+      source: `${deck.Name} (${deck.Core} core)` });
+  }
+
+  // --- Rigging: the active rig's cores, same scale as decks.
+  const rig = activeGearRow(character.rigs,
+    ((character.play || {}).rigging || {}).active_rig, data.rigs, "Rig Type");
+  if (rig) {
+    const n = CORE_EXPLOIT_COUNT[rig.Cores] || 0;
+    if (n) actions.push({ kind: "Rigging", count: n,
+      source: `${rig["Rig Type"]} (${rig.Cores} core)` });
+  }
+
+  // --- Control: one per summon spell known (Mage/Archmage) …
+  if (magicType === "Mage" || magicType === "Archmage") {
+    const known = new Set((character.magic.spells || []).map(s => s.name));
+    for (const spellName of SUMMON_CONTROL_SPELLS) {
+      if (known.has(spellName)) actions.push({ kind: "Control", count: 1, source: spellName });
+    }
+  }
+  // … and two per spirit slotted in a Speaker/Archmage bond slot (play state).
+  if (magicType === "Speaker" || magicType === "Archmage") {
+    for (const bond of (character.play || {}).bond_slots || []) {
+      if (bond && bond.spirit) actions.push({ kind: "Control",
+        count: SPEAKER_BOND_CONTROL_EXPLOITS, source: bond.spirit });
+    }
+  }
+
+  return actions;
+}
+
 // ============================================================== step 9: combat stats
 function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeight,
                            armorWeight, gearWeight, cyberwareZoeticRating,
-                           armorBallistic, armorImpact, rigExploitActions,
-                           armorBallisticMax) {
+                           armorBallistic, armorImpact, armorBallisticMax) {
   const isReplicant = heritage.type === "Replicant";
   const conditionBonus = isReplicant ? REPLICANT_CONDITION_BONUS : 0;
   // 1/2 attribute rounds down but never below 1, then +6 base track.
@@ -2079,9 +2158,6 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
       i: CHELONIAN_IMPACT_ARMOR });
   const simpleActions = amp.powers_taken.has("Adrenaline Boost")
     ? ADRENALINE_BOOST_SIMPLE_ACTIONS : DEFAULT_SIMPLE_ACTIONS;
-  const meleeExploit = (augments.melee_exploit_bonus
-                        + (amp.powers_taken.has("Combat Mastery")
-                           ? COMBAT_MASTERY_MELEE_EXPLOIT_BONUS : 0));
 
   const isSynthetic = heritage.type === "Synthetic";
   let carriedWeight = weaponWeight + armorWeight + gearWeight;
@@ -2101,9 +2177,6 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
     move_modes: augments.move_modes,
     physical_damage_reduction: augments.physical_damage_reduction,
     simple_actions: simpleActions,
-    melee_exploit: meleeExploit,
-    rig_exploit: rigExploitActions,
-    move_exploit: augments.has_move_exploit ? 1 : 0,
     ballistic_armor: (armorBallistic + augments.ballistic_armor
                       + heritage.ballistic_armor
                       + (hasChelonian ? CHELONIAN_BALLISTIC_ARMOR : 0)),
@@ -2484,7 +2557,7 @@ function calculate(character) {
     weapons.weight, armor.weight, misc.gear_weight,
     augments.zoetic_rating_raw,
     armor.ballistic_armor, armor.impact_armor,
-    rig.rig_exploit_actions, armor.ballistic_armor_max);
+    armor.ballistic_armor_max);
 
   const martialArtsList = resolveMartialArts(character, data);
   const martialArt = aggregateMartialArts(martialArtsList);   // combined, for combat consumers
@@ -2496,6 +2569,7 @@ function calculate(character) {
   for (const [k, v] of Object.entries(combat)) {
     if (k !== "physical" && k !== "stun") combatOut[k] = v;
   }
+  combatOut.exploit_actions = deriveExploitActions(character, data, magicType, augments, amp);
 
   // Apply the martial art's stat modifiers (gated by Martial Arts rank via the
   // cumulative levels resolved above) on top of heritage/augment bonuses.

@@ -927,6 +927,7 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .admin-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
 .admin-section-label{font-family:var(--disp);text-transform:uppercase;letter-spacing:.12em;
   font-size:11px;color:var(--dim);margin:18px 0 8px}
+.shared-search{width:100%;box-sizing:border-box;margin:10px 0 6px;padding:8px 10px}
 .admin-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:10px 2px;border-bottom:1px solid var(--line-soft)}
 .admin-name{font-weight:600;color:var(--strong)}

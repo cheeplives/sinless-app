@@ -159,7 +159,10 @@ async function openSharedGallery() {
 
 async function renderSharedList() {
   const root = $("#shared");
-  const chars = await SYNC.listShared();
+  // Group the gallery by owner (then by character name within each owner).
+  const chars = (await SYNC.listShared()).slice().sort((a, b) =>
+    (a.owner || "").localeCompare(b.owner || "")
+    || (a.name || "").localeCompare(b.name || ""));
   const back = el("button", { class: "btn ghost",
     onclick: () => { $("#shared").hidden = true; showActiveTab(); } }, "← Back");
   const card = el("div", { class: "auth-card admin-card" },
@@ -167,18 +170,34 @@ async function renderSharedList() {
   if (!chars.length) {
     card.append(el("p", { class: "auth-meta" },
       "No public characters yet. Share one from a character's ☰ menu → Sharing."));
-  } else {
-    for (const c of chars) {
-      card.append(el("div", { class: "admin-row" },
-        el("div", { class: "admin-id" },
-          el("div", { class: "admin-name" }, c.name || "(unnamed)"),
-          el("div", { class: "admin-email" }, "by " + (c.owner || "member"))),
-        el("div", { class: "admin-actions" },
-          el("button", { class: "btn small", onclick: () => viewShared(c.id) }, "View"),
-          el("button", { class: "btn small good", onclick: () => copyShared(c.id) }, "Save a copy"))));
-    }
+    root.replaceChildren(card);
+    return;
   }
+
+  // Live filter by character name (case-insensitive substring), no re-fetch.
+  const rows = el("div", {});
+  let search;
+  const renderRows = () => {
+    const q = search.value.trim().toLowerCase();
+    const matches = q ? chars.filter(c => (c.name || "").toLowerCase().includes(q)) : chars;
+    rows.replaceChildren(...(matches.length ? matches.map(sharedRow)
+      : [el("p", { class: "auth-meta" }, `No characters match “${search.value.trim()}”.`)]));
+  };
+  search = el("input", { type: "text", class: "shared-search",
+    placeholder: "Search by character name…", oninput: renderRows });
+  card.append(search, rows);
+  renderRows();
   root.replaceChildren(card);
+}
+
+function sharedRow(c) {
+  return el("div", { class: "admin-row" },
+    el("div", { class: "admin-id" },
+      el("div", { class: "admin-name" }, c.name || "(unnamed)"),
+      el("div", { class: "admin-email" }, "by " + (c.owner || "member"))),
+    el("div", { class: "admin-actions" },
+      el("button", { class: "btn small", onclick: () => copyShared(c.id) }, "Save a copy"),
+      el("button", { class: "btn small good", onclick: () => viewShared(c.id) }, "View")));
 }
 
 async function viewShared(id) {

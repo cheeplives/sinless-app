@@ -636,7 +636,12 @@ label.opt input{margin-top:3px}
 .sh-notes{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
   color:var(--text);padding:10px;font-family:var(--body);font-size:13px;resize:vertical}
 
-.sh-skillgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.sh-skillgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px}
+/* Grid items default to min-width:auto, so a wide skill table (a long,
+ * unwrapping skill name) would blow its track out past the card. min-width:0
+ * lets the track shrink and the name cell wrap instead of overflowing. */
+.sh-skillcol{min-width:0}
+.sh-skilltable td:first-child{overflow-wrap:anywhere}
 .sh-skillcol .colhead{display:flex;justify-content:space-between;font-family:var(--disp);
   letter-spacing:.06em;padding-bottom:5px;border-bottom:2px solid var(--line);margin-bottom:6px}
 .sh-skillcol .colhead b{font-family:var(--mono)}

@@ -2272,6 +2272,10 @@ function tabGear(p) {
       `Heritage surcharge \u00d7${CALC.budget.gear_cost_multiplier} on weapons, armor, `
       + "vehicle chassis and cybertechtronic augments (vehicle mods/weapons, Bioware, "
       + "drones, rigs, decks, gear and lifestyle unaffected)."));
+  if (CALC.budget.armor_cost_multiplier > 1)
+    p.append(el("p", { class: "hint" },
+      `Extra limb surcharge \u00d7${CALC.budget.armor_cost_multiplier} on Armor `
+      + "(Extra Arm / Extra Leg need custom-fitted armor)."));
 }
 
 // Deferred to DOMContentLoaded so every later script (sheet.js, workspace.js)

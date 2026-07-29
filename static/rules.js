@@ -263,7 +263,7 @@ const RIG_EXPLOIT_ACTIONS = 2;
 
 // --- gear & money --------------------------------------------------------------
 const SMART_WEAPON_COST_MULTIPLIER = 2;
-const EXTRA_ARM_GEAR_COST_MULTIPLIER = 1.5;
+const EXTRA_LIMB_ARMOR_COST_MULTIPLIER = 1.5;   // Extra Arm / Extra Leg: +50% armor
 const HACKING_RATING_COST = 5000;
 const HACKING_RATING_MAX = 6;
 
@@ -405,7 +405,14 @@ function mergeDefaults(character) {
   const fill = (target, source) => {
     for (const [key, value] of Object.entries(source)) {
       if (!(key in target)) target[key] = value;
-      else if (isPlainObject(value) && isPlainObject(target[key])) fill(target[key], value);
+      else if (isPlainObject(value)) {
+        // Default expects a keyed object here. If the stored value isn't a
+        // plain object (e.g. a legacy character whose skill_specializations was
+        // persisted as []), reset it to the default: an array silently drops
+        // any named props on JSON.stringify, so writes to it never save.
+        if (isPlainObject(target[key])) fill(target[key], value);
+        else target[key] = value;
+      }
     }
   };
 
@@ -556,10 +563,15 @@ function applyHeritage(character, data, warnings, errors) {
   const baseZoeticPotential = toInt(asNumber((heritageRow || {}).ZP, 6));
 
   // Calculate gear cost multiplier (Small Uplifts get 40% increase)
-  let gearCostMult = traits.some(row => row.Name === "Extra Arm")
-    ? EXTRA_ARM_GEAR_COST_MULTIPLIER : 1.0;
   const smallUpliftMult = traits.reduce((max, row) => Math.max(max, asNumber(row.GearCostMultiplier, 1.0)), 1.0);
-  gearCostMult *= smallUpliftMult;
+  const gearCostMult = smallUpliftMult;
+
+  // Extra limbs (Extra Arm / Extra Leg) need custom-fitted armor: each such
+  // trait adds +50% to ARMOR cost only (other gear is unaffected). Additive per
+  // limb, and multiplies on top of any small-heritage armor surcharge.
+  const extraLimbCount = traits.filter(row =>
+    row.Name === "Extra Arm" || row.Name === "Extra Leg").length;
+  const armorCostMult = 1 + (EXTRA_LIMB_ARMOR_COST_MULTIPLIER - 1) * extraLimbCount;
 
   return {
     type: heritageType,
@@ -592,6 +604,7 @@ function applyHeritage(character, data, warnings, errors) {
     has_cyclopean: traits.some(row => row.Name === "Cyclopean"),
     has_antlers: traits.some(row => row.Name === "Antlers"),
     gear_cost_multiplier: gearCostMult,
+    armor_cost_multiplier: armorCostMult,
   };
 }
 
@@ -2181,10 +2194,12 @@ function calculate(character) {
   // Weapons, Armor, Vehicles and cybertechtronic Augments pay it; Bioware,
   // Drones, Rigs, Decks/Programs, Gear and Lifestyle pay face value.
   const gearCostMultiplier = heritage.gear_cost_multiplier;
+  // Extra Arm / Extra Leg surcharge armor only, on top of any small-heritage one.
+  const armorCostMultiplier = heritage.armor_cost_multiplier || 1;
   const weapons = priceWeapons(character, data,
     surchargeFor("weapon", gearCostMultiplier), warnings, finalAttributes.Strength);
   const armor = priceArmor(character, data,
-    surchargeFor("armor", gearCostMultiplier), warnings);
+    surchargeFor("armor", gearCostMultiplier) * armorCostMultiplier, warnings);
   if (heritage.traits.some(row => row.Name === "Tough")
       && armor.items.some(item => item.Slot === "Under" && item.active)) {
     warnings.push("Tough (Blighted boon) occupies the Under armor slot — "
@@ -2395,7 +2410,8 @@ function calculate(character) {
     martial_art: martialArt,
     budget: { starting_cash: priorities.starting_cash, categories: cashCategories,
               spent: cashSpent, remaining: cashRemaining,
-              gear_cost_multiplier: gearCostMultiplier },
+              gear_cost_multiplier: gearCostMultiplier,
+              armor_cost_multiplier: armorCostMultiplier },
     warnings: finalized ? [] : warnings,
     errors: finalized ? [] : errors,
   };

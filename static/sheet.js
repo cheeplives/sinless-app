@@ -2020,6 +2020,9 @@ function shGear(body) {
   // Weapons & armor carry the small-heritage surcharge; general gear does not.
   const mult = RULES.surchargeFor("weapon", CALC.budget.gear_cost_multiplier || 1);
   const gearMult = RULES.surchargeFor("gear", CALC.budget.gear_cost_multiplier || 1);
+  // Armor additionally carries the Extra Arm / Extra Leg +50% surcharge.
+  const armorMult = RULES.surchargeFor("armor", CALC.budget.gear_cost_multiplier || 1)
+    * (CALC.budget.armor_cost_multiplier || 1);
   const overdrawOK = (name, cost) => CHAR.play.cash >= cost
     || confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`);
 
@@ -2159,7 +2162,7 @@ function shGear(body) {
   const armorCard = el("div", { class: "card sh-card", id: "gear-armor" }, el("h3", {}, "Armor"),
     el("p", { class: "hint" },
       `Current totals: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I (augments and powers included). One Outer and one Under piece worn at a time.`));
-  const armorItem = r => ({ name: r.Armor, cost: Math.round((+r.Cost || 0) * mult),
+  const armorItem = r => ({ name: r.Armor, cost: Math.round((+r.Cost || 0) * armorMult),
     sub: `${r.Ballistic}B / ${r.Impact}I · wt ${r.wt}${r.Style === "Y" ? " · styleable" : ""}` });
   const armorBuyGroups = [
     { label: "Outer Armor", items: DATA.tables.armor.filter(r => (r.Slot || "").startsWith("Outer")).map(armorItem) },
@@ -2180,12 +2183,12 @@ function shGear(body) {
             items: a.extras || [],
             groups: [{ label: "Armor Extras", items: DATA.tables.armor_extras.map(x => ({
               name: x.Extra,
-              cost: Math.round(baseCost * ((+x.Multiplier || 1) - 1) * mult),
+              cost: Math.round(baseCost * ((+x.Multiplier || 1) - 1) * armorMult),
               sub: `×${x.Multiplier}${x.Effects ? " · " + x.Effects : ""}`,
             })) }],
             onAdd: name => {
               const ex = DATA.tables.armor_extras.find(x => x.Extra === name) || {};
-              const cost = Math.round(baseCost * ((+ex.Multiplier || 1) - 1) * mult);
+              const cost = Math.round(baseCost * ((+ex.Multiplier || 1) - 1) * armorMult);
               if (!overdrawOK(name, cost)) return;
               (a.extras = a.extras || []).push(name);
               logCash(`Added ${name} to ${a.name}`, -cost);

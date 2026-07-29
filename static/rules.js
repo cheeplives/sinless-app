@@ -390,6 +390,7 @@ function defaultCharacter() {
       stun_damage: 0,
       initiative: 0,
       dodge_dice: 0,
+      replicant_lifespan_months: null,   // Replicant only: (1d6+1)×12, rolled once
       pool_used: {},
       effects: [],
       modifiers: [],

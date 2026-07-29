@@ -314,6 +314,22 @@ function dossierNotes() {
   return notes;
 }
 
+/* Replicant remaining-lifespan tracker shown in the Overview warning area.
+ * Rolled once as (1d6+1)×12 months, then ticked down by hand as play advances.
+ * Returns null for non-Replicants. */
+function replicantLifespanTracker() {
+  if (CHAR.heritage.type !== "Replicant") return null;
+  const play = CHAR.play;
+  if (play.replicant_lifespan_months == null) {
+    play.replicant_lifespan_months = (Math.floor(Math.random() * 6) + 1 + 1) * 12;   // (1d6+1)×12
+    schedulePlaySave();
+  }
+  return el("div", { class: "sh-callout warn sh-lifespan" }, "⏳ ",
+    miniCounter("Remaining Lifespan (Months)",
+      () => play.replicant_lifespan_months || 0,
+      v => { play.replicant_lifespan_months = v; }, 0, 9999));
+}
+
 /* ------------------------------------------------ shell */
 function sheetTabList() {
   // Magic (everyone can learn rituals), Decking and Rigging are always shown so
@@ -1025,6 +1041,9 @@ function shOverview(body) {
   // dossier warnings (Replicant illegality, Amp powers offline, …)
   for (const note of dossierNotes().slice(0, 2))
     body.append(el("div", { class: "sh-callout" }, "⚠ ", note));
+  // Replicants have a fixed remaining lifespan, rolled once and ticked down.
+  const lifespan = replicantLifespanTracker();
+  if (lifespan) body.append(lifespan);
 
   // --- kismet + pools
   const kismetRow = el("div", { class: "sh-kismet" },

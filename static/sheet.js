@@ -1188,8 +1188,9 @@ function shOverview(body) {
   const cyberguns = equippedCyberguns();
   const wornArmor = CHAR.armor.filter(a => a.active !== false);
   const grantedWeapons = CALC.combat.granted_weapons || [];
+  const traitGear = CALC.combat.trait_gear || [];
   if (equippedWeapons.length || cyberguns.length || wornArmor.length
-      || grantedWeapons.length || (CALC.combat.armor_sources || []).length) {
+      || grantedWeapons.length || traitGear.length || (CALC.combat.armor_sources || []).length) {
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
@@ -1250,6 +1251,24 @@ function shOverview(body) {
         el("td", { class: "sub" }, `Melee · DMG ${gw.damage} · Reach ${gw.reach}`),
         el("td", { class: "sub" }, gw.source))));
       loadout.append(gt);
+    }
+    // Heavy Torso / No Head free-mount gear — weapons (with stats) and extra
+    // limbs, each noting the granting trait.
+    if (traitGear.length) {
+      const tt = el("table");
+      tt.append(el("tr", {}, el("th", {}, "Trait-mounted"),
+        el("th", {}, "Stats"), el("th", {}, "From trait")));
+      traitGear.forEach(g => {
+        const w = g.weapon;
+        const stats = g.kind === "weapon" && w
+          ? `${w.Type || ""} · Acc ${w.Accuracy || 0} · DMG ${w.Damage || "—"} · Pen ${w.Pen || 0} · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`
+          : "Extra limb (free mount)";
+        tt.append(el("tr", {},
+          el("td", {}, el("b", {}, g.label)),
+          el("td", { class: "sub" }, stats),
+          el("td", { class: "sub" }, g.source)));
+      });
+      loadout.append(tt);
     }
     const armorSources = CALC.combat.armor_sources || [];
     if (wornArmor.length || armorSources.length) {
@@ -3859,7 +3878,8 @@ function buildMarkdown() {
   }
   const cyberguns = equippedCyberguns();
   const grantedWeapons = c.granted_weapons || [];
-  if (CHAR.weapons.length || cyberguns.length || grantedWeapons.length) {
+  const traitGear = c.trait_gear || [];
+  if (CHAR.weapons.length || cyberguns.length || grantedWeapons.length || traitGear.length) {
     L.push("## Weapons");
     L.push("");
     CHAR.weapons.forEach(w => {
@@ -3883,6 +3903,12 @@ function buildMarkdown() {
     });
     grantedWeapons.forEach(gw => {
       L.push(`- **${gw.name}** — Melee · DMG ${gw.damage} · Reach ${gw.reach} (${gw.source})`);
+    });
+    traitGear.forEach(g => {
+      const w = g.weapon;
+      L.push(g.kind === "weapon" && w
+        ? `- **${g.label}** — ${w.Type || ""} · DMG ${w.Damage || "—"} · Acc ${w.Accuracy || 0} · wt ${w.Weight || 0} (${g.source} mount)`
+        : `- **${g.label}** — extra limb (${g.source} mount)`);
     });
     if (c.optics_notes && c.optics_notes.length) L.push(`- *Optics:* ${c.optics_notes.join(" · ")}`);
     L.push("");

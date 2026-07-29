@@ -878,6 +878,36 @@ function tabHeritage(p) {
     p.append(el("div", { class: "card", style: "max-width:520px" },
       el("h3", {}, "Specialization \u2014 +1d to all tests of one pool"), s));
   }
+
+  // Heavy Torso / No Head free 1-weight mounts (issue #11). Options: a
+  // Cyberarm/Cyberleg (Heavy Torso only) or any non-melee, non-thrown weapon of
+  // weight \u2264 1. All free \u2014 they never touch the cost budget.
+  const mountWeapons = DATA.tables.weapons
+    .filter(w => w.Type !== "Melee" && w.Type !== "Thrown" && (+w.Weight || 0) <= 1)
+    .map(w => w.Weapon).sort();
+  const mountSelect = (get, set, limbs) => {
+    const s = el("select", { onchange: e => { set(e.target.value); refresh(); } },
+      el("option", { value: "" }, "Empty\u2026"),
+      ...(limbs ? ["Cyberarm", "Cyberleg"].map(x => el("option", { value: x }, x)) : []),
+      ...mountWeapons.map(w => el("option", { value: w }, w)));
+    s.value = get() || "";
+    return s;
+  };
+  if (CHAR.heritage.features.includes("Heavy Torso")) {
+    const m = CHAR.heritage.heavy_torso_mounts = CHAR.heritage.heavy_torso_mounts || ["", ""];
+    p.append(el("div", { class: "card", style: "max-width:520px" },
+      el("h3", {}, "Heavy Torso \u2014 two free 1-weight mounts"),
+      el("p", { class: "hint" }, "Each holds a Cyberarm, Cyberleg, or a non-melee, non-thrown weapon of weight \u2264 1. No cost."),
+      el("div", { class: "stat-line" }, "Mount 1 ", mountSelect(() => m[0], v => { m[0] = v; }, true)),
+      el("div", { class: "stat-line" }, "Mount 2 ", mountSelect(() => m[1], v => { m[1] = v; }, true))));
+  }
+  if (CHAR.heritage.features.includes("No Head")) {
+    p.append(el("div", { class: "card", style: "max-width:520px" },
+      el("h3", {}, "No Head \u2014 one free 1-weight weapon mount"),
+      el("p", { class: "hint" }, "Holds a non-melee, non-thrown weapon of weight \u2264 1. No cost."),
+      el("div", { class: "stat-line" }, "Mount ",
+        mountSelect(() => CHAR.heritage.no_head_mount, v => { CHAR.heritage.no_head_mount = v; }, false))));
+  }
 }
 function describeStats(f) {
   const parts = [];

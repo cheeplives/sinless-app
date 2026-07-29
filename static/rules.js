@@ -397,6 +397,8 @@ function defaultCharacter() {
       blessing_plus3: "",
       blessing_plus1: "",
       specialization_pool: "",
+      heavy_torso_mounts: ["", ""],   // Heavy Torso: up to 2 free 1-wt mounts
+      no_head_mount: "",              // No Head: one free 1-wt weapon mount
     },
     attributes,
     cha_pool_choice: "Brawn",
@@ -664,9 +666,31 @@ function applyHeritage(character, data, warnings, errors) {
     row.Name === "Extra Arm" || row.Name === "Extra Leg").length;
   const armorCostMult = 1 + (EXTRA_LIMB_ARMOR_COST_MULTIPLIER - 1) * extraLimbCount;
 
+  // Heavy Torso / No Head free 1-weight mounts: resolve the player's picks into
+  // granted gear (all free). Each pick is "Cyberarm"/"Cyberleg" (an extra limb)
+  // or a weapon name. Ignored unless the granting trait is actually selected.
+  const traitGear = [];
+  const hasTrait = n => traits.some(row => row.Name === n);
+  if (hasTrait("Heavy Torso")) {
+    for (const choice of (heritage.heavy_torso_mounts || [])) {
+      if (!choice) continue;
+      if (choice === "Cyberarm" || choice === "Cyberleg")
+        traitGear.push({ source: "Heavy Torso", kind: "limb", label: choice });
+      else {
+        const w = findRow(data.weapons, "Weapon", choice);
+        if (w) traitGear.push({ source: "Heavy Torso", kind: "weapon", label: choice, weapon: w });
+      }
+    }
+  }
+  if (hasTrait("No Head") && heritage.no_head_mount) {
+    const w = findRow(data.weapons, "Weapon", heritage.no_head_mount);
+    if (w) traitGear.push({ source: "No Head", kind: "weapon", label: heritage.no_head_mount, weapon: w });
+  }
+
   return {
     type: heritageType,
     traits,
+    trait_gear: traitGear,
     attribute_adjustment: attributeAdjustment,
     attribute_max_adjustment: attributeMaxAdjustment,
     uplift_attribute_point_modifier: attributePointModifier,
@@ -2464,6 +2488,8 @@ function calculate(character) {
   // Natural / implanted / power-granted melee weapons for the Overview loadout.
   combatOut.granted_weapons = collectGrantedWeapons(
     augments, amp, finalAttributes.Strength, maMods);
+  // Heavy Torso / No Head free-mount gear (weapons + extra limbs) for the loadout.
+  combatOut.trait_gear = heritage.trait_gear || [];
 
   // Per-source breakdowns so the Combat box can show where each Soak/Dodge die
   // comes from — every contributing source in one place (the sweep).

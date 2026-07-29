@@ -190,12 +190,21 @@ const HOUSE_RULE_DEFS = [
       { value: "woolongs", label: "House rule — Woolongs",
         help: "The setting's money is called Woolongs." },
     ] },
+  { id: "ew", label: "Electronic Warfare", default: "houserule",
+    options: [
+      { value: "classic", label: "Classic — EW skill",
+        help: "Adds a Computer: Electronic Warfare skill to the Computer group; the camera hack actions and the EW programs (Analysis Locus, Corrupt IFF, Acid Burn, De-Rez, Hypnotic Projection, Refraction Field, Targeted Disruption, Device Control) roll it." },
+      { value: "houserule", label: "House rule — No EW skill",
+        help: "No separate EW skill; those actions and programs use Computer: Hacking instead." },
+    ] },
   { id: "engineering", label: "Engineering skills", default: "single",
     options: [
-      { value: "single", label: "Single skill",
-        help: "One Engineering skill covers every discipline." },
+      // Classic listed first (house-rule dropdowns lead with Classic); the
+      // default stays "single" so existing characters keep one Engineering skill.
       { value: "classic", label: "Classic (six skills)",
         help: "Engineering splits into a six-skill group — Aeronautics, Armory, Electronics, Industrial, Mechanical, Nautical. Like Ranged Weapons, an untrained member rolls the group's best −2." },
+      { value: "single", label: "Single skill",
+        help: "One Engineering skill covers every discipline." },
     ] },
 ];
 
@@ -226,6 +235,23 @@ function syncEngineeringSkills() {
     for (const name of ENGINEERING_SPLIT_SKILLS) { delete SKILLS[name]; delete dskills[name]; }
     SKILLS["Engineering"] = ["Focus", null];
     dskills["Engineering"] = { pool: "Focus" };
+  }
+}
+
+// House rule: the "Classic" Electronic Warfare rule adds a dedicated
+// Computer: Electronic Warfare skill to the Computer (hacking) group. Same
+// idempotent SKILLS + BUNDLE.skills reshaping as syncEngineeringSkills; points
+// for the inactive shape are left untouched so toggling back restores them.
+const EW_SKILL = "Computer: Electronic Warfare";
+function syncEWSkill() {
+  const classic = houseRule("ew") === "classic";
+  const dskills = (BUNDLE.skills = BUNDLE.skills || {});
+  if (classic) {
+    SKILLS[EW_SKILL] = ["Focus", "hacking"];
+    dskills[EW_SKILL] = { pool: "Focus", group: "hacking" };
+  } else {
+    delete SKILLS[EW_SKILL];
+    delete dskills[EW_SKILL];
   }
 }
 // House rules are PER CHARACTER, stored on `character.house_rules`. The engine
@@ -277,6 +303,27 @@ function setHouseRule(id, value) {
 // render code that runs after recalc sees the right value).
 function currencyName() {
   return houseRule("currency") === "zuzus" ? "Zuzus" : "Woolongs";
+}
+
+// Programs (any rating) that key off Electronic Warfare under the Classic EW
+// rule, and Computer: Hacking otherwise. Matched by base name (rating stripped).
+const EW_PROGRAM_BASES = new Set([
+  "Analysis Locus", "Corrupt IFF", "Acid Burn", "De-Rez",
+  "Hypnotic Projection", "Refraction Field", "Targeted Disruption", "Device Control",
+]);
+function isEWProgram(name) {
+  return EW_PROGRAM_BASES.has(String(name || "").replace(/\s+\d+$/, "").trim());
+}
+// The skill an EW program rolls, per the EW house rule; null for non-EW programs.
+function programSkill(name) {
+  if (!isEWProgram(name)) return null;
+  return houseRule("ew") === "classic" ? EW_SKILL : "Computer: Hacking";
+}
+// The label for a hack-action's Skill cell: "EW" stays "EW" under Classic but
+// reads "Hacking" when there's no EW skill; everything else is unchanged.
+function hackActionSkill(skillCode) {
+  if (skillCode === "EW") return houseRule("ew") === "classic" ? "EW" : "Hacking";
+  return skillCode;
 }
 // NB: the cyber ZR *value* (raw minus eyes/ears/limb absorption) is the same
 // under both ZR house rules; only how that ZR is *applied* differs — see the
@@ -2215,6 +2262,7 @@ function calculate(character) {
   if (finalized) character = applyPlayAdvances(character);
   const data = loadData();
   syncEngineeringSkills();   // reshape Engineering skills per the house rule
+  syncEWSkill();             // add/remove Computer: Electronic Warfare per the EW rule
   const warnings = [], errors = [];
 
   const priorities = resolvePriorities(character, data, warnings, errors);
@@ -2537,6 +2585,7 @@ return {
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost,
   augmentLimbRequirement, augmentMeleeDamage,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
+  programSkill, isEWProgram, hackActionSkill,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS,
   surchargeFor,
 };

@@ -3153,9 +3153,11 @@ function shDecking(body) {
     const io = r["I/O"] || "—";
     const loaded = dk.loaded.includes(name);
     const nodeCtrl = ` · Node Control ${r["Node Control"] || "N"}`;
+    const pSkill = RULES.programSkill(name);   // EW programs: EW skill (Classic) or Hacking
     progCard.append(el("div", { class: "sh-advrow" },
       el("span", {}, el("b", {}, name),
         el("span", { class: "sub" }, ` ${r.Attack || ""} · I/O ${io} · Alert ${r.Alert || 0}${nodeCtrl}`),
+        pSkill ? el("div", { class: "sub" }, `Skill: ${pSkill}`) : null,
         r.Effect ? el("div", { class: "sub" }, r.Effect) : null),
       el("span", { style: "display:flex;gap:6px;align-items:center" },
         loadable(io)
@@ -3186,7 +3188,9 @@ function shDecking(body) {
       label,
       items: rows.map(pr => ({
         name: pr.Name, cost: Math.round((+pr.Cost || 0) * mult),
-        sub: `I/O ${pr["I/O"] || "—"} · Node Control ${pr["Node Control"] || "N"}${pr.Effect ? " · " + pr.Effect : ""}`,
+        sub: `I/O ${pr["I/O"] || "—"} · Node Control ${pr["Node Control"] || "N"}`
+          + (RULES.programSkill(pr.Name) ? ` · Skill: ${RULES.programSkill(pr.Name)}` : "")
+          + (pr.Effect ? " · " + pr.Effect : ""),
         hidden: ownedProg.has(pr.Name),
       })),
     }));
@@ -3660,7 +3664,7 @@ function shActions(body) {
     for (const r of rows) {
       t.append(el("tr", {},
         el("td", {}, el("b", {}, r.Action)),
-        el("td", {}, r.Skill),
+        el("td", {}, RULES.hackActionSkill(r.Skill)),
         el("td", { class: "sub" }, r.Diff),
         el("td", { class: "sub" }, r.Notes || "")));
     }

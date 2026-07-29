@@ -716,14 +716,27 @@ function spellcastingFirst(a, b) {
 
 /* ------------------------------------------------ 1. priorities */
 function tabPriorities(p) {
+  const classic = RULES.houseRule("priorities") === "classic";
+  const LETTERS = { 4: "A", 3: "B", 2: "C", 1: "D", 0: "E" };
   p.append(el("h2", {}, "Set Starting Priorities ", chip("prio")));
-  p.append(el("p", { class: "hint" },
-    "Distribute 10 priority points, 0\u20134 per category. Each level sets what the category grants below."));
+  p.append(el("p", { class: "hint" }, classic
+    ? "Classic: assign the letters A\u2013E (= priority 4, 3, 2, 1, 0) across the five categories \u2014 each used exactly once. Picking a letter already in use swaps it with the other category."
+    : "Distribute 10 priority points, 0\u20134 per category. Each level sets what the category grants below."));
 
   const cats = [
     ["heritage", "Heritage"], ["magic", "Magic"], ["attributes", "Attributes"],
     ["skills", "Skills"], ["resources", "Resources"],
   ];
+  // Classic is a bijection over 0\u20134. If the stored values aren't a valid
+  // permutation (new character, or just switched rules), seed a sensible one.
+  if (classic) {
+    const vals = cats.map(([k]) => CHAR.priorities[k]);
+    const isPerm = new Set(vals).size === 5 && vals.every(v => v >= 0 && v <= 4);
+    if (!isPerm) {
+      const seed = { attributes: 4, skills: 3, resources: 2, heritage: 1, magic: 0 };
+      for (const [k] of cats) CHAR.priorities[k] = seed[k];
+    }
+  }
   const prow = { 4: DATA.tables.priorities[0], 3: DATA.tables.priorities[1],
     2: DATA.tables.priorities[2], 1: DATA.tables.priorities[3], 0: DATA.tables.priorities[4] };
   const grants = (cat, v) => {
@@ -742,7 +755,8 @@ function tabPriorities(p) {
 
   const grid = el("div", { class: "prio-grid" });
   grid.append(el("div"));
-  for (let v = 0; v <= 4; v++) grid.append(el("div", { class: "head" }, String(v)));
+  for (let v = 0; v <= 4; v++)
+    grid.append(el("div", { class: "head" }, classic ? LETTERS[v] : String(v)));
   grid.append(el("div", { class: "head", style: "text-align:left" }, "Grants"));
   const gets = {};
   for (const [key, label] of cats) {
@@ -750,8 +764,19 @@ function tabPriorities(p) {
     for (let v = 0; v <= 4; v++) {
       grid.append(el("div", {
         class: "prio-dot" + (CHAR.priorities[key] === v ? " sel" : ""),
-        role: "button", tabindex: "0", "aria-label": `${label} priority ${v}`,
+        role: "button", tabindex: "0",
+        "aria-label": `${label} priority ${classic ? LETTERS[v] : v}`,
         onclick: async e => {
+          if (classic) {
+            const old = CHAR.priorities[key];
+            if (old === v) return;
+            // Keep the bijection: hand our old letter to whoever currently holds v.
+            for (const [okey] of cats)
+              if (okey !== key && CHAR.priorities[okey] === v) { CHAR.priorities[okey] = old; break; }
+            CHAR.priorities[key] = v;
+            await refresh();   // full redraw so every swapped dot + grant updates
+            return;
+          }
           CHAR.priorities[key] = v;
           if (key === "magic") { await refresh(); return; }
           grid.querySelectorAll(`[aria-label^='${label} ']`).forEach(n => n.classList.remove("sel"));

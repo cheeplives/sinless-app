@@ -173,6 +173,13 @@ const HOUSE_RULE_DEFS = [
       { value: "houserule", label: "ZR Casting Penalty",
         help: "Gear/weapon ZR doesn't touch ZP — it's −1d per full point on casting rolls (Channeling/Conjuring/Sorcery). Cyber ZR reduces ZP directly (may go negative; Synthetics exempt). At ZP ≤ 0 only Rituals work." },
     ] },
+  { id: "priorities", label: "Priorities", default: "point",
+    options: [
+      { value: "classic", label: "Classic — A–E",
+        help: "Assign the letters A, B, C, D, E (= priority 4, 3, 2, 1, 0) across the five categories — each letter used exactly once." },
+      { value: "point", label: "Point-based",
+        help: "Distribute 10 priority points, 0–4 per category; values may repeat." },
+    ] },
   { id: "currency", label: "Currency name", default: "woolongs",
     options: [
       { value: "zuzus", label: "Classic — Zuzus",
@@ -444,7 +451,14 @@ function resolvePriorities(character, data, warnings, errors) {
   }
   const pointsRemaining = PRIORITY_POOL_POINTS
     - Object.values(prioritySpend).reduce((a, b) => a + b, 0);
-  if (pointsRemaining < 0) {
+  // Classic priorities are a bijection: the five categories take the letters
+  // A–E (= 4,3,2,1,0) once each. Any permutation of 0–4 sums to 10, so the
+  // point pool is auto-satisfied; the added rule is that no value repeats.
+  if (houseRule("priorities") === "classic") {
+    const values = Object.values(prioritySpend);
+    if (new Set(values).size !== values.length)
+      errors.push("Classic priorities: assign each letter A–E exactly once (no repeats).");
+  } else if (pointsRemaining < 0) {
     errors.push(`Priorities overspent by ${-pointsRemaining} point(s).`);
   }
 

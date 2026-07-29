@@ -172,6 +172,13 @@ const HOUSE_RULE_DEFS = [
       { value: "houserule", label: "ZR Casting Penalty",
         help: "Gear/weapon ZR doesn't touch ZP — it's −1d per full point on casting rolls (Channeling/Conjuring/Sorcery). Cyber ZR reduces ZP directly (may go negative; Synthetics exempt). At ZP ≤ 0 only Rituals work." },
     ] },
+  { id: "currency", label: "Currency name", default: "woolongs",
+    options: [
+      { value: "zuzus", label: "Classic — Zuzus",
+        help: "The setting's money is called Zuzus." },
+      { value: "woolongs", label: "House rule — Woolongs",
+        help: "The setting's money is called Woolongs." },
+    ] },
   { id: "engineering", label: "Engineering skills", default: "single",
     options: [
       { value: "single", label: "Single skill",
@@ -253,6 +260,12 @@ function setHouseRule(id, value) {
   const def = HOUSE_RULE_DEFS.find(d => d.id === id);
   if (!def || !def.options.some(o => o.value === value)) return;
   if (activeHouseRules) activeHouseRules[id] = value;   // written onto the active character
+}
+// The setting's money name, per the "currency" house rule. Reads the active
+// character's choice (activeHouseRules is pointed at it during calculate(), so
+// render code that runs after recalc sees the right value).
+function currencyName() {
+  return houseRule("currency") === "zuzus" ? "Zuzus" : "Woolongs";
 }
 // NB: the cyber ZR *value* (raw minus eyes/ears/limb absorption) is the same
 // under both ZR house rules; only how that ZR is *applied* differs — see the
@@ -2430,7 +2443,7 @@ return {
   rigStats, applyExtendedMagazine, meleeDamage, assignWeaponModSlots,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost,
   augmentLimbRequirement, augmentMeleeDamage,
-  HOUSE_RULE_DEFS, houseRule, setHouseRule,
+  HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS,
   surchargeFor,
 };

@@ -267,7 +267,7 @@ async function revertToChargenEnd() {
     + "This permanently erases everything gained in play:\n"
     + `  • Kismet (${play.kismet} available, ${play.kismet_earned} lifetime) and all advances\n`
     + "  • Everything bought in play (gear, augments, powers, spells, Hacking levels)\n"
-    + `  • Woolongs beyond the original starting roll (back to ${fmt(play.starting_cash || 0)})\n`
+    + `  • ${RULES.currencyName()} beyond the original starting roll (back to ${fmt(play.starting_cash || 0)})\n`
     + "  • Damage, initiative, effects, modifiers, ledgers, and notes\n\n"
     + "The chargen build itself (attributes, skills, purchased gear) is untouched."))
     return;
@@ -630,9 +630,9 @@ function sheetHeader() {
       el("div", { class: "k" }, "Ghost"),
       el("div", { class: "v" }, z.ghost_rating || "2d6")),
     el("div", { class: "sh-meter cash", role: "button", tabindex: "0",
-      title: "Adjust woolongs", onclick: adjustCash,
+      title: `Adjust ${RULES.currencyName().toLowerCase()}`, onclick: adjustCash,
       onkeydown: e => { if (e.key === "Enter") adjustCash(); } },
-      el("div", { class: "k" }, "Woolongs"),
+      el("div", { class: "k" }, RULES.currencyName()),
       el("div", { class: "v" }, fmt(play.cash), el("span", { class: "plus" }, " +"))));
 
   // Freeform character description, sitting between identity and the meters.
@@ -682,7 +682,7 @@ function sheetStickyBar() {
     el("span", { class: "sh-cmeter zoetic", title: "Effective / maximum Zoetic Potential" },
       `ZP ${zp.current}/${zp.max}`),
     el("span", { class: "sh-cmeter cash", role: "button", tabindex: "0",
-      title: "Adjust woolongs", onclick: adjustCash,
+      title: `Adjust ${RULES.currencyName().toLowerCase()}`, onclick: adjustCash,
       onkeydown: e => { if (e.key === "Enter") adjustCash(); } },
       fmt(CHAR.play.cash)));
   return el("div", { class: "sh-stickybar" + (sheetStickyScrolled ? " scrolled" : "") },
@@ -811,7 +811,7 @@ function kismetPoolTile() {
 }
 
 function adjustCash() {
-  const raw = prompt("Adjust woolongs by (negative to spend):", "0");
+  const raw = prompt(`Adjust ${RULES.currencyName().toLowerCase()} by (negative to spend):`, "0");
   if (raw == null) return;
   const delta = parseInt(raw, 10);
   if (!Number.isFinite(delta) || !delta) return;
@@ -2030,7 +2030,7 @@ function shGear(body) {
   const jump = id => () => document.getElementById(id)
     ?.scrollIntoView({ behavior: "smooth", block: "start" });
   body.append(el("div", { class: "gear-submenu" },
-    ...[["gear-cash", "Woolongs"], ["gear-lifestyle", "Lifestyle"], ["gear-weapons", "Weapons"],
+    ...[["gear-cash", RULES.currencyName()], ["gear-lifestyle", "Lifestyle"], ["gear-weapons", "Weapons"],
         ["gear-armor", "Armor"], ["gear-gear", "Gear"],
         ["gear-vehicles", "Vehicles"], ["gear-buy", "Buy"]]
       .map(([id, label]) => el("button", { onclick: jump(id) }, label))));
@@ -2044,7 +2044,7 @@ function shGear(body) {
     playChanged();
   };
   const woolongsCard = el("div", { class: "card sh-card", id: "gear-cash" },
-    el("h3", {}, "Woolongs on hand"),
+    el("h3", {}, `${RULES.currencyName()} on hand`),
     el("div", { class: "sh-cash-row" },
       el("div", { class: "big cash" }, fmt(play.cash)),
       el("span", { class: "sh-inline-adjust" },
@@ -2295,7 +2295,7 @@ function shGear(body) {
     }));
   const buySection = el("div", { class: "card sh-card", id: "gear-buy" },
     el("h3", {}, "Buy equipment"),
-    el("p", { class: "hint" }, "Everything purchasable from woolongs, grouped by type. "
+    el("p", { class: "hint" }, `Everything purchasable from ${RULES.currencyName().toLowerCase()}, grouped by type. `
       + (mult > 1 ? `Heritage surcharge ×${mult} applies to weapons & armor (not general gear). ` : "")
       + "Augments are bought on the Augments tab; decks, programs, rigs, drones and vehicles on the Decking and Rigging tabs."));
   const buyBlock = (title, browser) =>
@@ -2736,7 +2736,7 @@ function shMagic(body) {
         el("h3", {}, "Spells"),
         el("span", { class: "chip magic" }, `ZP ${zp}`)));
     wrap.append(el("p", { class: "hint" },
-      "Spells cost their listed price in woolongs per Force to learn or advance. "
+      `Spells cost their listed price in ${RULES.currencyName().toLowerCase()} per Force to learn or advance. `
       + `Casting at Force above your ZP (${zp}) deals drain as LETHAL damage; at or below, drain is Stun.`));
     for (const sp of allSpells) {
       const r = DATA.tables.spells.find(x => x.Name === sp.name) || {};
@@ -3869,7 +3869,7 @@ function buildMarkdown() {
 
   L.push("## Wealth & Advancement");
   L.push("");
-  L.push(`**Woolongs:** ${fmt(play.cash)} · **Kismet:** ${play.kismet} available / ${play.kismet_earned} lifetime · **Boons:** ${econ.regularsAvail} regular, ${econ.majorsAvail} major available`);
+  L.push(`**${RULES.currencyName()}:** ${fmt(play.cash)} · **Kismet:** ${play.kismet} available / ${play.kismet_earned} lifetime · **Boons:** ${econ.regularsAvail} regular, ${econ.majorsAvail} major available`);
   const spends = play.kismet_log.filter(entry => entry.delta < 0 || entry.delta === 0);
   if (spends.length) {
     L.push("");

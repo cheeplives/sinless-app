@@ -1212,8 +1212,15 @@ function shOverview(body) {
           return {
             name: el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
             stats: el("td", { class: "sub" },
-              `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0}`
-              + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
+              // Mirror the full Gear-tab stat line (issue #15): rate of fire /
+              // Reach, Firing modes, ZR, Weight, Hardening, Rarity all included.
+              `${r.Type || ""} · `
+              + (r.Type === "Melee" ? `Reach ${r.Reach || 0}` : `Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}`)
+              + ` · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"}`
+              + ` · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
+              + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")
+              + (r.Hardening ? ` · Hardening ${r.Hardening}` : "")
+              + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : "")),
             last: el("td", { class: "sub" }, modLines.length
               ? el("div", {}, ...modLines.map(l => el("div", {}, l))) : "—"),
           };
@@ -1248,7 +1255,7 @@ function shOverview(body) {
         el("th", {}, "Stats"), el("th", {}, "Source")));
       grantedWeapons.forEach(gw => gt.append(el("tr", {},
         el("td", {}, el("b", {}, gw.name)),
-        el("td", { class: "sub" }, `Melee · DMG ${gw.damage} · Reach ${gw.reach}`),
+        el("td", { class: "sub" }, gw.stats || `Melee · DMG ${gw.damage} · Reach ${gw.reach}`),
         el("td", { class: "sub" }, gw.source))));
       loadout.append(gt);
     }
@@ -1283,10 +1290,16 @@ function shOverview(body) {
         ins: idx, getOrder: () => a.lo, setOrder: v => { a.lo = v; },
         cells: () => {
           const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
+          // Match the Gear tab: show style/material/slot, weight, and extras.
+          const notes = [
+            [a.style, a.material].filter(Boolean).join(" · ") || r.Slot || "",
+            `wt ${r.wt || 0}`,
+            (a.extras || []).length ? a.extras.join(", ") : "",
+          ].filter(Boolean).join(" · ");
           return {
             name: el("b", {}, a.name),
             stats: el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
-            last: el("td", { class: "sub" }, (a.extras || []).length ? a.extras.join(", ") : "—"),
+            last: el("td", { class: "sub" }, notes || "—"),
           };
         },
       }));
@@ -1481,27 +1494,29 @@ function poolSkillList(pool) {
 
 /* ------------------------------------------------ skills tab (display only) */
 function shSkills(body) {
+  // Each pool gets its OWN card, laid out 2×2 (stacks to 1 column on phones),
+  // so nothing crams into a single wide card at narrow widths.
   const grid = el("div", { class: "sh-skillgrid" });
   for (const pool of POOL_ORDER) {
-    const col = el("div", { class: `sh-skillcol ${pool.toLowerCase()}` },
+    const card = el("div", { class: `card sh-card sh-skillcard ${pool.toLowerCase()}` },
       el("div", { class: "colhead" }, el("span", {}, pool),
         el("b", {}, String(CALC.pools[pool]))));
     const trained = Object.entries(DATA.skills)
       .filter(([n, m]) => m.pool === pool && (CALC.skills[n].final > 0 || CALC.skills[n].dice_bonus
         || (CALC.skills[n].notes && CALC.skills[n].notes.length)))
       .sort((a, b) => CALC.skills[b[0]].final - CALC.skills[a[0]].final);
-    if (!trained.length) col.append(el("p", { class: "hint" }, "No trained skills."));
+    if (!trained.length) card.append(el("p", { class: "hint" }, "No trained skills."));
     else {
       const t = el("table", { class: "sh-skilltable" });
       t.append(skillTableHeader());
       for (const [name] of trained) t.append(skillTableRow(name, false, true));
-      col.append(t);
+      card.append(t);
     }
-    grid.append(col);
+    grid.append(card);
   }
-  body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Skills"), grid,
-    el("p", { class: "hint", style: "margin-top:10px" },
-      "Raise skills and attributes with Kismet on the Kismet tab.")));
+  body.append(grid);
+  body.append(el("p", { class: "hint", style: "margin:2px 0 10px" },
+    "Raise skills and attributes with Kismet on the Kismet tab."));
 
   const know = el("div", { class: "card sh-card" },
     el("h3", {}, "Knowledge & Etiquette"));
@@ -2311,9 +2326,16 @@ function shGear(body) {
     el("th", {}, "Effect"), el("th", {}, "Carried"), el("th", {}, "")));
   gearEntries.forEach(({ ref: g, inPlay }) => {
     const r = DATA.tables.misc_gear.find(x => x.Item === g.name) || {};
+    // Focus/Fetish/Spirit Bag links (chosen in chargen) now show — and stay
+    // editable — on the sheet (issue #14). gearLinkSelect returns null otherwise.
+    const ro = !!(activeTabObj() && activeTabObj().readonly);
+    const linkSel = (!ro && typeof gearLinkSelect === "function")
+      ? gearLinkSelect(g, playChangedRecalc) : null;
     gt.append(el("tr", {},
       el("td", {}, el("b", {}, g.name),
         inPlay ? el("span", { class: "sh-tag" }, "bought in play") : null,
+        linkSel ? el("div", { class: "sub sh-gearlink" }, "Linked to ", linkSel)
+          : (g.link ? el("div", { class: "sub" }, `Linked to ${g.link}`) : null),
         shMountEditor(g, r, g.carried !== false)),
       el("td", { class: "num" }, String(g.qty || 1)),
       el("td", { class: "sub" },
@@ -3902,7 +3924,7 @@ function buildMarkdown() {
       L.push(`- **${cg.name}** (smart) — DMG ${g.Dmg} · Acc ${g.Acc} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`);
     });
     grantedWeapons.forEach(gw => {
-      L.push(`- **${gw.name}** — Melee · DMG ${gw.damage} · Reach ${gw.reach} (${gw.source})`);
+      L.push(`- **${gw.name}** — ${gw.stats || `Melee · DMG ${gw.damage} · Reach ${gw.reach}`} (${gw.source})`);
     });
     traitGear.forEach(g => {
       const w = g.weapon;

@@ -399,6 +399,7 @@ function defaultCharacter() {
       specialization_pool: "",
       heavy_torso_mounts: ["", ""],   // Heavy Torso: up to 2 free 1-wt mounts
       no_head_mount: "",              // No Head: one free 1-wt weapon mount
+      snake_attack: "bite",           // Snake uplift: "bite" or "spit" (locked after chargen)
     },
     attributes,
     cha_pool_choice: "Brawn",
@@ -849,6 +850,25 @@ function collectGrantedWeapons(augments, amp, strength, martialMods) {
   if (amp.powers_taken.has("Iron Fist")) {
     list.push({ name: "Iron Fist", damage: meleeDamage({ Damage: IRON_FIST_BASE_DAMAGE }, strength),
       reach: 0, source: "Amp Power" });
+  }
+  return list;
+}
+
+// Curated natural attacks granted by heritage uplifts (issue #9). Gorilla is a
+// pure reach modifier (surfaced as a heritage ability, not a weapon). Shark and
+// Snake grant bite/spit attacks; Snake's is a chargen-locked bite-or-spit pick.
+function heritageNaturalWeapons(heritage, character, strength) {
+  const has = n => heritage.traits.some(row => row.Name === n);
+  const list = [];
+  if (has("Shark"))
+    list.push({ name: "Bite", damage: String(6 + strength), reach: 0, source: "Shark" });  // 6 + full STR
+  if (has("Snake")) {
+    if ((character.heritage.snake_attack || "bite") === "spit")
+      list.push({ name: "Spit", source: "Snake",
+        stats: `Ranged 12m · Acc 4 · DMG 2d6 · +Blind` });
+    else
+      list.push({ name: "Bite", damage: `${Math.floor(strength / 2) + 1} +3d6 poison`,
+        reach: 0, source: "Snake" });
   }
   return list;
 }
@@ -2485,9 +2505,12 @@ function calculate(character) {
   combatOut.move += maMods.move_bonus;
   if (maMods.recoil_ignored) combatOut.recoil_ignored = 1;
   combatOut.martial_notes = maMods.applied;
-  // Natural / implanted / power-granted melee weapons for the Overview loadout.
-  combatOut.granted_weapons = collectGrantedWeapons(
-    augments, amp, finalAttributes.Strength, maMods);
+  // Natural / implanted / power-granted melee weapons for the Overview loadout,
+  // plus heritage bite/spit attacks (Shark, Snake).
+  combatOut.granted_weapons = [
+    ...collectGrantedWeapons(augments, amp, finalAttributes.Strength, maMods),
+    ...heritageNaturalWeapons(heritage, character, finalAttributes.Strength),
+  ];
   // Heavy Torso / No Head free-mount gear (weapons + extra limbs) for the loadout.
   combatOut.trait_gear = heritage.trait_gear || [];
 

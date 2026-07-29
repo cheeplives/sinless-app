@@ -908,6 +908,18 @@ function tabHeritage(p) {
       el("div", { class: "stat-line" }, "Mount ",
         mountSelect(() => CHAR.heritage.no_head_mount, v => { CHAR.heritage.no_head_mount = v; }, false))));
   }
+
+  // Snake uplift: its natural attack is a choice of Bite or Spit, chosen at
+  // chargen and then locked (the play sheet only displays the result).
+  if (CHAR.heritage.uplift_type === "Snake" || CHAR.heritage.features.includes("Snake")) {
+    const s = el("select", { onchange: e => { CHAR.heritage.snake_attack = e.target.value; refresh(); } },
+      el("option", { value: "bite" }, "Bite \u2014 Reach 0, \u00bdSTR+1 +3d6 poison"),
+      el("option", { value: "spit" }, "Spit \u2014 Ranged 12m, Acc 4, 2d6 +Blind"));
+    s.value = CHAR.heritage.snake_attack || "bite";
+    p.append(el("div", { class: "card", style: "max-width:520px" },
+      el("h3", {}, "Snake \u2014 natural attack (locked after chargen)"),
+      el("div", { class: "stat-line" }, "Attack ", s)));
+  }
 }
 function describeStats(f) {
   const parts = [];
@@ -2180,7 +2192,7 @@ function tabDrones(p) {
  * a spirit. The character's own known spells, trained rituals, and spirit
  * relationships sort to the top of the list; everything else stays
  * selectable below. */
-function gearLinkSelect(it) {
+function gearLinkSelect(it, onChange) {
   const isFocusOrFetish = /^(Focus|Fetish) /.test(it.name);
   const isSpiritBag = /^Spirit Bag /.test(it.name);
   if (!isFocusOrFetish && !isSpiritBag) return null;
@@ -2214,7 +2226,7 @@ function gearLinkSelect(it) {
     groups.push(group("Your Spirits", spirits.yours, "Spirit"),
                 group("Other Spirits", spirits.others, "Spirit"));
   }
-  const sel = el("select", { onchange: e => { it.link = e.target.value; scheduleRecalc(); } },
+  const sel = el("select", { onchange: e => { it.link = e.target.value; (onChange || scheduleRecalc)(); } },
     el("option", { value: "" }, isSpiritBag ? "Link to spirit\u2026" : "Link to spell, ritual, or spirit\u2026"),
     ...groups.filter(Boolean));
   sel.value = it.link || "";

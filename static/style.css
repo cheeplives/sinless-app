@@ -643,19 +643,19 @@ label.opt input{margin-top:3px}
 .sh-notes{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
   color:var(--text);padding:10px;font-family:var(--body);font-size:13px;resize:vertical}
 
-.sh-skillgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px}
-/* Grid items default to min-width:auto, so a wide skill table (a long,
- * unwrapping skill name) would blow its track out past the card. min-width:0
- * lets the track shrink and the name cell wrap instead of overflowing. */
-.sh-skillcol{min-width:0}
+/* One card per pool, laid out 2×2 (see #13). Grid items default to
+ * min-width:auto, so a long, unwrapping skill name would blow its track out;
+ * min-width:0 lets the card shrink and the name cell wrap instead. */
+.sh-skillgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:10px}
+.sh-skillcard{min-width:0;margin:0}
 .sh-skilltable td:first-child{overflow-wrap:anywhere}
-.sh-skillcol .colhead{display:flex;justify-content:space-between;font-family:var(--disp);
+.sh-skillcard .colhead{display:flex;justify-content:space-between;font-family:var(--disp);
   letter-spacing:.06em;padding-bottom:5px;border-bottom:2px solid var(--line);margin-bottom:6px}
-.sh-skillcol .colhead b{font-family:var(--mono)}
-.sh-skillcol.brawn .colhead{border-color:var(--pool-brawn);color:var(--pool-brawn)}
-.sh-skillcol.finesse .colhead{border-color:var(--pool-finesse);color:var(--pool-finesse)}
-.sh-skillcol.focus .colhead{border-color:var(--pool-focus);color:var(--pool-focus)}
-.sh-skillcol.resolve .colhead{border-color:var(--pool-resolve);color:var(--pool-resolve)}
+.sh-skillcard .colhead b{font-family:var(--mono)}
+.sh-skillcard.brawn .colhead{border-color:var(--pool-brawn);color:var(--pool-brawn)}
+.sh-skillcard.finesse .colhead{border-color:var(--pool-finesse);color:var(--pool-finesse)}
+.sh-skillcard.focus .colhead{border-color:var(--pool-focus);color:var(--pool-focus)}
+.sh-skillcard.resolve .colhead{border-color:var(--pool-resolve);color:var(--pool-resolve)}
 .sh-tagrow{display:flex;flex-wrap:wrap;gap:6px}
 .sh-advrow{display:flex;justify-content:space-between;align-items:center;gap:10px;
   padding:7px 8px;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;background:var(--panel-2);font-size:13px}
@@ -884,6 +884,7 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   #app{grid-template-columns:1fr}
   #main{order:-1;padding:0 14px 60px}
   #rail{position:static;height:auto;border-right:none;border-top:1px solid var(--line);padding:16px}
+  .sh-skillgrid{grid-template-columns:1fr}   /* pool cards stack, not cram */
 }
 /* Touch devices: lift the smallest labels and give controls real tap areas.
  * Desktop pointers are unaffected. */

@@ -32,7 +32,9 @@ SW_JS = REPO_ROOT / "sw.js"
 
 # The 15 homebrew-eligible tables and the column that holds each row's identity
 # name. Mirrors HOMEBREW_CONFIG in static/homebrew.js -- keep in sync if that
-# changes. Only these tables are considered during promotion.
+# changes; tools/check_data.py verifies they agree (and that both match the data).
+# The full table catalogue lives in docs/DATA.md. Only these tables are
+# considered during promotion.
 NAME_KEYS = {
     "rituals": "Name",
     "spells": "Name",

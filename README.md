@@ -94,6 +94,11 @@ static/
   style.css / fonts.css / fonts/    styling and type
 tools/
   promote_homebrew.py  owner CLI: fold a homebrew pack into static/data.js
+  check_data.py        consistency checks for static/data.js (run after editing)
+docs/
+  DATA.md             data.js reference: table catalogue, conventions, gotchas
+  DEPLOY.md           deploy runbook
+  HOSTING.md          optional multi-user server setup
 ```
 
 ## Editing game data
@@ -108,6 +113,24 @@ lines in the same table array. Keep the header comment ASCII-only, preserve
 the row-per-line layout, and confirm the file still parses (it's plain JSON
 after the `const DATA_BUNDLE =` prefix). The homebrew promoter re-emits this
 exact format, so promotions keep the layout stable.
+
+**[`docs/DATA.md`](docs/DATA.md) is the reference for this file** — a catalogue of
+all 36 tables (row counts, which column keys each one, what the table holds),
+the shared column families (`ZR`/`BI`/`Cost`…), the conventions (every value is a
+string; `""` means absent) and the gotchas worth knowing before you edit.
+
+After any edit, run the checker:
+
+```
+python tools/check_data.py
+```
+
+It re-parses the bundle, verifies each table's key column is present, non-empty
+and unique, checks that the three places encoding key columns
+(`HOMEBREW_CONFIG`, the promoter's `NAME_KEYS`, and `rules.js`'s `findRow` calls)
+still agree, reports rows whose column set drifts from the rest of their table,
+and rejects stray non-ASCII. Exit 1 means don't commit. Hand edits also need a
+manual `CACHE_VERSION` bump in `sw.js` (the promoter does that for you).
 
 ### Promoting homebrew into the base data
 

@@ -40,8 +40,14 @@ function hbOnline() {
 }
 
 /* ---- per-table editor config ------------------------------------------ */
-/* Field flags: ta = textarea, select = fixed choices (app logic gates on the
- * value), datalist = suggestions but free-form allowed, hint = placeholder. */
+/* The 15 homebrew-eligible data.js tables and the columns the editor exposes.
+ * Field flags: ta = textarea, select = fixed choices (app logic gates on the
+ * value), datalist = suggestions but free-form allowed, hint = placeholder.
+ *
+ * Each nameKey must match NAME_KEYS in tools/promote_homebrew.py and the table
+ * catalogue in docs/DATA.md -- tools/check_data.py enforces all three agree.
+ * Fields listed here are the only ones an imported pack keeps (mergePackData
+ * drops the rest), so adding a column to a table means adding it here too. */
 const HOMEBREW_CONFIG = {
   rituals: { label: "Rituals", nameKey: "Name", fields: [
     { key: "Name" },

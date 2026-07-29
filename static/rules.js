@@ -374,6 +374,12 @@ function asNumber(value, dflt = 0) {
   return Number.isNaN(n) ? dflt : n;
 }
 
+/* Find a data-table row by its key column. Returns the FIRST match (weapon_mods
+ * has intentional same-name rows per Slot, so name-only lookups there resolve to
+ * the Overbarrel variant) or null. Which column keys which table is catalogued in
+ * docs/DATA.md; tools/check_data.py verifies the literal call sites below stay in
+ * sync with HOMEBREW_CONFIG and the promoter's NAME_KEYS. Call sites that pass the
+ * table or column through a variable are invisible to that check. */
 function findRow(rows, column, value) {
   const target = String(value || "").trim();
   for (const row of rows) {

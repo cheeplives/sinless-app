@@ -1,7 +1,19 @@
 /* Game data tables + rule constants for the Sinless app -- the canonical,
  * hand-maintained data source. (Historically generated from a spreadsheet by
  * a Python build step; that pipeline is out of date, so edit the tables here
- * directly. Consumed as the DATA_BUNDLE global by rules.js and app.js.) */
+ * directly. Consumed as the DATA_BUNDLE global by rules.js and app.js, and
+ * mutated in place by homebrew.js's merge -- see docs/DATA.md.)
+ *
+ * >> docs/DATA.md is the reference for this file: table catalogue, key column
+ * >> per table, shared column families, and the gotchas (values are strings;
+ * >> "" means absent; rows within a table may carry different columns).
+ *
+ * When editing: keep ONE ROW PER LINE inside "tables" (line-oriented rows let
+ * git diff and merge data changes), keep it ASCII apart from the four glyphs
+ * degree/half/multiply/currency, then:
+ *   1. python tools/check_data.py      # re-parses + checks row identity
+ *   2. bump CACHE_VERSION in sw.js     # or clients keep the cached copy
+ * tools/promote_homebrew.py re-emits this exact format and bumps sw.js itself. */
 const DATA_BUNDLE ={
 "tables":{
 "cyberguns":[

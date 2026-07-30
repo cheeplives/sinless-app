@@ -486,6 +486,47 @@ function defaultCharacter() {
   };
 }
 
+/* Which data tables hold a drone's / vehicle's mountable weapons and mods, and
+ * the name column of each. Single source of truth: priceDronesAndVehicles, the
+ * legacy-attachment migration below, and sheet.js's RIG_UNIT_CFG all read this
+ * rather than repeating the table/column names. See docs/DATA.md. */
+const UNIT_ATTACHMENT_TABLES = {
+  drones: {
+    weapons: [["drone_ballistic_weapons", "Drone Ballistic Weapon"],
+              ["drone_energy_weapons", "Drone Energy Weapon"]],
+    mods: ["drone_mods", "Drone Mod"],
+  },
+  vehicles: {
+    weapons: [["vehicle_ballistic_weapons", "Vehicle Ballistic Weapon"],
+              ["vehicle_energy_weapons", "Vehicle Energy Weapon"]],
+    mods: ["vehicle_mods", "Vehicle Mod"],
+  },
+};
+
+/* Legacy saves could land a unit MOD in `unit.weapons` (an older UI offered one
+ * combined picker). Pricing never cared -- it charges for both arrays alike --
+ * but the stat tally only reads `unit.mods`, so a misfiled mod silently lost its
+ * Ballistic/Impact/Hardening/Body effect and ate a weapon slot. Move any name
+ * that is not a weapon for that unit type but IS a mod into `unit.mods`.
+ *
+ * Lossless (the name is only reclassified, never dropped), idempotent, and it
+ * leaves names that match neither table alone rather than discarding data. */
+function migrateUnitAttachments(character, tables) {
+  if (!tables) return;
+  for (const [listKey, cfg] of Object.entries(UNIT_ATTACHMENT_TABLES)) {
+    for (const unit of character[listKey] || []) {
+      if (!Array.isArray(unit.weapons) || !unit.weapons.length) continue;
+      const isWeapon = n => cfg.weapons.some(([tk, nc]) =>
+        (tables[tk] || []).some(row => row[nc] === n));
+      const isMod = n => (tables[cfg.mods[0]] || []).some(row => row[cfg.mods[1]] === n);
+      const misfiled = unit.weapons.filter(n => !isWeapon(n) && isMod(n));
+      if (!misfiled.length) continue;
+      unit.weapons = unit.weapons.filter(n => !misfiled.includes(n));
+      unit.mods = [...(unit.mods || []), ...misfiled];
+    }
+  }
+}
+
 function mergeDefaults(character) {
   const defaults = defaultCharacter();
   const isPlainObject = v => v && typeof v === "object" && !Array.isArray(v);
@@ -516,6 +557,10 @@ function mergeDefaults(character) {
   }
   if (character.skills && "Martial Arts" in character.skills) delete character.skills["Martial Arts"];
   delete character.martial_art;
+
+  // Re-file unit mods that legacy saves stored in `weapons` (see above). Uses
+  // the merged bundle so homebrew mods are recognised too.
+  migrateUnitAttachments(character, BUNDLE && BUNDLE.tables);
   return character;
 }
 
@@ -2010,12 +2055,11 @@ function checkDroneLimits(summary, warnings) {
 }
 
 function priceDronesAndVehicles(character, data, gearCostMultiplier, warnings) {
-  const droneTables = [["drone_ballistic_weapons", "Drone Ballistic Weapon"],
-                       ["drone_energy_weapons", "Drone Energy Weapon"],
-                       ["drone_mods", "Drone Mod"]];
-  const vehicleTables = [["vehicle_ballistic_weapons", "Vehicle Ballistic Weapon"],
-                         ["vehicle_energy_weapons", "Vehicle Energy Weapon"],
-                         ["vehicle_mods", "Vehicle Mod"]];
+  // Weapons first, then the mod table — priceFittedVehicle walks the list in
+  // order and stops at the first match, and charges for either kind alike.
+  const flatten = cfg => [...cfg.weapons, cfg.mods];
+  const droneTables = flatten(UNIT_ATTACHMENT_TABLES.drones);
+  const vehicleTables = flatten(UNIT_ATTACHMENT_TABLES.vehicles);
 
   const priceAll = (entries, tableKey, nameColumn, weaponTables, check, mult) => {
     let total = 0.0;
@@ -2751,6 +2795,7 @@ return {
   GHOST_RATING_DICE,
   rigStats, applyExtendedMagazine, meleeDamage, assignWeaponModSlots,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
+  UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,

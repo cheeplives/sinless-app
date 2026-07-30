@@ -3410,20 +3410,20 @@ function shDecking(body) {
 }
 
 /* ------------------------------------------------ rigging tab */
-// Per unit-type config: base table, weapon tables, mod table, name column.
+// Per unit-type config. The weapon/mod table names come from rules.js's
+// UNIT_ATTACHMENT_TABLES so the engine, the legacy-attachment migration and this
+// UI can't drift apart; only the display bits live here.
 const RIG_UNIT_CFG = {
   drones: {
     title: "Drones", table: "drones", nameKey: "Drone",
-    weaponTables: [["drone_ballistic_weapons", "Drone Ballistic Weapon"],
-                   ["drone_energy_weapons", "Drone Energy Weapon"]],
-    modTable: ["drone_mods", "Drone Mod"],
+    weaponTables: RULES.UNIT_ATTACHMENT_TABLES.drones.weapons,
+    modTable: RULES.UNIT_ATTACHMENT_TABLES.drones.mods,
     capLabel: "Hard points", capOf: r => toInt(r["Hard Point"]),
   },
   vehicles: {
     title: "Vehicles", table: "vehicles", nameKey: "Vehicle",
-    weaponTables: [["vehicle_ballistic_weapons", "Vehicle Ballistic Weapon"],
-                   ["vehicle_energy_weapons", "Vehicle Energy Weapon"]],
-    modTable: ["vehicle_mods", "Vehicle Mod"],
+    weaponTables: RULES.UNIT_ATTACHMENT_TABLES.vehicles.weapons,
+    modTable: RULES.UNIT_ATTACHMENT_TABLES.vehicles.mods,
     capLabel: "Weapon cap", capOf: r => Math.floor(toInt(r.Body) / 3),
   },
 };

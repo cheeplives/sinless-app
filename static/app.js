@@ -674,7 +674,7 @@ function stepper(get, set, min = 0, max = 99) {
  * rather than being lost on the next keystroke. It's ephemeral UI state and
  * deliberately NOT saved with the character. */
 const openDescriptions = new Set();
-function descriptionExpander(text, key, label = "Description") {
+function descriptionExpander(text, key, label = "More Details") {
   const body = String(text || "").trim();
   if (!body) return null;
   const id = key || body.slice(0, 48);

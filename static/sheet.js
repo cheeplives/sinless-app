@@ -3814,9 +3814,12 @@ function shRigging(body) {
       const st = rg.units[key] = rg.units[key] || { inertia: 0, physical: 0, integrity: 0 };
       u.weapons = u.weapons || []; u.mods = u.mods || [];
 
-      // editable custom name
-      const nameInput = el("input", { value: u.label || "", placeholder: u.name,
-        style: "font-weight:600;width:180px",
+      // Editable custom name. `type: "text"` matters -- the global input styling
+      // is keyed on input[type=text], which a bare <input> does not match, so
+      // without it this fell through to the browser's white default box.
+      const nameInput = el("input", { type: "text", class: "sh-unit-name",
+        value: u.label || "", placeholder: u.name,
+        title: `Rename this ${cfg.title.replace(/s$/, "").toLowerCase()} (blank uses "${u.name}")`,
         onchange: e => { u.label = e.target.value.trim(); playChanged(); } });
 
       const findWeapon = wn => {

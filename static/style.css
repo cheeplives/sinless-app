@@ -700,7 +700,18 @@ label.opt input{margin-top:3px}
 .sh-attach-head{font-size:12px;color:var(--dim);padding:2px 0 5px;
   border-bottom:1px solid var(--line);margin-bottom:6px}
 .sh-unit-title{display:flex;align-items:center;gap:8px}
-.sh-unit-title>input{flex:1 1 auto;min-width:0}
+/* The unit's custom-name field: a always-visible shaded box so it's obvious the
+   name is editable, but bold and roomy enough to still read as the card's title.
+   --panel against the card's --panel-2 reads as an inset well in dark mode and a
+   white field in light mode, matching every other input in the app.
+   Selectors are `input.sh-unit-name` on purpose: the generic `input[type=text]`
+   rule above is (0,1,1), so a bare class would lose to it. */
+input.sh-unit-name{flex:1 1 auto;min-width:0;max-width:260px;font-weight:600;font-size:14px;
+  background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 9px;
+  transition:border-color .12s ease-out,background .12s ease-out}
+input.sh-unit-name:hover{border-color:var(--manon-dim)}
+input.sh-unit-name:focus{border-color:var(--manon);background:var(--panel-2)}
+input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-unit-ctr{display:flex;gap:8px}
 .sh-unit-inertia{margin-top:8px}
 .sh-unit-details{margin:6px 0 4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:2px 8px}

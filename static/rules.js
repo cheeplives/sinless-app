@@ -171,10 +171,17 @@ const SENSE_AUGMENTS = new Set([
  * the active choice via houseRule(id) wherever a rule branches; the settings UI
  * (app.js) flips it with setHouseRule(). Choices live on each character
  * (character.house_rules) and are saved/synced with the character, so changing a
- * rule on one character never affects another. Every rule defaults to the
- * original behaviour so nothing changes until someone opts in. Add a rule by
- * appending a def here and branching on houseRule(<id>) at the relevant point in
- * the engine. */
+ * rule on one character never affects another.
+ *
+ * EVERY rule defaults to its "Classic" option -- the rules as written -- so a
+ * fresh character starts by the book and each house rule is an explicit opt-in.
+ * Keep it that way when adding a rule: list Classic first and make it the
+ * default. (Note "currency"'s Classic value is "zuzus", not "classic".)
+ *
+ * Characters that already store house_rules are never touched by a default
+ * change; only new characters, and legacy saves with no house_rules key at all,
+ * pick up the defaults. Add a rule by appending a def here and branching on
+ * houseRule(<id>) at the relevant point in the engine. */
 const HOUSE_RULE_DEFS = [
   { id: "zr", label: "Zoetic Rating", default: "classic",
     options: [
@@ -183,31 +190,29 @@ const HOUSE_RULE_DEFS = [
       { value: "houserule", label: "ZR Casting Penalty",
         help: "Gear/weapon ZR doesn't touch ZP — it's −1d per full point on casting rolls (Channeling/Conjuring/Sorcery). Cyber ZR reduces ZP directly (may go negative; Synthetics exempt). At ZP ≤ 0 only Rituals work." },
     ] },
-  { id: "priorities", label: "Priorities", default: "point",
+  { id: "priorities", label: "Priorities", default: "classic",
     options: [
       { value: "classic", label: "Classic — A–E",
         help: "Assign the letters A, B, C, D, E (= priority 4, 3, 2, 1, 0) across the five categories — each letter used exactly once." },
       { value: "point", label: "Point-based",
         help: "Distribute 10 priority points, 0–4 per category; values may repeat." },
     ] },
-  { id: "currency", label: "Currency name", default: "woolongs",
+  { id: "currency", label: "Currency name", default: "zuzus",
     options: [
       { value: "zuzus", label: "Classic — Zuzus",
         help: "The setting's money is called Zuzus." },
       { value: "woolongs", label: "House rule — Woolongs",
         help: "The setting's money is called Woolongs." },
     ] },
-  { id: "ew", label: "Electronic Warfare", default: "houserule",
+  { id: "ew", label: "Electronic Warfare", default: "classic",
     options: [
       { value: "classic", label: "Classic — EW skill",
         help: "Adds a Computer: Electronic Warfare skill to the Computer group; the camera hack actions and the EW programs (Analysis Locus, Corrupt IFF, Acid Burn, De-Rez, Hypnotic Projection, Refraction Field, Targeted Disruption, Device Control) roll it." },
       { value: "houserule", label: "House rule — No EW skill",
         help: "No separate EW skill; those actions and programs use Computer: Hacking instead." },
     ] },
-  { id: "engineering", label: "Engineering skills", default: "single",
+  { id: "engineering", label: "Engineering skills", default: "classic",
     options: [
-      // Classic listed first (house-rule dropdowns lead with Classic); the
-      // default stays "single" so existing characters keep one Engineering skill.
       { value: "classic", label: "Classic (six skills)",
         help: "Engineering splits into a six-skill group — Aeronautics, Armory, Electronics, Industrial, Mechanical, Nautical. Like Ranged Weapons, an untrained member rolls the group's best −2." },
       { value: "single", label: "Single skill",

@@ -3488,7 +3488,14 @@ function unitAttachments(cfg, unit) {
   }
 
   const items = [];
-  const statMods = { ballistic: 0, impact: 0, hardening: 0 };
+  const statMods = { ballistic: 0, impact: 0, hardening: 0, body: 0 };
+  // Body deltas can come from a weapon OR a mod (issue #22), so this is tallied
+  // across every attachment rather than only unit-scoped mods. An explicit sign
+  // is required ("-1 Body") so prose like "Targets make Body test" can't match.
+  const tallyBody = text => {
+    const m = String(text || "").match(/([+-]\d+)\s*Body/i);
+    if (m) statMods.body += toInt(m[1]);
+  };
   // Weapons first, each with its attached mods and (if an ammo-doubler is fitted)
   // doubled ammo.
   weapons.forEach((wn, wi) => {
@@ -3502,6 +3509,8 @@ function unitAttachments(cfg, unit) {
       x.nm + ((x.mr && (x.mr.ModeEffect || x.mr.Effect)) ? ` (${x.mr.ModeEffect || x.mr.Effect})` : ""));
     items.push({ name: wn, kind: "weapon", stats: bits.join(", "),
       effect: wr.Effect || wr.ModeEffect || "", mods: modBits });
+    tallyBody(wr.Effect); tallyBody(wr.ModeEffect);
+    weaponMods[wi].forEach(x => x.mr && tallyBody(x.mr.ModeEffect || x.mr.Effect));
   });
   // Unit-scoped mods, tallying the ones that change unit stats.
   for (const { nm, mr } of unitMods) {
@@ -3511,8 +3520,143 @@ function unitAttachments(cfg, unit) {
     if ((m = eff.match(/([+-]?\d+)\s*Ballistic Armor/i))) statMods.ballistic += toInt(m[1]);
     if ((m = eff.match(/([+-]?\d+)\s*Impact Armor/i))) statMods.impact += toInt(m[1]);
     if ((m = eff.match(/([+-]?\d+)\s*(?:Base )?Hardening/i))) statMods.hardening += toInt(m[1]);
+    tallyBody(eff);
   }
   return { items, statMods };
+}
+
+/* Close the gap in the position-keyed play-state maps after a unit at `removedAt`
+   is spliced out of its list: slot n+1 becomes n for every later unit, and the
+   now-vacant last slot is dropped. Without this a sold vehicle's damage tracks,
+   link flag and open state would be inherited by whatever shifted into its
+   index. `newLength` is the list length AFTER the splice. */
+function shiftUnitStateDown(table, removedAt, newLength) {
+  const rg = CHAR.play.rigging;
+  for (const map of [rg.units, rg.linked, rg.unit_open]) {
+    if (!map) continue;
+    for (let n = removedAt; n < newLength; n++) {
+      const next = map[`${table}:${n + 1}`];
+      if (next === undefined) delete map[`${table}:${n}`];
+      else map[`${table}:${n}`] = next;
+    }
+    delete map[`${table}:${newLength}`];
+  }
+}
+
+/* Play-state key for a unit's slot in CHAR.play.rigging.units. Keyed by list
+   position, matching the `${cfg.table}:${i}` convention the Rigging tab uses. */
+function unitStateKey(table, unit) {
+  const list = table === "drones" ? CHAR.drones : CHAR.vehicles;
+  return `${table}:${(list || []).indexOf(unit)}`;
+}
+
+/* Effective Body after any weapon/mod deltas — the box count for both condition
+   tracks (issue #22). Never below 0; a wrecked chassis still has zero boxes
+   rather than a negative track. */
+function unitEffectiveBody(cfg, unit) {
+  const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === unit.name) || {};
+  const { statMods } = unitAttachments(cfg, unit);
+  return Math.max(0, toInt(r.Body) + statMods.body);
+}
+
+/* Per-box repair price for a unit's Physical Condition Track: 1/100th of the
+   chassis base price (the table's face Cost — no heritage surcharge). */
+function unitRepairCostPerBox(cfg, unit) {
+  const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === unit.name) || {};
+  return Math.round((+r.Cost || 0) / 100);
+}
+
+/* The two damage tracks for one unit. `st` is the unit's play-state slot
+   (rg.units[key]). Physical damage costs cash to repair; Integrity clears free.
+   Rendered as a counter + proportional bar rather than the character sheet's
+   box grid: vehicle Body reaches 48, which would be 96 clickable boxes and
+   ~500px per unit. A counter is constant height at any Body, and typing "37"
+   beats hunting for the 37th box. */
+function unitConditionTracks(cfg, unit, st, label) {
+  // A shared character is read-only: show both tracks, but no marking, no
+  // repairing and no cash movement.
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const max = unitEffectiveBody(cfg, unit);
+  st.physical = Math.min(Math.max(0, toInt(st.physical)), max);
+  st.integrity = Math.min(Math.max(0, toInt(st.integrity)), max);
+  const perBox = unitRepairCostPerBox(cfg, unit);
+  const wrap = el("div", { class: "sh-unit-tracks" });
+  if (!max) {
+    wrap.append(el("p", { class: "hint" },
+      "No condition boxes — this chassis has no effective Body."));
+    return wrap;
+  }
+
+  /* One track: label, counter, "n / max", a proportional fill bar, and whatever
+     repair control the track uses. `kind` picks the colour (physical / integrity). */
+  const track = (kind, labelText, get, set, note, controls) => {
+    const countText = el("span", { class: "sub sh-track-count" }, `${get()} / ${max}`);
+    const fill = el("div", { class: `sh-bar-fill ${kind}`,
+      style: `width:${max ? (get() / max) * 100 : 0}%` });
+    const bar = el("div", { class: "sh-bar", role: "img",
+      "aria-label": `${label} ${labelText.toLowerCase()} ${get()} of ${max}` }, fill);
+    // miniCounter renders its own label and calls playChanged() itself, so pass
+    // an empty one (the coloured label above is ours) and leave the setter pure
+    // — matching the Damage / Inertia counters on the same row.
+    const counter = ro ? null : miniCounter("", get, v => { set(v); }, 0, max);
+    return el("div", { class: "sh-track" },
+      el("div", { class: "sh-track-head" },
+        el("span", { class: kind === "physical" ? "phys-lbl" : "stun-lbl" }, labelText),
+        counter, countText,
+        el("span", { class: "sub" }, `· ${note}`)),
+      bar,
+      ro ? null : controls);
+  };
+
+  // --- Physical Condition Track: repaired for cash, per box.
+  const repairQty = el("input", { type: "number", min: "1", max: String(max),
+    value: "1", class: "sv-edit", style: "width:56px",
+    title: "How many boxes to repair" });
+  const repairPrice = el("span", { class: "sub" }, "");
+  const priceFor = n => `→ ${fmt(Math.max(0, Math.min(st.physical, n || 0)) * perBox)}`;
+  const syncPrice = () => {
+    repairPrice.textContent = st.physical ? priceFor(parseInt(repairQty.value, 10)) : "";
+  };
+  repairQty.addEventListener("input", syncPrice);
+  syncPrice();
+  const repairBtn = el("button", { class: "btn small",
+    disabled: st.physical ? null : "1",
+    title: st.physical ? `Repair at ${fmt(perBox)} per box` : "No damage to repair",
+    onclick: () => {
+      const want = Math.max(1, Math.min(st.physical, parseInt(repairQty.value, 10) || 1));
+      const cost = want * perBox;
+      if (CHAR.play.cash < cost
+          && !confirm(`Repairing ${want} box(es) costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
+        return;
+      st.physical -= want;
+      logCash(`Repaired ${want} Physical Condition box(es) on ${label}`, -cost);
+      playChangedRecalc();
+    } }, "Repair");
+  const repairAllBtn = el("button", { class: "btn small",
+    disabled: st.physical ? null : "1",
+    title: st.physical ? `Repair all ${st.physical} — ${fmt(st.physical * perBox)}` : "No damage to repair",
+    onclick: () => {
+      const want = st.physical, cost = want * perBox;
+      if (CHAR.play.cash < cost
+          && !confirm(`Full repair costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
+        return;
+      st.physical = 0;
+      logCash(`Repaired ${want} Physical Condition box(es) on ${label}`, -cost);
+      playChangedRecalc();
+    } }, "Repair all");
+  wrap.append(track("physical", "PHYSICAL CONDITION",
+    () => st.physical, v => { st.physical = v; },
+    `${fmt(perBox)} per box to repair`,
+    el("div", { class: "add-row" }, repairQty, repairBtn, repairPrice, repairAllBtn)));
+
+  // --- Vehicle Integrity Track: same size, free to clear.
+  wrap.append(track("integrity", "VEHICLE INTEGRITY",
+    () => st.integrity, v => { st.integrity = v; }, "free to repair",
+    el("div", { class: "add-row" },
+      el("button", { class: "btn small", disabled: st.integrity ? null : "1",
+        title: "Clear the whole Integrity track (no cost)",
+        onclick: () => { st.integrity = 0; playChangedRecalc(); } }, "Clear all"))));
+  return wrap;
 }
 
 /* Unit | Stats | Attachments table for drones/vehicles. Shared by the Rigging
@@ -3530,10 +3674,19 @@ function unitLoadoutTable(entries) {
     // Mods can raise armor/hardening — reflect the boosted values here.
     const ball = toInt(r.Ballistic) + statMods.ballistic;
     const imp = toInt(r.Impact) + statMods.impact;
-    const stats = `Move ${r.Move} · Handling ${r.Handling} · Body ${r.Body}`
+    const body = Math.max(0, toInt(r.Body) + statMods.body);
+    const stats = `Move ${r.Move} · Handling ${r.Handling} · Body ${body}`
+      + (statMods.body ? ` (base ${r.Body})` : "")
       + ((ball || imp) ? ` · ${ball}B/${imp}I` : "")
       + (statMods.hardening ? ` · Hardening ${statMods.hardening}` : "")
       + ` · ${cfg.capLabel} ${cfg.capOf(r)}`;
+    // Damage read-out, so the Gear inventory reflects it too (the interactive
+    // tracks live on the Rigging tab).
+    const dst = (CHAR.play.rigging.units || {})[unitStateKey(table, u)] || {};
+    const dmgLine = body
+      ? `Physical ${Math.min(toInt(dst.physical), body)} / ${body}`
+        + ` · Integrity ${Math.min(toInt(dst.integrity), body)} / ${body}`
+      : "";
     const attachCell = items.length
       ? el("div", {}, ...items.map(it => el("div", { class: "sub", style: "margin:2px 0" },
           el("b", {}, it.name),
@@ -3549,7 +3702,8 @@ function unitLoadoutTable(entries) {
       el("td", {}, el("b", {}, u.label || u.name),
         u.label ? el("div", { class: "sub" }, u.name) : null,
         el("div", { class: "sub" }, cfg.title.replace(/s$/, ""))),
-      el("td", { class: "sub" }, stats),
+      el("td", { class: "sub" }, stats,
+        dmgLine ? el("div", { class: "sh-unit-dmg" }, dmgLine) : null),
       el("td", {}, attachCell)));
   });
   return t;
@@ -3654,7 +3808,8 @@ function shRigging(body) {
       const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === u.name) || {};
       const summary = (calcArr || [])[i] || {};
       const key = `${cfg.table}:${i}`;
-      const st = rg.units[key] = rg.units[key] || { damage: 0, inertia: 0 };
+      const st = rg.units[key] = rg.units[key]
+        || { damage: 0, inertia: 0, physical: 0, integrity: 0 };
       u.weapons = u.weapons || []; u.mods = u.mods || [];
 
       // editable custom name
@@ -3794,13 +3949,17 @@ function shRigging(body) {
             (() => {
               const sm = unitAttachments(cfg, u).statMods;
               const ball = toInt(r.Ballistic) + sm.ballistic, imp = toInt(r.Impact) + sm.impact;
-              return `Move ${r.Move} · Handling ${r.Handling} · Body ${r.Body}`
+              const eBody = Math.max(0, toInt(r.Body) + sm.body);
+              return `Move ${r.Move} · Handling ${r.Handling} · Body ${eBody}`
+                + (sm.body ? ` (base ${r.Body})` : "")
                 + ((ball || imp) ? ` · Armor ${ball}B/${imp}I` : "")
                 + (sm.hardening ? ` · Hardening ${sm.hardening}` : "")
                 + ` · weapons ${summary.weapon_count ?? u.weapons.length}/${summary.weapon_cap ?? cfg.capOf(r)}`;
             })()),
           r.Effect ? el("div", { class: "sub", style: "color:var(--manon)" }, r.Effect) : null,
           cfg.table === "vehicles" ? vehicleConditionSelect(u, () => playChangedRecalc()) : null,
+          // Physical Condition + Vehicle Integrity tracks (issue #22).
+          unitConditionTracks(cfg, u, st, u.label || u.name),
           details,
           activeRig ? linkToggle : null),
         el("div", { class: "sh-unit-ctr" },
@@ -3809,7 +3968,12 @@ function shRigging(body) {
           el("button", { class: "row-del", title: "Sell / remove unit",
             onclick: () => {
               if (!confirm(`Remove ${u.label || u.name}?`)) return;
-              list.splice(i, 1); delete rg.linked[key]; playChangedRecalc();
+              list.splice(i, 1);
+              // Per-unit play state is keyed by list position, so removing a
+              // unit has to shift every later unit's slot down — otherwise its
+              // damage tracks (and open/linked flags) land on the wrong vehicle.
+              shiftUnitStateDown(cfg.table, i, list.length);
+              playChangedRecalc();
             } }, "✕"))));
     });
     if (!list.length) card.append(el("p", { class: "hint" }, `No ${cfg.title.toLowerCase()} owned.`));

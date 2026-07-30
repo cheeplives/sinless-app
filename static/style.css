@@ -671,6 +671,21 @@ label.opt input{margin-top:3px}
 .sh-advrow.active-row{border-color:var(--ok)}
 .sh-spell{border:1px solid var(--line);border-radius:6px;background:var(--panel-2);padding:8px 10px;margin-bottom:8px}
 .sh-spell.amp{border-color:var(--manon-dim)}
+/* Vehicle/drone condition tracks (issue #22): Physical Condition costs cash to
+   repair, Vehicle Integrity clears free. A counter + proportional bar rather
+   than the character sheet's box grid — vehicle Body reaches 48, so boxes would
+   cost ~500px per unit. This stays the same height at any Body. */
+.sh-unit-tracks{margin-top:8px;max-width:480px}
+.sh-unit-tracks .sh-track-head{justify-content:flex-start;gap:8px;align-items:center}
+.sh-unit-tracks .sh-track-count{font-family:var(--mono)}
+.sh-unit-tracks .sh-mini .lbl{display:none}   /* our coloured label replaces it */
+.sh-unit-tracks .add-row{margin-top:6px;align-items:center;gap:6px}
+.sh-bar{height:8px;border-radius:4px;background:var(--panel-2);
+  border:1px solid var(--line);overflow:hidden}
+.sh-bar-fill{height:100%;border-radius:3px;transition:width .12s ease-out}
+.sh-bar-fill.physical{background:var(--pool-brawn)}
+.sh-bar-fill.integrity{background:var(--pool-focus)}
+.sh-unit-dmg{color:var(--dim);font-size:11.5px;margin-top:3px;font-family:var(--mono)}
 .sh-unit{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
   border:1px solid var(--line);border-radius:6px;background:var(--panel-2);padding:8px 10px;margin-bottom:8px}
 .sh-unit-ctr{display:flex;gap:8px}

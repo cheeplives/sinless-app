@@ -663,6 +663,30 @@ function stepper(get, set, min = 0, max = 99) {
   return el("span", { class: "stepper" }, btn(-1, "\u2013"), sv, btn(1, "+"));
 }
 
+/* Collapsed long-form text for a data row. Five tables carry a Description
+ * column that nothing used to display \u2014 spells, augments, programs, rituals and
+ * amp_powers \u2014 holding prose the short Effect line doesn't cover. This exposes it
+ * on demand without crowding the row. Returns null when there's nothing to show,
+ * so call sites can pass the result straight into el().
+ *
+ * `key` should be stable for the row (e.g. "spells:Mind Link"): the panel
+ * re-renders on every recalc, so open state is remembered in a module-level set
+ * rather than being lost on the next keystroke. It's ephemeral UI state and
+ * deliberately NOT saved with the character. */
+const openDescriptions = new Set();
+function descriptionExpander(text, key, label = "Description") {
+  const body = String(text || "").trim();
+  if (!body) return null;
+  const id = key || body.slice(0, 48);
+  return el("details", { class: "desc-expander",
+    ...(openDescriptions.has(id) ? { open: "1" } : {}),
+    ontoggle: e => {
+      if (e.target.open) openDescriptions.add(id); else openDescriptions.delete(id);
+    } },
+    el("summary", {}, label),
+    el("div", { class: "desc-body" }, body));
+}
+
 /* Sort comparator that clusters the four spellcasting skills at the top of a
  * list (in casting order), everything else alphabetical after them. */
 const SPELLCASTING_SKILLS = ["Astral Senses", "Channeling", "Conjuring", "Sorcery"];
@@ -1236,7 +1260,8 @@ function tabMagic(p) {
         return el("tr", {},
           el("td", {}, el("b", {}, it.name),
             el("div", { class: "sub" }, `${row.School || ""} \u00b7 Drain ${row.Drain || "?"} \u00b7 ${row.Duration || ""}`)),
-          el("td", {}, el("div", { class: "sub" }, row.Effect || "")),
+          el("td", {}, el("div", { class: "sub" }, row.Effect || ""),
+            descriptionExpander(row.Description, `spells:${it.name}`)),
           el("td", { class: "num" }, "Force ", stepper(() => it.force || 1, v => { it.force = v; }, 1, 6)),
           el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
       },
@@ -1269,7 +1294,8 @@ function tabMagic(p) {
           target.value = it.target || "";
         }
         return el("tr", {},
-          el("td", {}, el("b", {}, it.name), el("div", { class: "sub" }, row.Effect || "")),
+          el("td", {}, el("b", {}, it.name), el("div", { class: "sub" }, row.Effect || ""),
+            descriptionExpander(row.Description, `amp_powers:${it.name}`)),
           el("td", {}, target),
           el("td", { class: "num" }, el("b", {}, `${(+row["ZP Cost"] || 0) * zpMult} ZP`)),
           el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
@@ -1284,7 +1310,8 @@ function ritualsRef(p) {
   t.append(el("tr", {}, ...["Ritual", "Drain", "Time", "Effect"].map(h => el("th", {}, h))));
   DATA.tables.rituals.forEach(r => t.append(el("tr", {},
     el("td", {}, el("b", {}, r.Name)), el("td", {}, r.Drain), el("td", {}, r.Time),
-    el("td", { class: "sub" }, r.Effect))));
+    el("td", { class: "sub" }, r.Effect,
+      descriptionExpander(r.Description, `rituals:${r.Name}`)))));
   p.append(t);
 }
 
@@ -1519,7 +1546,8 @@ function tabAugments(p) {
           el("div", { class: "sub" }, `${r.Type || ""}${r.Ban ? ` \u00b7 bans: ${r.Ban}` : ""}`
             + (r.Rarity ? ` \u00b7 Rarity ${r.Rarity}` : "")),
           target, gunSel, qualityCtl),
-        el("td", { class: "sub" }, effectText),
+        el("td", { class: "sub" }, effectText,
+          descriptionExpander(r.Description, `augments:${it.name}`)),
         zrCell,
         costCell,
         el("td", {}, alphaCtl, slottedCtl),
@@ -2074,7 +2102,8 @@ function tabDecks(p) {
       return el("tr", {},
         el("td", {}, el("b", {}, name),
           el("div", { class: "sub" }, `${r["Action Type"] || ""} \u00b7 Alert ${r.Alert || 0}`)),
-        el("td", { class: "sub" }, r.Effect || ""),
+        el("td", { class: "sub" }, r.Effect || "",
+          descriptionExpander(r.Description, `programs:${name}`)),
         el("td", { class: "num" }, fmt(r.Cost)),
         el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
     },

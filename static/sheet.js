@@ -2744,7 +2744,8 @@ function shAugments(body) {
       countCell,
       el("td", {}, alphaCell),
       el("td", {}, slottedCell),
-      el("td", { class: "sub" }, effectText),
+      el("td", { class: "sub" }, effectText,
+        descriptionExpander(r.Description, `augments:${a.name}`)),
       el("td", {}, el("button", { class: "row-del", title: "Remove (surgical removal — not refunded)",
         onclick: async () => {
           if (!confirm(`Remove ${a.name}? Surgical removal is not refunded.`)) return;
@@ -3017,7 +3018,8 @@ function shMagic(body) {
             } }, force >= SPELL_FORCE_MAX ? `Force ${SPELL_FORCE_MAX} (max)` : `+1 Force (${fmt(perForce)})`)),
         el("div", { class: "sub" },
           `Drain: ${r.Drain || "—"} · Resist: ${r["Target Resistance"] || "—"} · Duration: ${r.Duration || "—"}`),
-        r.Effect ? el("div", { class: "sub" }, r.Effect) : null));
+        r.Effect ? el("div", { class: "sub" }, r.Effect) : null,
+        descriptionExpander(r.Description, `spells:${sp.name}`)));
     }
     // learn a new spell with cash: listed Cost × starting Force
     if (type === "Mage" || type === "Archmage") {
@@ -3102,7 +3104,8 @@ function shMagic(body) {
           targetCtl && !p.target
             ? el("span", { class: "sub", style: "color:var(--bad)" }, " ← needs a target to apply")
             : null),
-        r.Effect ? el("div", { class: "sub" }, r.Effect) : null));
+        r.Effect ? el("div", { class: "sub" }, r.Effect) : null,
+        descriptionExpander(r.Description, `amp_powers:${p.name}`)));
     }
     if (type === "Amp" || type === "Archmage") {
       const zpMult = type === "Amp" ? 0.5 : 1;
@@ -3228,7 +3231,8 @@ function shMagic(body) {
         el("td", { class: "num" }, lvl > 0 ? el("b", {}, String(lvl)) : el("span", { class: "sub" }, "—")),
         el("td", { class: "sub" }, r.Drain),
         el("td", { class: "sub" }, r.Time),
-        el("td", { class: "sub" }, r.Effect)));
+        el("td", { class: "sub" }, r.Effect,
+          descriptionExpander(r.Description, `rituals:${r.Name}`))));
     }
     body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Rituals"), t));
   }
@@ -3358,7 +3362,8 @@ function shDecking(body) {
       el("span", {}, el("b", {}, name),
         el("span", { class: "sub" }, ` ${r.Attack || ""} · I/O ${io} · Alert ${r.Alert || 0}${nodeCtrl}`),
         pSkill ? el("div", { class: "sub" }, `Skill: ${pSkill}`) : null,
-        r.Effect ? el("div", { class: "sub" }, r.Effect) : null),
+        r.Effect ? el("div", { class: "sub" }, r.Effect) : null,
+        descriptionExpander(r.Description, `programs:${name}`)),
       el("span", { style: "display:flex;gap:6px;align-items:center" },
         loadable(io)
           ? counterBtn(loaded ? "Unload" : "Load", () => {

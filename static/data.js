@@ -904,7 +904,7 @@ const DATA_BUNDLE ={
 {"Slot":"Underbarrel","Modification":"Bi-pod (Rifle Only)","Req Type":"Rifle","ZR":"","BI":"","Cost":"300","Effect":"+1 Recoil Capacity","RecoilMod":"1","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":"1"},
 {"Slot":"Underbarrel","Modification":"Laser Sight","ZR":"","BI":"","Cost":"150","Effect":"+1 Accuracy","RecoilMod":"","AccMod":"1","MagMod":"","HardMod":"","Conceal Mod":""},
 {"Slot":"Underbarrel","Modification":"Gas Vent","ZR":"","BI":"","Cost":"450","Effect":"+1 Recoil Capacity","RecoilMod":"1","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":""},
-{"Slot":"Underbarrel","Modification":"Silencer","ZR":"","BI":"","Cost":"500","Effect":"Does not raise Heat. 2 die penalty","RecoilMod":"","AccMod":"-2","MagMod":"","HardMod":"","Conceal Mod":""},
+{"Slot":"Underbarrel","Modification":"Silencer","ZR":"","BI":"","Cost":"500","Effect":"Does not raise Heat. -2d Acc","RecoilMod":"","AccMod":"-2","MagMod":"","HardMod":"","Conceal Mod":""},
 {"Slot":"Underbarrel","Modification":"Bayonet","ZR":"","BI":"","Cost":"50","Effect":"Melee Knife","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":"1"},
 {"Slot":"Underbarrel","Modification":"Flashlight","ZR":"","BI":"","Cost":"50","Effect":"Eliminates lowlight penalties","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":"1"},
 {"Slot":"Underbarrel","Modification":"Shoulder Sling","ZR":"","BI":"","Cost":"25","Effect":"Carry comfortably","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":""},

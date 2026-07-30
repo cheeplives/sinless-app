@@ -1189,8 +1189,22 @@ function shOverview(body) {
   const wornArmor = CHAR.armor.filter(a => a.active !== false);
   const grantedWeapons = CALC.combat.granted_weapons || [];
   const traitGear = CALC.combat.trait_gear || [];
+  // Ammo owned (chargen gear + anything bought in play), merged by name so one
+  // ammo type reads as a single stack of uses. Ordered as the tables list it.
+  const ammoOnHand = (() => {
+    const byName = new Map();
+    for (const g of [...CHAR.gear, ...((CHAR.play.purchases || {}).gear || [])]) {
+      const row = DATA.tables.misc_gear.find(x => x.Item === g.name);
+      if (!row || !(row.Class || "").startsWith("Ammo")) continue;
+      const seen = byName.get(g.name);
+      if (seen) seen.uses += (g.qty || 0);
+      else byName.set(g.name, { name: g.name, row, uses: g.qty || 0 });
+    }
+    return [...byName.values()];
+  })();
   if (equippedWeapons.length || cyberguns.length || wornArmor.length
-      || grantedWeapons.length || traitGear.length || (CALC.combat.armor_sources || []).length) {
+      || grantedWeapons.length || traitGear.length || ammoOnHand.length
+      || (CALC.combat.armor_sources || []).length) {
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
@@ -1247,6 +1261,19 @@ function shOverview(body) {
       });
       loadout.append(wt);
     }
+    // Ammo on hand, listed under the weapons it feeds (issue #21). Uses remaining
+    // are tracked on the Gear tab; Effect/Notes come straight from the table.
+    if (ammoOnHand.length) {
+      const amt = el("table");
+      amt.append(el("tr", {}, el("th", {}, "Ammo"), el("th", { class: "num" }, "Uses"),
+        el("th", {}, "Effect / restrictions")));
+      ammoOnHand.forEach(a => amt.append(el("tr", {},
+        el("td", {}, el("b", {}, a.name)),
+        el("td", { class: "num" }, String(a.uses)),
+        el("td", { class: "sub" }, [a.row.Effect || "", a.row.Notes || ""]
+          .filter(Boolean).join(" · ") || "—"))));
+      loadout.append(amt);
+    }
     // Natural / implanted / power-granted melee weapons (Hand Razors, Spurs,
     // Fangs, Iron Fist, …) — auto-calculated Strength-based damage and Reach.
     if (grantedWeapons.length) {
@@ -1290,16 +1317,22 @@ function shOverview(body) {
         ins: idx, getOrder: () => a.lo, setOrder: v => { a.lo = v; },
         cells: () => {
           const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
-          // Match the Gear tab: show style/material/slot, weight, and extras.
+          // Match the Gear tab: Quality/Style/slot, weight, extras -- then the
+          // gameplay effects those carry (issue #18). wornArmor is a filtered
+          // view, so map back through CHAR.armor to reach the CALC row.
+          const arow = (CALC.armor || [])[CHAR.armor.indexOf(a)] || {};
           const notes = [
-            [a.style, a.material].filter(Boolean).join(" · ") || r.Slot || "",
+            [arow.material, arow.style].filter(Boolean).join(" · ") || r.Slot || "",
             `wt ${r.wt || 0}`,
-            (a.extras || []).length ? a.extras.join(", ") : "",
+            (arow.extras || []).length ? arow.extras.join(", ") : "",
           ].filter(Boolean).join(" · ");
+          const aeffects = arow.effects || [];
           return {
             name: el("b", {}, a.name),
             stats: el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
-            last: el("td", { class: "sub" }, notes || "—"),
+            last: el("td", { class: "sub" }, notes || "—",
+              aeffects.length ? el("div", { class: "armor-effects" },
+                aeffects.map(e => `${e.label}: ${e.text}`).join(" · ")) : null),
           };
         },
       }));
@@ -2083,6 +2116,24 @@ function weaponUpgradeSlots(w, r, mult) {
 }
 
 /* ------------------------------------------------ gear tab */
+/* Uses tracker for consumables bought per use (Ammo). Adjusts the owned count
+   in place and moves NO cash — spending a use isn't a sale, and buying more
+   goes through the Buy section, which charges per use. Floors at 0 so a spent
+   stack can sit at zero rather than being forced to 1 like other gear. */
+function shUsesStepper(entry, onChange) {
+  const val = el("span", { class: "sv" }, String(entry.qty || 0));
+  const btn = (delta, label, title) => el("button", { class: "btn small", title,
+    onclick: async () => {
+      entry.qty = Math.max(0, (entry.qty || 0) + delta);
+      val.textContent = String(entry.qty);
+      await onChange();
+    } }, label);
+  return el("span", { class: "stepper" },
+    btn(-1, "–", "Spend a use (no refund)"),
+    val,
+    btn(1, "+", "Add a use you already own — buy more in the Buy section below"));
+}
+
 /* Mounted-augment editor for host gear (Power Armor, Arwin Goggles, homebrew
    with a "Mount Types" column). Mounted augments are managed with the gear —
    they never appear on the Augments tab, their ZR is exempt from ZP, and
@@ -2343,10 +2394,16 @@ function shGear(body) {
             afterAdd: () => playChangedRecalc(),
           })
         : "—";
+      // Quality / Style and their gameplay effects (issue #18). CALC.armor is
+      // built in CHAR.armor order, so index straight across.
+      const arow = (CALC.armor || [])[ai] || {};
+      const aeffects = arow.effects || [];
       t.append(el("tr", {},
         el("td", {}, el("b", {}, a.name),
           el("div", { class: "sub" },
-            ([a.style, a.material].filter(Boolean).join(" · ") || r.Slot || "") + ` · wt ${r.wt || 0}`),
+            ([arow.material, arow.style].filter(Boolean).join(" · ") || r.Slot || "") + ` · wt ${r.wt || 0}`),
+          aeffects.length ? el("div", { class: "sub armor-effects" },
+            aeffects.map(e => `${e.label}: ${e.text}`).join(" · ")) : null,
           shMountEditor(a, r, a.active !== false)),
         el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
         el("td", { class: "sub" }, extrasCell),
@@ -2396,9 +2453,14 @@ function shGear(body) {
         linkSel ? el("div", { class: "sub sh-gearlink" }, "Linked to ", linkSel)
           : (g.link ? el("div", { class: "sub" }, `Linked to ${g.link}`) : null),
         shMountEditor(g, r, g.carried !== false)),
-      el("td", { class: "num" }, String(g.qty || 1)),
+      // Ammo is counted in uses, so it gets a live -/+ tracker for burning
+      // rounds at the table (issue #21). It moves no cash -- buying more goes
+      // through the Buy section below, which charges per use.
+      el("td", { class: "num" }, (!ro && (r.Class || "").startsWith("Ammo"))
+        ? shUsesStepper(g, playChangedRecalc)
+        : String(g.qty || 1)),
       el("td", { class: "sub" },
-        [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || ""]
+        [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || "", r.Notes || ""]
           .filter(Boolean).join(" · ")),
       el("td", {}, el("input", { type: "checkbox", ...(g.carried !== false ? { checked: 1 } : {}),
         onchange: async e => { g.carried = e.target.checked; await playChangedRecalc(); } })),
@@ -2415,22 +2477,31 @@ function shGear(body) {
     gt.append(el("tr", {}, el("td", { class: "sub", colspan: "5" }, "No gear.")));
   body.append(el("div", { class: "card sh-card", id: "gear-gear" }, el("h3", {}, "Gear"), gt));
 
-  // ===== Vehicles / rigs / decks owned (configured on their own tabs)
+  // ===== Vehicles / rigs / decks owned (configured on their own tabs).
+  // Drones and vehicles get their full Rigging-tab stat + attachment lines here
+  // too, so the Gear tab is a complete inventory (issue #20).
   if (CHAR.rigs.length || CHAR.decks.length || CHAR.drones.length || CHAR.vehicles.length) {
-    const vt = el("table");
-    vt.append(el("tr", {}, el("th", {}, "Item"), el("th", {}, "Type")));
-    const addRows = (list, label, nameKey) => list.forEach(u =>
-      vt.append(el("tr", {},
-        el("td", {}, el("b", {}, u.label || u[nameKey] || u.name),
-          (u.label && (u.name)) ? el("span", { class: "sub" }, ` (${u.name})`) : null),
-        el("td", { class: "sub" }, label))));
-    addRows(CHAR.rigs, "VCR", "name");
-    addRows(CHAR.decks, "Cyberdeck", "name");
-    addRows(CHAR.drones, "Drone", "name");
-    addRows(CHAR.vehicles, "Vehicle", "name");
-    body.append(el("div", { class: "card sh-card", id: "gear-vehicles" },
+    const vcard = el("div", { class: "card sh-card", id: "gear-vehicles" },
       el("h3", {}, "Vehicles, Rigs & Decks"),
-      el("p", { class: "hint" }, "Bought, modified and removed on the Rigging and Decking tabs."), vt));
+      el("p", { class: "hint" }, "Bought, modified and removed on the Rigging and Decking tabs."));
+    const unitEntries = [
+      ...CHAR.drones.map(u => ({ table: "drones", u })),
+      ...CHAR.vehicles.map(u => ({ table: "vehicles", u })),
+    ];
+    if (unitEntries.length) vcard.append(unitLoadoutTable(unitEntries));
+    if (CHAR.rigs.length || CHAR.decks.length) {
+      const vt = el("table");
+      vt.append(el("tr", {}, el("th", {}, "Item"), el("th", {}, "Type")));
+      const addRows = (list, label) => list.forEach(u =>
+        vt.append(el("tr", {},
+          el("td", {}, el("b", {}, u.label || u.name),
+            (u.label && u.name) ? el("span", { class: "sub" }, ` (${u.name})`) : null),
+          el("td", { class: "sub" }, label))));
+      addRows(CHAR.rigs, "VCR");
+      addRows(CHAR.decks, "Cyberdeck");
+      vcard.append(vt);
+    }
+    body.append(vcard);
   }
 
   // ===== Buy equipment — all purchasing lives here, collapsible by type.
@@ -2441,7 +2512,8 @@ function shGear(body) {
     .map(([cls, rows]) => ({
       label: cls,
       items: rows.map(r => ({ name: r.Item, cost: Math.round((+r.Cost || 0) * gearMult),
-        sub: [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || ""]
+        sub: [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || "", r.Notes || "",
+          (r.Class || "").startsWith("Ammo") ? "per use" : ""]
           .filter(Boolean).join(" · ") })),
     }));
   const buySection = el("div", { class: "card sh-card", id: "gear-buy" },
@@ -2640,10 +2712,35 @@ function shAugments(body) {
           el("option", { value: g.Type }, `${g.Type} (${fmt(Math.round(+g.Cost * mult))})`)));
       gunSel.value = a.gunType || "";
     }
+    // Fashionware quality tier (issue #19). Switching tier re-prices the piece,
+    // so charge/refund the difference through the cash ledger. Costed via
+    // augmentEffCost so any α-grade premium is re-derived on the new base.
+    let qualitySel = null;
+    if (r.Quality === "Y") {
+      qualitySel = el("select", { class: "fw-quality-select", onchange: async e => {
+        const nv = e.target.value;
+        const before = Math.round(RULES.augmentEffCost(r, a) * augMult);
+        const after = Math.round(RULES.augmentEffCost(r, { ...a, quality: nv }) * augMult);
+        const delta = after - before;
+        if (delta > 0 && CHAR.play.cash < delta
+            && !confirm(`${nv || "Normal"} costs ${fmt(delta)} more but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) {
+          e.target.value = a.quality || ""; return;
+        }
+        const prev = a.quality || "standard";
+        a.quality = nv;
+        if (delta !== 0) logCash(`${a.name} quality: ${prev} → ${nv || "standard"}`, -delta);
+        await playChangedRecalc();
+      } },
+        el("option", { value: "" }, "Quality…"),
+        ...(DATA.tables.fashionware_qualities || []).map(q =>
+          el("option", { value: q.Quality }, `${q.Quality} ×${q.Multiplier}`)));
+      qualitySel.value = a.quality || "";
+    }
     return el("tr", {},
       el("td", {}, el("b", {}, a.name),
         inPlay ? el("span", { class: "sh-tag" }, "bought in play") : null,
-        target, gunSel),
+        r.Rarity ? el("div", { class: "sub" }, `Rarity ${r.Rarity}`) : null,
+        target, gunSel, qualitySel),
       countCell,
       el("td", {}, alphaCell),
       el("td", {}, slottedCell),
@@ -2711,7 +2808,10 @@ function shAugments(body) {
           name: r.Name,
           cost: Math.round((+r.Cost || 0)
             * RULES.surchargeFor(r.Type === "Bioware" ? "bioware" : "cyberware", mult)),
-          sub: `ZR ${r.ZR || 0} · BI ${r.BI || 0}${dmg !== "" ? " · DMG " + dmg : ""}${r.Effect ? " · " + r.Effect : ""}`,
+          sub: `ZR ${r.ZR || 0} · BI ${r.BI || 0}${dmg !== "" ? " · DMG " + dmg : ""}`
+            + (r.Rarity ? ` · Rarity ${r.Rarity}` : "")
+            + (r.Quality === "Y" ? " · quality tiers available" : "")
+            + (r.Effect ? " · " + r.Effect : ""),
           banned: !!banned,
           disabled,
           reason,
@@ -3415,6 +3515,46 @@ function unitAttachments(cfg, unit) {
   return { items, statMods };
 }
 
+/* Unit | Stats | Attachments table for drones/vehicles. Shared by the Rigging
+   tab (linked units) and the Gear tab (everything owned) so the two never drift
+   -- issue #20 was the Gear tab showing only a name and a type. `entries` are
+   {table, u} pairs, where table keys RIG_UNIT_CFG. */
+function unitLoadoutTable(entries) {
+  const t = el("table");
+  t.append(el("tr", {}, el("th", {}, "Unit"), el("th", {}, "Stats"),
+    el("th", {}, "Weapons & mods")));
+  entries.forEach(({ table, u }) => {
+    const cfg = RIG_UNIT_CFG[table];
+    const r = DATA.tables[table].find(x => x[cfg.nameKey] === u.name) || {};
+    const { items, statMods } = unitAttachments(cfg, u);
+    // Mods can raise armor/hardening — reflect the boosted values here.
+    const ball = toInt(r.Ballistic) + statMods.ballistic;
+    const imp = toInt(r.Impact) + statMods.impact;
+    const stats = `Move ${r.Move} · Handling ${r.Handling} · Body ${r.Body}`
+      + ((ball || imp) ? ` · ${ball}B/${imp}I` : "")
+      + (statMods.hardening ? ` · Hardening ${statMods.hardening}` : "")
+      + ` · ${cfg.capLabel} ${cfg.capOf(r)}`;
+    const attachCell = items.length
+      ? el("div", {}, ...items.map(it => el("div", { class: "sub", style: "margin:2px 0" },
+          el("b", {}, it.name),
+          it.kind === "mod" ? el("span", { class: "sh-tag", style: "margin-left:6px" }, "mod") : null,
+          it.stats ? ` — ${it.stats}` : "",
+          it.effect ? el("span", { style: "color:var(--manon)" },
+            `${it.stats ? " · " : " — "}${it.effect}`) : null,
+          ...((it.mods && it.mods.length)
+            ? [el("div", { style: "margin-left:14px;color:var(--manon)" }, "↳ " + it.mods.join(" · "))]
+            : []))))
+      : "—";
+    t.append(el("tr", {},
+      el("td", {}, el("b", {}, u.label || u.name),
+        u.label ? el("div", { class: "sub" }, u.name) : null,
+        el("div", { class: "sub" }, cfg.title.replace(/s$/, ""))),
+      el("td", { class: "sub" }, stats),
+      el("td", {}, attachCell)));
+  });
+  return t;
+}
+
 function shRigging(body) {
   const rg = CHAR.play.rigging;
   rg.linked = rg.linked || {};
@@ -3500,36 +3640,8 @@ function shRigging(body) {
     (list || []).forEach((u, i) => { if (rg.linked[`${table}:${i}`]) activeUnits.push({ table, u }); });
   });
   if (activeUnits.length) {
-    const t = el("table");
-    t.append(el("tr", {}, el("th", {}, "Unit"), el("th", {}, "Stats"), el("th", {}, "Attachments")));
-    activeUnits.forEach(({ table, u }) => {
-      const cfg = RIG_UNIT_CFG[table];
-      const r = DATA.tables[table].find(x => x[cfg.nameKey] === u.name) || {};
-      const { items, statMods } = unitAttachments(cfg, u);
-      // Mods can raise armor/hardening — reflect the boosted values here.
-      const ball = toInt(r.Ballistic) + statMods.ballistic;
-      const imp = toInt(r.Impact) + statMods.impact;
-      const stats = `Move ${r.Move} · Handling ${r.Handling} · Body ${r.Body}`
-        + ((ball || imp) ? ` · ${ball}B/${imp}I` : "")
-        + (statMods.hardening ? ` · Hardening ${statMods.hardening}` : "");
-      const attachCell = items.length
-        ? el("div", {}, ...items.map(it => el("div", { class: "sub", style: "margin:2px 0" },
-            el("b", {}, it.name),
-            it.kind === "mod" ? el("span", { class: "sh-tag", style: "margin-left:6px" }, "mod") : null,
-            it.stats ? ` — ${it.stats}` : "",
-            it.effect ? el("span", { style: "color:var(--manon)" },
-              `${it.stats ? " · " : " — "}${it.effect}`) : null,
-            ...((it.mods && it.mods.length)
-              ? [el("div", { style: "margin-left:14px;color:var(--manon)" }, "↳ " + it.mods.join(" · "))]
-              : []))))
-        : "—";
-      t.append(el("tr", {},
-        el("td", {}, el("b", {}, u.label || u.name), u.label ? el("div", { class: "sub" }, u.name) : null),
-        el("td", { class: "sub" }, stats),
-        el("td", {}, attachCell)));
-    });
     body.append(el("div", { class: "card sh-card" },
-      el("h3", {}, "Active drones & vehicles"), t));
+      el("h3", {}, "Active drones & vehicles"), unitLoadoutTable(activeUnits)));
   }
 
   const unitBlock = (cfg, list, calcArr) => {

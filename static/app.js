@@ -1410,7 +1410,9 @@ function tabAugments(p) {
       return {
         name: r.Name, cost: +r.Cost,
         sub: [(+r.ZR ? `ZR ${r.ZR}` : ""), (+r.BI ? `BI ${r.BI}` : ""),
-              (dmg !== "" ? `DMG ${dmg}` : ""), r.Effect || ""]
+              (dmg !== "" ? `DMG ${dmg}` : ""),
+              (r.Rarity ? `Rarity ${r.Rarity}` : ""),
+              (r.Quality === "Y" ? "quality tiers available" : ""), r.Effect || ""]
           .filter(Boolean).join(" \u00b7 "),
         hidden: isCybergun ? false : avail.hidden(r.Name),
         banned: !!banned,
@@ -1483,6 +1485,18 @@ function tabAugments(p) {
               } }),
             el("span", {}, "α-cyber"))
         : null;
+      // Fashionware quality tier (issue #19): only pieces flagged Quality = Y
+      // offer one. It scales the base price; α-grade then applies on top.
+      let qualityCtl = null;
+      if (r.Quality === "Y") {
+        const qs = el("select", { class: "fw-quality-select",
+          onchange: e => { it.quality = e.target.value; refresh(); } },
+          el("option", { value: "" }, "Quality…"),
+          ...(DATA.tables.fashionware_qualities || []).map(q =>
+            el("option", { value: q.Quality }, `${q.Quality} ×${q.Multiplier}`)));
+        qs.value = it.quality || "";
+        qualityCtl = qs;
+      }
       // Slotted checkbox: only a slotted Skillsoft applies its bonus, and no
       // more can be slotted than the character has Chipjacks installed.
       let slottedCtl = null;
@@ -1502,8 +1516,9 @@ function tabAugments(p) {
       }
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
-          el("div", { class: "sub" }, `${r.Type || ""}${r.Ban ? ` \u00b7 bans: ${r.Ban}` : ""}`),
-          target, gunSel),
+          el("div", { class: "sub" }, `${r.Type || ""}${r.Ban ? ` \u00b7 bans: ${r.Ban}` : ""}`
+            + (r.Rarity ? ` \u00b7 Rarity ${r.Rarity}` : "")),
+          target, gunSel, qualityCtl),
         el("td", { class: "sub" }, effectText),
         zrCell,
         costCell,
@@ -1916,7 +1931,7 @@ function tabWeapons(p) {
 
   p.append(el("h2", {}, "Armor"));
   p.append(el("p", { class: "hint" },
-    "One Outer and one Under piece active at a time. Styleable pieces multiply base cost by Style \u00d7 Material and can take Extras."));
+    "One Outer and one Under piece active at a time. Quality applies to any piece; styleable pieces also take a Style and Extras. Each multiplier surcharges the base cost."));
   const styles = DATA.tables.armor_styles, mats = DATA.tables.armor_materials,
     extras = DATA.tables.armor_extras;
   const armorItem = r => ({ name: r.Armor, cost: +r.Cost,
@@ -1937,18 +1952,20 @@ function tabWeapons(p) {
     render: (it, i, del) => {
       const r = DATA.tables.armor.find(x => x.Armor === it.name) || {};
       const calcRow = (CALC.armor || [])[i] || {};
+      // Quality applies to every piece; Style and Extras are cosmetic and only
+      // offered on styleable pieces (Style = Y).
       const styleable = r.Style === "Y";
-      let styleCtl = el("span", { class: "sub" }, "fixed design");
+      const ms = el("select", { onchange: e => { it.material = e.target.value; refresh(); } },
+        el("option", { value: "" }, "Quality\u2026"),
+        ...mats.map(m => el("option", { value: m.Material }, `${m.Material} \u00d7${m.Multiplier}`)));
+      ms.value = it.material || "";
+      const styleCtl = el("div", {}, ms);
       if (styleable) {
         const ss = el("select", { onchange: e => { it.style = e.target.value; refresh(); } },
           el("option", { value: "" }, "Style\u2026"),
           ...styles.map(s => el("option", { value: s.Style }, `${s.Style} \u00d7${s.Multiplier}`)));
         ss.value = it.style || "";
-        const ms = el("select", { onchange: e => { it.material = e.target.value; refresh(); } },
-          el("option", { value: "" }, "Material\u2026"),
-          ...mats.map(m => el("option", { value: m.Material }, `${m.Material} \u00d7${m.Multiplier}`)));
-        ms.value = it.material || "";
-        styleCtl = el("div", {}, ss, " ", ms,
+        styleCtl.append(" ", ss,
           fittedItemsEditor({
             items: it.extras || [],
             placeholder: "Extra\u2026",
@@ -1956,7 +1973,14 @@ function tabWeapons(p) {
             onAdd: name => it.extras.push(name),
             onRemove: index => it.extras.splice(index, 1),
             effectOf: name => (extras.find(x => x.Extra === name) || {}).Effects || "",
-          }));      }
+          }));
+      } else {
+        styleCtl.append(el("div", { class: "sub" }, "fixed design \u2014 no Style"));
+      }
+      // Effects of the chosen Quality / Style / Extras (issue #18).
+      const effs = calcRow.effects || [];
+      if (effs.length) styleCtl.append(el("div", { class: "sub armor-effects" },
+        effs.map(e => `${e.label}: ${e.text}`).join(" \u00b7 ")));
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" }, `${r.Slot} \u00b7 ${r.Ballistic}B / ${r.Impact}I \u00b7 wt ${r.wt}`),
@@ -2266,7 +2290,7 @@ function tabGear(p) {
     .map(([cls, rows]) => ({
       label: cls,
       items: rows.map(r => ({ name: r.Item, cost: +r.Cost,
-        sub: [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || ""]
+        sub: [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || "", r.Notes || ""]
           .filter(Boolean).join(" · ") })),
     }));
   p.append(listEditor({
@@ -2277,11 +2301,14 @@ function tabGear(p) {
     render: (it, i, del) => {
       const r = DATA.tables.misc_gear.find(x => x.Item === it.name) || {};
       const costCell = el("td", { class: "num" }, fmt((+r.Cost || 0) * (it.qty || 1)));
+      // Ammo is bought per use, so the qty stepper below is a "uses" count.
+      const isAmmo = (r.Class || "").startsWith("Ammo");
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" },
-            [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || ""]
+            [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || "", r.Notes || ""]
               .filter(Boolean).join(" · ")),
+          isAmmo ? el("div", { class: "sub" }, `${fmt(+r.Cost || 0)} per use`) : null,
           gearLinkSelect(it),
           mountEditor(it, r, it.carried !== false)),
         costCell,

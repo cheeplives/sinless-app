@@ -79,6 +79,7 @@ const HOMEBREW_CONFIG = {
       hint: "augment types this can mount — comma-separated, or Any; blank = none" },
     { key: "Mount ZP", hint: "ZP capacity for mounted augments (exempt from the character's ZP)" },
     { key: "Effect", ta: true },
+    { key: "Notes", ta: true, hint: "restrictions or usage notes (e.g. which guns take this ammo)" },
   ]},
   augments: { label: "Augments", nameKey: "Name", fields: [
     { key: "Name", hint: "end with a number (“Reflex Booster 2”) for rank logic" },

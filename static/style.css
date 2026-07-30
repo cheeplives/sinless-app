@@ -339,6 +339,9 @@ td{padding:5px 8px;border-bottom:1px solid var(--line-soft);vertical-align:middl
 tr:hover td{background:rgba(157,123,255,.04)}
 td.num,th.num{text-align:right;font-family:var(--mono)}
 td .sub{color:var(--dim);font-size:11.5px}
+/* Gameplay effects carried by an armor piece's Quality / Style / Extras --
+   tinted so they read as rules text, not as another stat line. */
+.armor-effects{color:var(--manon);font-size:11.5px;font-style:italic;margin-top:2px}
 
 input[type=number]{width:64px;background:var(--panel);border:1px solid var(--line);color:var(--text);
   border-radius:4px;padding:4px 6px;font-family:var(--mono);text-align:right}
@@ -398,6 +401,8 @@ tr.sh-ritual-trained td:first-child{border-left:2px solid var(--manon-dim);paddi
    style chooser and the Kismet raise button from stretching the skill column. */
 .ma-style-select{font-size:12px;padding:3px 5px;max-width:100%}
 .sh-ma-raise{margin-left:auto;flex:none}
+/* Fashionware quality-tier picker, inline in the augment name cell. */
+.fw-quality-select{font-size:12px;padding:3px 5px;max-width:100%;margin-top:3px}
 
 /* signature: priority grid */
 .prio-grid{display:grid;grid-template-columns:150px repeat(5,54px) 1fr;gap:6px;align-items:center;max-width:760px}

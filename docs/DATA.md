@@ -113,7 +113,7 @@ Not declared anywhere in code, but consistent across tables:
 
 ## Table catalogue
 
-36 tables, 822 rows. “Key” is the column that identifies a row; a `+` means
+37 tables, 857 rows. “Key” is the column that identifies a row; a `+` means
 identity is composite. Consumer counts are rough reference-frequency hints, not
 call graphs.
 
@@ -125,7 +125,8 @@ call graphs.
 | `armor_materials` | 6 | `Material` | Material cost `Multiplier` | rules, app |
 | `armor_styles` | 7 | `Style` | Style multiplier + `Etiquette Bonus` | rules, app |
 | `attribute_costs` | 29 | `Level` | Attribute point cost per level | rules |
-| `augments` | 140 | `Name` | Cyberware/bioware; attribute deltas, armor, `Type` | rules, app, sheet, homebrew |
+| `augments` | 154 | `Name` | Cyberware/bioware/Fashionware; attribute deltas, armor, `Type`, `Rarity`, `Quality` | rules, app, sheet, homebrew |
+| `fashionware_qualities` | 4 | `Quality` | Fashionware quality tiers, cost `Multiplier` | rules, app, sheet |
 | `cyberguns` | 4 | `Type` | Implanted gun frames | rules, app, sheet |
 | `deck_mods` | 4 | `Deck Mod` | Cyberdeck mods, `Slots` | rules, app, sheet |
 | `decks` | 8 | `Name` | Cyberdecks; `MCP`, `Threads`, `Core` | rules, app, sheet |
@@ -138,7 +139,7 @@ call graphs.
 | `heritages` | 6 | `Name` | Heritages; `ZP`, `MinPriority` | rules, app |
 | `lifestyles` | 5 | `Lifestyle` | `MonthlyCost` tiers | rules, app, sheet |
 | `martial_arts` | 24 | `Style`+`Level` | Cumulative per-level style effects | rules, app, sheet |
-| `misc_gear` | 43 | `Item` | General gear, grouped by `Class` | rules, app, sheet, homebrew |
+| `misc_gear` | 60 | `Item` | General gear + Ammo, grouped by `Class`; `Notes` holds restrictions | rules, app, sheet, homebrew |
 | `priorities` | 5 | `Priority` | Chargen priority table (points, cash, magic) | rules, app |
 | `programs` | 121 | `Name` | Decking programs; `Action Type`, `Attack` | rules, app, sheet |
 | `rig_mods` | 4 | `Rig Mod` | VCR mods; `Link`, `Hardening` | rules, app, sheet |
@@ -203,18 +204,25 @@ noisy:
 ## Gotchas
 
 1. **Numbers are strings** — always `asNumber()`. See Conventions.
-2. **Rows within a table do not share a column set.** Six tables are ragged:
-   `weapons` (8 distinct column sets), `augments` (6), `heritage_features` (4),
-   `weapon_mods`, `vehicle_mods`, `drone_mods` (2 each). New columns were added to
-   some rows only.
+2. **Rows within a table do not share a column set.** Five tables are ragged:
+   `weapons` (8 distinct column sets), `heritage_features` (4), `weapon_mods`,
+   `vehicle_mods`, `drone_mods` (2 each). New columns were added to some rows only.
+   (`augments` and `misc_gear` were normalised to one uniform column set when
+   Fashionware and Ammo were added — keep them that way.)
 3. **The row-0 hazard.** `promote_homebrew.base_columns()` takes a table's
    canonical column set from **row 0 alone**, so promoting a pack row into a ragged
    table silently drops any column that only later rows carry — today that is
    `Bar`, `Damage Bonus`, `Heat`, `Integrated Smart`, `Max Heat`, `Requires`,
-   `STR Mult` (`weapons`); `AltMove`, `Damage`, `MoveMode`, `Req Limb`, `STR Mult`
-   (`augments`); `Req Type` (`weapon_mods`). `check_data.py` reports these as
-   warnings. If you need one of those columns to survive promotion, add it to
-   row 0 (empty string is fine) first.
+   `STR Mult` (`weapons`); `Req Type` (`weapon_mods`). `check_data.py` reports
+   these as warnings. If you need one of those columns to survive promotion, add
+   it to row 0 (empty string is fine) first.
+
+   **This bites scripts too.** Any tool that rewrites a table row-by-row must
+   build its column list from the **union of every row**, never from row 0 — the
+   `augments` normalisation above silently dropped `Damage`, `Req Limb`,
+   `MoveMode`, `AltMove` and `STR Mult` on the first attempt, all of which
+   `rules.js` reads (implant damage, limb requirements, Mobi movement modes).
+   Diff old vs. new for lost non-empty values before committing a data script.
 4. **Key-column knowledge the checker cannot see.** Call sites that pass the table
    or column through a variable are invisible to the `findRow` regex — `hostKinds`
    (`rules.js:1154`), `weaponAndModTables` (`rules.js:1903`), `priceAll`

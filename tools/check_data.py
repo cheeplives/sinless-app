@@ -73,6 +73,7 @@ EXTRA_KEY_COLUMNS = {
     "cyberguns": "Type",
     "deck_mods": "Deck Mod",
     "decks": "Name",
+    "fashionware_qualities": "Quality",
     "hack_actions": ("Group", "Action"),
     "heritage_features": ("Category", "Name"),
     "heritages": "Name",

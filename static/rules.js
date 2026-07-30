@@ -803,8 +803,18 @@ function augmentEffZr(row, entry) {
   const reduction = Math.max(base * 0.2, 0.1);
   return Math.max(0, Math.ceil(round2(base - reduction) * 10) / 10);
 }
+// Fashionware quality tiers (Ad Supported ×0.5 … Bespoke ×15). Only pieces
+// flagged Quality = Y can be made at a tier; everything else ignores it.
+function augmentQualityMultiplier(row, entry) {
+  if (!(row && row.Quality === "Y" && entry && entry.quality)) return 1;
+  const tier = (BUNDLE.tables.fashionware_qualities || [])
+    .find(q => q.Quality === entry.quality);
+  return tier ? asNumber(tier.Multiplier, 1) : 1;
+}
 function augmentEffCost(row, entry) {
-  const base = asNumber(row.Cost);
+  // Quality scales the base price first; α-grade then applies on top of the
+  // quality-adjusted cost (issue #19).
+  const base = asNumber(row.Cost) * augmentQualityMultiplier(row, entry);
   // Doubles the cost, but the increase is at least 1000 so cheap augments
   // still pay a real premium for bleeding-edge grade.
   let cost = (entry && entry.alpha) ? base + Math.max(base, 1000) : base;
@@ -1742,9 +1752,21 @@ function applyExtendedMagazine(ammo, mods) {
 
 function priceArmor(character, data, gearCostMultiplier, warnings) {
   const styleMultiplier = {}, materialMultiplier = {}, extraMultiplier = {};
-  for (const row of data.armor_styles) styleMultiplier[row.Style] = asNumber(row.Multiplier, 1);
-  for (const row of data.armor_materials) materialMultiplier[row.Material] = asNumber(row.Multiplier, 1);
-  for (const row of data.armor_extras) extraMultiplier[row.Extra] = asNumber(row.Multiplier, 1);
+  // Quality/Style also carry gameplay effects (Charisma tests, Etiquette
+  // bonuses) that the Gear and Overview tabs display alongside the piece.
+  const styleEffect = {}, materialEffect = {}, extraEffect = {};
+  for (const row of data.armor_styles) {
+    styleMultiplier[row.Style] = asNumber(row.Multiplier, 1);
+    styleEffect[row.Style] = row["Etiquette Bonus"] || "";
+  }
+  for (const row of data.armor_materials) {
+    materialMultiplier[row.Material] = asNumber(row.Multiplier, 1);
+    materialEffect[row.Material] = row.Effect || "";
+  }
+  for (const row of data.armor_extras) {
+    extraMultiplier[row.Extra] = asNumber(row.Multiplier, 1);
+    extraEffect[row.Extra] = row.Effects || "";
+  }
 
   const priced = [];
   let totalCost = 0.0, totalWeight = 0.0;
@@ -1755,14 +1777,16 @@ function priceArmor(character, data, gearCostMultiplier, warnings) {
     const row = findRow(data.armor, "Armor", entry.name);
     if (!row) continue;
     let cost = asNumber(row.Cost);
+    // Each multiplier applies to the BASE cost: its surcharge is base ×
+    // (mult − 1), and surcharges add — they never compound on the running
+    // total. (Matches the play-mode extras pricing in sheet.js.)
+    // Quality (the armor_materials scale) applies to EVERY armor piece; Style
+    // and Extras are cosmetic and only apply to styleable pieces (Style = Y).
+    const base = cost;
+    const surcharge = mult => base * ((mult !== undefined ? mult : 1) - 1);
+    cost += surcharge(materialMultiplier[entry.material]);
     if (row.Style === "Y") {
-      // Each multiplier applies to the BASE cost: its surcharge is
-      // base × (mult − 1), and surcharges add — they never compound on the
-      // running total. (Matches the play-mode extras pricing in sheet.js.)
-      const base = cost;
-      const surcharge = mult => base * ((mult !== undefined ? mult : 1) - 1);
-      cost += surcharge(styleMultiplier[entry.style])
-            + surcharge(materialMultiplier[entry.material]);
+      cost += surcharge(styleMultiplier[entry.style]);
       for (const extraName of entry.extras || []) {
         cost += surcharge(extraMultiplier[extraName]);
       }
@@ -1787,9 +1811,24 @@ function priceArmor(character, data, gearCostMultiplier, warnings) {
     for (const col of ["Armor", "Ballistic", "Impact", "wt", "Slot"]) {
       item[col] = row[col] !== undefined ? row[col] : "";
     }
-    item.style = entry.style || "";
+    // Style/Extras only exist on styleable pieces, so blank them out on the
+    // rest -- a stale value from an earlier edit must not show as applied.
+    const styleable = row.Style === "Y";
+    item.styleable = styleable;
+    item.style = styleable ? (entry.style || "") : "";
     item.material = entry.material || "";
-    item.extras = entry.extras || [];
+    item.extras = styleable ? (entry.extras || []) : [];
+    // Gameplay effects of the chosen Quality / Style / Extras, labelled for
+    // display. "No Bonus" and blanks are dropped -- nothing to report.
+    const effects = [];
+    const addEffect = (label, text) => {
+      const t = (text || "").trim();
+      if (t && !/^no bonus$/i.test(t)) effects.push({ label, text: t });
+    };
+    addEffect(item.material, materialEffect[item.material]);
+    addEffect(item.style, styleEffect[item.style]);
+    for (const extraName of item.extras) addEffect(extraName, extraEffect[extraName]);
+    item.effects = effects;
     item.active = isActive;
     item.cost = cost;
     priced.push(item);
@@ -2711,7 +2750,7 @@ return {
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
   rigStats, applyExtendedMagazine, meleeDamage, assignWeaponModSlots,
-  mountCapability, mountRefusal, augmentEffZr, augmentEffCost,
+  mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   augmentLimbRequirement, augmentMeleeDamage,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,

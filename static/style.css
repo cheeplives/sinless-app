@@ -676,7 +676,7 @@ label.opt input{margin-top:3px}
    than the character sheet's box grid — vehicle Body reaches 48, so boxes would
    cost ~500px per unit. This stays the same height at any Body. */
 .sh-unit-tracks{margin-top:8px;max-width:480px}
-.sh-unit-tracks .sh-track-head{justify-content:flex-start;gap:8px;align-items:center}
+.sh-unit-tracks .sh-track-head{justify-content:flex-start;gap:8px;align-items:center;flex-wrap:wrap}
 .sh-unit-tracks .sh-track-count{font-family:var(--mono)}
 .sh-unit-tracks .sh-mini .lbl{display:none}   /* our coloured label replaces it */
 .sh-unit-tracks .add-row{margin-top:6px;align-items:center;gap:6px}
@@ -686,9 +686,23 @@ label.opt input{margin-top:3px}
 .sh-bar-fill.physical{background:var(--pool-brawn)}
 .sh-bar-fill.integrity{background:var(--pool-focus)}
 .sh-unit-dmg{color:var(--dim);font-size:11.5px;margin-top:3px;font-family:var(--mono)}
-.sh-unit{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+/* A unit is two top-aligned columns: identity + condition tracks on the left,
+   fitted weapons/mods on the right. Both stay open at once (the attachment list
+   used to be a <details> purely to save vertical space). Stacks on narrow
+   screens via flex-wrap. */
+.sh-unit{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;
   border:1px solid var(--line);border-radius:6px;background:var(--panel-2);padding:8px 10px;margin-bottom:8px}
+/* Bases are generous on purpose: below roughly 820px of card width the two
+   columns wrap to stacked rather than squeezing the condition tracks. */
+.sh-unit-main{flex:1 1 400px;min-width:0}
+.sh-unit-attach{flex:1 1 380px;min-width:0;border:1px solid var(--line);border-radius:6px;
+  background:var(--panel);padding:6px 10px 8px}
+.sh-attach-head{font-size:12px;color:var(--dim);padding:2px 0 5px;
+  border-bottom:1px solid var(--line);margin-bottom:6px}
+.sh-unit-title{display:flex;align-items:center;gap:8px}
+.sh-unit-title>input{flex:1 1 auto;min-width:0}
 .sh-unit-ctr{display:flex;gap:8px}
+.sh-unit-inertia{margin-top:8px}
 .sh-unit-details{margin:6px 0 4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:2px 8px}
 .sh-unit-details>summary{cursor:pointer;font-size:12px;color:var(--dim);padding:4px 0;user-select:none}
 .sh-unit-details[open]>summary{color:var(--text);margin-bottom:4px}

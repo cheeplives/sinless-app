@@ -566,6 +566,21 @@ function mergeDefaults(character) {
   // Re-file unit mods that legacy saves stored in `weapons` (see above). Uses
   // the merged bundle so homebrew mods are recognised too.
   migrateUnitAttachments(character, BUNDLE && BUNDLE.tables);
+
+  // The per-unit Damage counter was a free-form tally no code ever read, and the
+  // Physical Condition track superseded it. Carry a recorded Damage over into
+  // that track (same intent) rather than dropping it, then retire the field. The
+  // track clamps to effective Body when it renders, so an over-large legacy
+  // value settles itself. Inertia stays — it tracks momentum, not damage.
+  const units = ((character.play || {}).rigging || {}).units;
+  if (units && typeof units === "object" && !Array.isArray(units)) {
+    for (const st of Object.values(units)) {
+      if (!st || typeof st !== "object") continue;
+      const legacyDamage = toInt(asNumber(st.damage));
+      if (legacyDamage > 0 && !toInt(asNumber(st.physical))) st.physical = legacyDamage;
+      delete st.damage;
+    }
+  }
   return character;
 }
 

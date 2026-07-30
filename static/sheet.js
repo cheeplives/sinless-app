@@ -3527,9 +3527,11 @@ function unitAttachments(cfg, unit) {
 
 /* Close the gap in the position-keyed play-state maps after a unit at `removedAt`
    is spliced out of its list: slot n+1 becomes n for every later unit, and the
-   now-vacant last slot is dropped. Without this a sold vehicle's damage tracks,
-   link flag and open state would be inherited by whatever shifted into its
-   index. `newLength` is the list length AFTER the splice. */
+   now-vacant last slot is dropped. Without this a sold vehicle's damage tracks
+   and link flag would be inherited by whatever shifted into its index.
+   `newLength` is the list length AFTER the splice. `unit_open` is vestigial (the
+   attachment list no longer collapses) but is still shifted so older saves that
+   carry the key don't leave stale entries behind. */
 function shiftUnitStateDown(table, removedAt, newLength) {
   const rg = CHAR.play.rigging;
   for (const map of [rg.units, rg.linked, rg.unit_open]) {
@@ -3803,13 +3805,13 @@ function shRigging(body) {
     // weapons/mods (and everything on a drone) pay face value.
     const baseMult = cfg.table === "vehicles" ? RULES.surchargeFor("vehicle", base) : 1;
     const mult = 1;   // fitted weapons & mods — never surcharged
+    const unitReadonly = !!(activeTabObj() && activeTabObj().readonly);
     const card = el("div", { class: "card sh-card" }, el("h3", {}, cfg.title));
     list.forEach((u, i) => {
       const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === u.name) || {};
       const summary = (calcArr || [])[i] || {};
       const key = `${cfg.table}:${i}`;
-      const st = rg.units[key] = rg.units[key]
-        || { damage: 0, inertia: 0, physical: 0, integrity: 0 };
+      const st = rg.units[key] = rg.units[key] || { inertia: 0, physical: 0, integrity: 0 };
       u.weapons = u.weapons || []; u.mods = u.mods || [];
 
       // editable custom name
@@ -3928,23 +3930,34 @@ function shRigging(body) {
           } }),
         el("span", {}, isLinked ? "Linked to VCR" : "Link to VCR"));
 
-      // Weapons + mods + their pickers collapse into a <details> to keep the
-      // list scannable; open state persists per unit across re-renders.
-      rg.unit_open = rg.unit_open || {};
+      // Weapons + mods live in their own column (below), so they're always
+      // visible alongside the condition tracks instead of collapsed.
       const wCount = u.weapons.length, mCount = u.mods.length;
-      const details = el("details", { class: "sh-unit-details",
-        ...(rg.unit_open[key] ? { open: "1" } : {}),
-        ontoggle: e => { rg.unit_open[key] = e.target.open; schedulePlaySave(); } },
-        el("summary", {}, `Weapons & mods (${wCount} weapon${wCount === 1 ? "" : "s"}, ${mCount} mod${mCount === 1 ? "" : "s"})`),
+      const attachments = el("div", { class: "sh-unit-attach" },
+        el("div", { class: "sh-attach-head" },
+          `Weapons & mods (${wCount} weapon${wCount === 1 ? "" : "s"}, ${mCount} mod${mCount === 1 ? "" : "s"})`),
         weaponRows.length ? el("div", {}, ...weaponRows) : null,
         modRows.length ? el("div", { class: "sub" }, el("b", {}, "Mods:"), ...modRows) : null,
+        (!weaponRows.length && !modRows.length)
+          ? el("p", { class: "hint" }, "Nothing fitted yet.") : null,
         el("div", { class: "sh-unit-add" },
           el("div", { class: "sub" }, el("b", {}, "Add weapon"), addWeapon),
           el("div", { class: "sub" }, el("b", {}, "Add unit mod"), addMod)));
 
+      const removeBtn = el("button", { class: "row-del", title: "Sell / remove unit",
+        onclick: () => {
+          if (!confirm(`Remove ${u.label || u.name}?`)) return;
+          list.splice(i, 1);
+          // Per-unit play state is keyed by list position, so removing a unit
+          // has to shift every later unit's slot down — otherwise its damage
+          // tracks (and the linked flag) land on the wrong vehicle.
+          shiftUnitStateDown(cfg.table, i, list.length);
+          playChangedRecalc();
+        } }, "✕");
+
       card.append(el("div", { class: "sh-unit" },
-        el("div", {},
-          nameInput,
+        el("div", { class: "sh-unit-main" },
+          el("div", { class: "sh-unit-title" }, nameInput, removeBtn),
           el("div", { class: "sub" }, el("b", {}, u.name), " · ",
             (() => {
               const sm = unitAttachments(cfg, u).statMods;
@@ -3958,23 +3971,20 @@ function shRigging(body) {
             })()),
           r.Effect ? el("div", { class: "sub", style: "color:var(--manon)" }, r.Effect) : null,
           cfg.table === "vehicles" ? vehicleConditionSelect(u, () => playChangedRecalc()) : null,
-          // Physical Condition + Vehicle Integrity tracks (issue #22).
+          // Physical Condition + Vehicle Integrity tracks (issue #22), then
+          // Inertia sitting with them. Inertia is a free-form tally the engine
+          // never reads — it's a place to note momentum during a chase. The old
+          // Damage counter alongside it was retired: it duplicated the Physical
+          // Condition track but was uncapped and equally inert.
           unitConditionTracks(cfg, u, st, u.label || u.name),
-          details,
+          el("div", { class: "sh-unit-ctr sh-unit-inertia" },
+            unitReadonly
+              // Read-only shares report the value but can't edit it, matching
+              // the condition tracks above.
+              ? el("span", { class: "sub" }, `Inertia ${toInt(st.inertia)}`)
+              : miniCounter("Inertia", () => st.inertia, v => { st.inertia = v; })),
           activeRig ? linkToggle : null),
-        el("div", { class: "sh-unit-ctr" },
-          miniCounter("Damage", () => st.damage, v => { st.damage = v; }),
-          miniCounter("Inertia", () => st.inertia, v => { st.inertia = v; }),
-          el("button", { class: "row-del", title: "Sell / remove unit",
-            onclick: () => {
-              if (!confirm(`Remove ${u.label || u.name}?`)) return;
-              list.splice(i, 1);
-              // Per-unit play state is keyed by list position, so removing a
-              // unit has to shift every later unit's slot down — otherwise its
-              // damage tracks (and open/linked flags) land on the wrong vehicle.
-              shiftUnitStateDown(cfg.table, i, list.length);
-              playChangedRecalc();
-            } }, "✕"))));
+        attachments));
     });
     if (!list.length) card.append(el("p", { class: "hint" }, `No ${cfg.title.toLowerCase()} owned.`));
     body.append(card);

@@ -597,13 +597,20 @@ async function refresh() { await recalc(); renderPanel(); }
 /* ------------------------------------------------ generic list editor */
 /* Owned-items table + a way to add more: either a classic `options`
  * dropdown, or a `picker` element (e.g. categoryBrowser) rendered below. */
-function listEditor({ items, options, picker, label, onAdd, onRemove, render }) {
+function listEditor({ items, options, picker, label, onAdd, onRemove, render, sortBy }) {
   const wrap = el("div");
   const table = el("table");
   wrap.append(table);
   const rebuild = () => {
     table.innerHTML = "";
-    items.forEach((it, i) => table.append(render(it, i, () => { onRemove(i); refresh(); })));
+    // `sortBy` only changes the order rows are DISPLAYED in. Pair each entry
+    // with its original index and hand that to render(), so removal still hits
+    // the right element and the character's own ordering is left alone.
+    const order = items.map((it, i) => [it, i]);
+    if (sortBy) order.sort((a, b) => sortBy(a[0], b[0]));
+    for (const [it, i] of order) {
+      table.append(render(it, i, () => { onRemove(i); refresh(); }));
+    }
   };
   rebuild();
   if (picker) {
@@ -1513,9 +1520,16 @@ function tabAugments(p) {
     .reduce((sum, a) => sum + (a.count || 1), 0);
   const slottedSkillsoftCount = CHAR.augments
     .filter(a => a.name.startsWith("Skillsoft") && a.slotted !== false).length;
+  // One switch for the whole tab: it orders both the installed list below and
+  // the picker at the bottom, since "find it by name" applies to removing an
+  // augment as much as adding one. Above the list so it reads as a heading for
+  // everything it affects.
+  p.append(sortToggle("augments"));
   p.append(listEditor({
     items: CHAR.augments,
-    picker: categoryBrowser({ id: "augments", groups: augGroups,
+    sortBy: sortedAZ("augments")
+      ? (a, b) => String(a.name).localeCompare(String(b.name)) : null,
+    picker: categoryBrowser({ id: "augments", groups: augGroups, sortable: true,
       onAdd: n => CHAR.augments.push({ name: n, count: 1 }) }),
     onRemove: i => CHAR.augments.splice(i, 1),
     render: (it, i, del) => {
@@ -1706,11 +1720,46 @@ function fittedCategoryEditor({ id, items, groups, onAdd, onRemove, effectOf, cl
  * groups: [{label, items: [{name, sub, cost}]}]; open state persists across
  * re-renders per browser id. */
 const browserOpenState = {};
-function categoryBrowser({ id, groups, onAdd, rerender, afterAdd }) {
+
+/* A-Z vs by-category ordering, per browser id. Module-level for the same reason
+ * as browserOpenState: flipping it re-renders the panel, so it can't live in
+ * the DOM. Opt-in -- a browser only offers it when passed `sortable`. */
+const browserSortState = {};
+const sortedAZ = id => browserSortState[id] === "az";
+const AZ_GROUP_LABEL = "All · A–Z";
+
+/* The Category/A-Z switch. Render it wherever it makes sense for the tab (it
+ * drives every component reading the same `id`), and pass the redraw the
+ * caller uses. */
+function sortToggle(id, redraw = renderPanel) {
+  const az = sortedAZ(id);
+  const btn = (mode, text) => el("button", {
+    class: "cat-sort-btn" + ((mode === "az") === az ? " active" : ""),
+    onclick: () => { browserSortState[id] = mode; redraw(); },
+  }, text);
+  return el("div", { class: "cat-sort" },
+    el("span", { class: "sub" }, "Sort"), btn("cat", "Category"), btn("az", "A–Z"));
+}
+
+function categoryBrowser({ id, groups, onAdd, rerender, afterAdd, sortable }) {
   const redraw = rerender || renderPanel;      // toggling open/closed
   const postAdd = afterAdd || refresh;         // after an item is added
   const state = (browserOpenState[id] ??= {});
   const wrap = el("div", { class: "cat-browser" });
+  // A-Z collapses every category into one alphabetical list, for when you know
+  // an item's name but not which category it sits under. The category it came
+  // from moves into the row's sub-line so nothing is lost, and the list opens
+  // by default -- having to expand a group you can't see past would defeat it.
+  if (sortable && sortedAZ(id)) {
+    state[AZ_GROUP_LABEL] ??= true;
+    groups = [{
+      label: AZ_GROUP_LABEL,
+      items: groups
+        .flatMap(g => g.items.map(it =>
+          ({ ...it, sub: [g.label, it.sub].filter(Boolean).join(" · ") })))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    }];
+  }
   for (const g of groups) {
     // Items flagged `hidden` (e.g. an owned augment or a lesser rank) drop out.
     const visible = g.items.filter(it => !it.hidden);

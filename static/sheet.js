@@ -1153,6 +1153,9 @@ function shOverview(body) {
     (CALC.infusion_mods && CALC.infusion_mods.applied.length)
       ? statLine("Infusions applied",
           CALC.infusion_mods.applied.map(a => `${a.text} (${a.source})`).join(" · ")) : null,
+    // Standing cover from martial arts and/or infusions — best tier wins. No
+    // cover stat in the engine, so it's reported here and played at the table.
+    c.cover ? statLine("Cover", c.cover.label, c.cover.sources.join(" · ")) : null,
     statLine("Simple actions", String(c.simple_actions)),
     ...exploitLines(c.exploit_actions),
     c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
@@ -3203,7 +3206,12 @@ function shMagic(body) {
           else delete play.infusion_spirits[slot];
           playChanged();
         } }, el("option", { value: "" }, "— empty —"),
-          ...s.relationships.map(n => el("option", { value: n }, n)));
+          // A spirit can only be invoked once, so one already placed in another
+          // slot isn't offered here (the engine dedupes too, as a safety net).
+          ...s.relationships
+            .filter(n => n === placed
+              || !Object.entries(play.infusion_spirits).some(([k, v]) => k !== slot && v === n))
+            .map(n => el("option", { value: n }, n)));
         sel.value = placed;
         const benefit = placed ? (spiritRow(placed)[col] || "no listed benefit") : "";
         // Say whether this placement moved a number or has to be played out at
@@ -3570,6 +3578,26 @@ function unitAttachments(cfg, unit) {
     if ((m = eff.match(/([+-]?\d+)\s*(?:Base )?Hardening/i))) statMods.hardening += toInt(m[1]);
     tallyBody(eff);
   }
+  // A Speaker's Drone-slot infusion buffs EVERY owned drone, so it folds in here
+  // rather than at each call site — that way the Rigging card, the Gear table and
+  // the condition tracks (which size themselves from effective Body) all agree.
+  // Vehicles are untouched: the column is "Drone".
+  const di = (CALC.infusion_mods || {}).drones;
+  if (di && cfg.table === "drones") {
+    statMods.ballistic += di.ballistic;
+    statMods.impact += di.impact;
+    statMods.hardening += di.hardening;
+    statMods.body += di.body;
+    statMods.infusion_move = di.move;
+    if (di.ballistic || di.impact || di.hardening || di.body || di.move) {
+      items.push({ name: "Spirit infusion", kind: "mod", stats: "",
+        effect: [di.ballistic || di.impact ? `+${di.ballistic}B/+${di.impact}I armor` : "",
+                 di.hardening ? `+${di.hardening} Hardening` : "",
+                 di.body ? `+${di.body} Body` : "",
+                 di.move ? `+${di.move}m Movement` : ""].filter(Boolean).join(", "),
+        mods: [] });
+    }
+  }
   return { items, statMods };
 }
 
@@ -3725,7 +3753,9 @@ function unitLoadoutTable(entries) {
     const ball = toInt(r.Ballistic) + statMods.ballistic;
     const imp = toInt(r.Impact) + statMods.impact;
     const body = Math.max(0, toInt(r.Body) + statMods.body);
-    const stats = `Move ${r.Move} · Handling ${r.Handling} · Body ${body}`
+    const stats = `Move ${r.Move}`
+      + (statMods.infusion_move ? ` +${statMods.infusion_move}m (infusion)` : "")
+      + ` · Handling ${r.Handling} · Body ${body}`
       + (statMods.body ? ` (base ${r.Body})` : "")
       + ((ball || imp) ? ` · ${ball}B/${imp}I` : "")
       + (statMods.hardening ? ` · Hardening ${statMods.hardening}` : "")
@@ -4014,7 +4044,9 @@ function shRigging(body) {
               const sm = unitAttachments(cfg, u).statMods;
               const ball = toInt(r.Ballistic) + sm.ballistic, imp = toInt(r.Impact) + sm.impact;
               const eBody = Math.max(0, toInt(r.Body) + sm.body);
-              return `Move ${r.Move} · Handling ${r.Handling} · Body ${eBody}`
+              return `Move ${r.Move}`
+                + (sm.infusion_move ? ` +${sm.infusion_move}m (infusion)` : "")
+                + ` · Handling ${r.Handling} · Body ${eBody}`
                 + (sm.body ? ` (base ${r.Body})` : "")
                 + ((ball || imp) ? ` · Armor ${ball}B/${imp}I` : "")
                 + (sm.hardening ? ` · Hardening ${sm.hardening}` : "")

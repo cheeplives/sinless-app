@@ -2412,9 +2412,17 @@ function derivePoolNotes(heritage, augments, amp, martialArt) {
  */
 function martialArtStatMods(levels) {
   const mods = { dodge_bonus: 0, soak_bonus: 0, move_bonus: 0,
-    recoil_ignored: false, unarmed_damage: "", spurs_str_bonus: null, applied: [] };
+    recoil_ignored: false, unarmed_damage: "", spurs_str_bonus: null,
+    cover: [],   // [{ rank, label, source }] — Gun-Kata L1 Low, L5 High
+    applied: [] };
   for (const lvl of levels) {
     const eff = lvl.Effect || "";
+    // Standing cover granted by a level (merged with infusion cover, best wins).
+    const coverGrant = parseCoverGrant(eff);
+    if (coverGrant) {
+      mods.cover.push({ ...coverGrant,
+        source: `${lvl.Style || "Martial art"} L${lvl.Level}` });
+    }
     let m = eff.match(/([+-]?\d+)\s*d\b[^.]*?\bdodge\b/i);
     if (m && !/\b(vs|if)\b/i.test(eff)) mods.dodge_bonus = Math.max(mods.dodge_bonus, toInt(m[1]));
     m = eff.match(/([+-]?\d+)\s*d\b[^.]*?\bsoak\b/i);
@@ -2483,6 +2491,41 @@ function aggregateMartialArts(list) {
  */
 const INFUSION_SLOT_COLUMNS = ["Firearm", "Protection", "Drone", "Digital", "Physical"];
 
+/* Standing cover, granted by Gun-Kata levels ("Always Low Cover (-1d)", "Always
+ * High Cover (-2d)") and by full-cover infusions. There's no cover stat in the
+ * engine, so this is reported for the table to adjudicate. Cover is a STATE, not
+ * a stack: escalating grants replace each other and the best one wins, matching
+ * how martial-art dodge/soak tiers already behave.
+ * The scale is Low −1d, High −2d, Full −4d to attackers. */
+const COVER_TIERS = { low: 1, high: 2, full: 3 };
+const COVER_DICE = { 1: 1, 2: 2, 3: 4 };   // dice penalty imposed on attackers
+const COVER_LABELS = { 1: "Low cover (−1d)", 2: "High cover (−2d)",
+                       3: "Full cover (−4d)" };
+
+// Return { rank, label } for the best cover named in `text`, or null.
+function parseCoverGrant(text) {
+  const m = String(text || "").match(/\b(low|high|full)\s+cover\b/i);
+  if (!m) return null;
+  const rank = COVER_TIERS[m[1].toLowerCase()];
+  return { rank, label: COVER_LABELS[rank] };
+}
+
+/* Fold every cover grant into one best-wins result:
+ *   { rank, label, sources: [name] }  — or null when nothing grants cover.
+ * Only grants AT the winning tier are credited: at Gun-Kata L5 the answer is
+ * "High cover (L5)", not "High cover (L1, L5)" — L1's Low cover is superseded,
+ * not contributing. */
+function bestCover(grants) {
+  const valid = grants.filter(g => g && g.rank);
+  if (!valid.length) return null;
+  const rank = Math.max(...valid.map(g => g.rank));
+  const sources = [];
+  for (const g of valid) {
+    if (g.rank === rank && !sources.includes(g.source)) sources.push(g.source);
+  }
+  return { rank, label: COVER_LABELS[rank], dice: COVER_DICE[rank], sources };
+}
+
 // "Firearms 2" -> "Firearm"; "Protection 2" -> "Protection"; else the slot name.
 function infusionSlotColumn(slot) {
   const base = String(slot || "").replace(/\s*\d+$/, "").trim();
@@ -2494,6 +2537,9 @@ function infusionStatMods(entries) {
     pools: { Brawn: 0, Finesse: 0, Focus: 0, Resolve: 0 },
     attributes: {},  // attribute name -> temporary delta
     ballistic: 0, impact: 0, move: 0,
+    // Drone-column bonuses apply to EVERY drone the character owns.
+    drones: { ballistic: 0, impact: 0, hardening: 0, move: 0, body: 0 },
+    cover: [],       // [{ rank, label, source }] — merged with martial-art cover
     applied: [],     // [{ text, source }] — what was folded into the numbers
     unapplied: [],   // [{ text, source }] — situational prose, shown as-is
   };
@@ -2509,6 +2555,52 @@ function infusionStatMods(entries) {
       if (!c) continue;
       let hit = false;
       let m;
+      // Drone column: bonuses to every owned drone. Handled first and exclusively
+      // — "All Drones gain +5m Movement" must not also register as the
+      // character's own movement.
+      if (e.column === "Drone") {
+        if ((m = c.match(/\+(\d+)\s*(?:to\s*)?B\s*\/\s*I\s*armor/i))) {
+          mods.drones.ballistic += toInt(m[1]); mods.drones.impact += toInt(m[1]);
+          mods.applied.push({ text: `Drones +${toInt(m[1])} B/I armor`, source: e.spirit });
+          hit = true;
+        } else if ((m = c.match(/\+(\d+)\s*(?:to\s*)?B\b(?!\s*\/)[^.]*?armor/i))) {
+          mods.drones.ballistic += toInt(m[1]);
+          mods.applied.push({ text: `Drones +${toInt(m[1])} Ballistic armor`, source: e.spirit });
+          hit = true;
+        } else if ((m = c.match(/\+(\d+)\s*(?:to\s*)?I\b(?!\s*\/)[^.]*?armor/i))) {
+          mods.drones.impact += toInt(m[1]);
+          mods.applied.push({ text: `Drones +${toInt(m[1])} Impact armor`, source: e.spirit });
+          hit = true;
+        }
+        if ((m = c.match(/\+(\d+)\s*Hardening/i))) {
+          mods.drones.hardening += toInt(m[1]);
+          mods.applied.push({ text: `Drones +${toInt(m[1])} Hardening`, source: e.spirit });
+          hit = true;
+        }
+        if ((m = c.match(/\+(\d+)\s*m\b[^.]*?mov/i))) {
+          mods.drones.move += toInt(m[1]);
+          mods.applied.push({ text: `Drones +${toInt(m[1])}m Movement`, source: e.spirit });
+          hit = true;
+        }
+        // "Drones gain +3 Health" — Body is the only health-like quantity a
+        // drone has, and it sizes both condition tracks.
+        if ((m = c.match(/\+(\d+)\s*Health/i))) {
+          mods.drones.body += toInt(m[1]);
+          mods.applied.push({ text: `Drones +${toInt(m[1])} Body (condition tracks)`,
+                              source: e.spirit });
+          hit = true;
+        }
+        if (!hit) mods.unapplied.push({ text: c, source: e.spirit, slot: e.slot });
+        continue;
+      }
+      // Cover grants merge with the martial-art ones (best tier wins). The
+      // clause keeps flowing through the checks below, so "Full cover and +1B
+      // Armor" contributes both.
+      const cover = parseCoverGrant(c);
+      if (cover) {
+        mods.cover.push({ ...cover, source: e.spirit });
+        hit = true;
+      }
       // Pools: "+4 Brawn Pool" | "+1 Finesse Pool" | "Finesse +2" | "+2 Brawn"
       for (const pool of POOL_NAMES) {
         const re = new RegExp(
@@ -2564,17 +2656,22 @@ function resolveInfusions(character, data) {
   const placed = ((character.play || {}).infusion_spirits) || {};
   const owned = new Set((character.speaker || {}).infusions || []);
   const entries = [];
-  for (const [slot, spirit] of Object.entries(placed)) {
+  // A spirit can only be invoked once, so it can never occupy two slots — the
+  // picker enforces it, and this is the safety net that stops a stale save from
+  // double-counting a bonus. Different spirits DO stack.
+  const invoked = new Set();
+  for (const [slot, spirit] of Object.entries(placed).sort((a, b) => a[0].localeCompare(b[0]))) {
     // Ignore a placement whose slot the character no longer owns.
     if (!spirit || (owned.size && !owned.has(slot))) continue;
+    if (invoked.has(spirit)) continue;
     const row = findRow(data.speaker_spirits, "Spirit", spirit);
     if (!row) continue;
     const column = infusionSlotColumn(slot);
     if (!INFUSION_SLOT_COLUMNS.includes(column)) continue;
+    invoked.add(spirit);
     entries.push({ slot, spirit, column, element: row.Element || "",
                    effect: row[column] || "" });
   }
-  entries.sort((a, b) => a.slot.localeCompare(b.slot));
   return { list: entries, mods: infusionStatMods(entries) };
 }
 
@@ -2866,6 +2963,12 @@ function calculate(character) {
     if (k !== "physical" && k !== "stun") combatOut[k] = v;
   }
   combatOut.exploit_actions = deriveExploitActions(character, data, magicType, augments, amp);
+  // Standing cover from martial-art levels AND full-cover infusions, merged into
+  // a single best-wins value. Cover is a state rather than a stack, so Gun-Kata
+  // L5's High cover is superseded by a full-cover infusion rather than adding to
+  // it. Reported on the Combat card; there's no cover stat to apply it to.
+  combatOut.cover = bestCover([...(martialArt.mods.cover || []),
+                               ...(infusions.mods.cover || [])]);
 
   // Apply the martial art's stat modifiers (gated by Martial Arts rank via the
   // cumulative levels resolved above) on top of heritage/augment bonuses.

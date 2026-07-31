@@ -333,6 +333,10 @@ h2 .chip{margin-left:10px}
 .chip.ok{color:var(--ok)}
 
 table{border-collapse:collapse;width:100%;font-size:13px}
+/* Wide tables scroll inside their own box rather than pushing the page sideways
+   (wrapped by wrapScrollableTables in sheet.js). min-width:0 so the wrapper can
+   actually shrink inside a flex/grid parent instead of being sized by content. */
+.sh-tablewrap{overflow-x:auto;max-width:100%;min-width:0}
 th{font-family:var(--disp);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
   text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
 td{padding:5px 8px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
@@ -992,7 +996,9 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   #app{grid-template-columns:1fr}
   #main{order:-1;padding:0 14px 60px}
   #rail{position:static;height:auto;border-right:none;border-top:1px solid var(--line);padding:16px}
-  .sh-skillgrid{grid-template-columns:1fr}   /* pool cards stack, not cram */
+  /* single column: at 900px these drop to two, but two cards at ~250px min
+     don't fit a phone and pushed the whole sheet sideways (Gear, Kismet). */
+  .sh-two,.sh-pools,.sh-skillgrid{grid-template-columns:1fr}
 }
 /* Touch devices: lift the smallest labels and give controls real tap areas.
  * Desktop pointers are unaffected. */

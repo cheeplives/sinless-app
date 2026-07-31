@@ -352,6 +352,21 @@ function readonlyBanner() {
       el("button", { class: "btn small ghost", onclick: () => closeTab(WORKSPACE.active) }, "Close")));
 }
 
+/* Reference tables (spirit benefits, rituals, the action reference) are wider
+ * than a phone viewport and used to push the whole page sideways, so the sheet
+ * scrolled horizontally instead of the table. Give each its own scroll box.
+ * Done centrally rather than at the ~20 el("table") call sites; the wrapper is
+ * inert when the table already fits, and no CSS selector depends on a table's
+ * parent. */
+function wrapScrollableTables(root) {
+  for (const t of root.querySelectorAll("table")) {
+    if (t.parentElement && t.parentElement.classList.contains("sh-tablewrap")) continue;
+    const wrap = el("div", { class: "sh-tablewrap" });
+    t.replaceWith(wrap);
+    wrap.append(t);
+  }
+}
+
 function renderSheet() {
   const root = $("#sheet");
   root.innerHTML = "";
@@ -365,6 +380,7 @@ function renderSheet() {
   ({ overview: shOverview, skills: shSkills, kismet: shKismet, gear: shGear,
      augments: shAugments, magic: shMagic, decking: shDecking,
      rigging: shRigging, actions: shActions, notes: shNotes })[sheetTab](body);
+  wrapScrollableTables(body);
   root.append(body);
   root.append(rollerOverlay());
   root.append(scrollTopFab());

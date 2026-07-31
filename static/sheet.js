@@ -1148,6 +1148,11 @@ function shOverview(body) {
       c.recoil_ignored ? `${c.recoil_capacity} · recoil ignored` : String(c.recoil_capacity)),
     c.martial_notes && c.martial_notes.length
       ? statLine("Martial art", c.martial_notes.join(" · ")) : null,
+    // Active infusions: what was folded into the numbers above, so the Move /
+    // Armor / pool figures don't look unexplained.
+    (CALC.infusion_mods && CALC.infusion_mods.applied.length)
+      ? statLine("Infusions applied",
+          CALC.infusion_mods.applied.map(a => `${a.text} (${a.source})`).join(" · ")) : null,
     statLine("Simple actions", String(c.simple_actions)),
     ...exploitLines(c.exploit_actions),
     c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
@@ -1173,10 +1178,29 @@ function shOverview(body) {
         ]))
     : null;
 
+  // --- active infusions: every placed spirit, marked by whether its effect was
+  // folded into the derived stats or has to be applied situationally at the table.
+  // An effect can be both (Moryana: "+2 Brawn Pool, +2 I armor" is fully in
+  // stats; Terra Factorem's "+1 to I armor, +2d to melee attacks" is partly).
+  const infusionList = CALC.infusions || [];
+  const infCard = infusionList.length
+    ? el("div", { class: "card sh-card" },
+        el("h3", {}, "Speaker Infusions"),
+        ...infusionList.map(inf => el("div", { class: "stat-line" },
+          el("span", { class: "sub", style: "white-space:nowrap" },
+            `${inf.slot} · ${inf.spirit}`),
+          el("span", { style: "text-align:right" }, inf.effect || "—",
+            el("span", { class: "sh-tag", style: "margin-left:6px" },
+              infusionAppliedLabel(inf.spirit))))),
+        el("p", { class: "hint" },
+          "“In stats” effects are already counted in the numbers above. "
+          + "“Situational” ones apply at the table — they can't be folded into a single figure."))
+    : null;
+
   // Flat card list in a balanced multi-column flow (see .sh-ov-grid): columns
   // fill to equal height and reflow 3→2→1 by width, so no column is overloaded.
   body.append(el("div", { class: "sh-ov-grid" },
-    ...[poolCard, cond, maCard, initCard, dodgeCard, combatCard].filter(Boolean)));
+    ...[poolCard, cond, maCard, infCard, initCard, dodgeCard, combatCard].filter(Boolean)));
 
   // Heritage / uplift special abilities (e.g. a Bat's Echolocation) — surfaced
   // here on the Overview, not just buried on the Notes tab.
@@ -2120,6 +2144,17 @@ function weaponUpgradeSlots(w, r, mult) {
    in place and moves NO cash — spending a use isn't a sale, and buying more
    goes through the Buy section, which charges per use. Floors at 0 so a spent
    stack can sit at zero rather than being forced to 1 like other gear. */
+/* How much of a placed spirit's effect actually moved a number: all of it, none
+   of it, or some. Shared by the Overview infusion card and the Magic tab so the
+   two can't disagree. */
+function infusionAppliedLabel(spirit) {
+  const mods = CALC.infusion_mods || { applied: [], unapplied: [] };
+  const applied = (mods.applied || []).some(a => a.source === spirit);
+  const pending = (mods.unapplied || []).some(a => a.source === spirit);
+  if (applied && pending) return "partly in stats";
+  return applied ? "in stats" : "situational";
+}
+
 function shUsesStepper(entry, onChange) {
   const val = el("span", { class: "sv" }, String(entry.qty || 0));
   const btn = (delta, label, title) => el("button", { class: "btn small", title,
@@ -3171,11 +3206,19 @@ function shMagic(body) {
           ...s.relationships.map(n => el("option", { value: n }, n)));
         sel.value = placed;
         const benefit = placed ? (spiritRow(placed)[col] || "no listed benefit") : "";
+        // Say whether this placement moved a number or has to be played out at
+        // the table, so "active" isn't mistaken for "already in my stats".
         card.append(el("div", { class: "sh-advrow" + (placed ? " active-row" : "") },
           el("span", {}, el("b", {}, slot),
             placed ? el("span", { class: "chip ok", style: "margin-left:6px" }, "active") : null,
+            placed ? el("span", { class: "sh-tag", style: "margin-left:6px" },
+              infusionAppliedLabel(placed)) : null,
             benefit ? el("div", { class: "sub", style: "color:var(--ok)" }, benefit) : null),
           sel));
+      }
+      if (CALC.infusion_mods && CALC.infusion_mods.applied.length) {
+        card.append(el("p", { class: "hint" }, "Folded into your stats: "
+          + CALC.infusion_mods.applied.map(a => `${a.text} (${a.source})`).join(" · ")));
       }
       // quick reference: every spirit's benefit for each infusion type
       const ref = el("details", { style: "margin-top:8px" }, el("summary", { class: "sub" }, "All spirit infusion benefits"));

@@ -2456,6 +2456,105 @@ function aggregateMartialArts(list) {
     rank: maxOf(list.map(a => a.rank), 0), mods: martialArtStatMods(levels) };
 }
 
+/* ---------------------------------------------------------------- infusions
+ * A Speaker places a spirit into an infusion slot during play
+ * (play.infusion_spirits: slot -> spirit name). The slot picks which column of
+ * speaker_spirits applies: "Firearms 2" -> Firearm, "Protection" -> Protection,
+ * and so on.
+ *
+ * Placement IS the active state -- unlike Adrenal Pump ("while active"), a
+ * placed infusion is simply on -- so the flat numeric bonuses below are applied
+ * to the derived stats, not just noted.
+ *
+ * Only unambiguous, flat patterns are parsed. The effect column is free-form
+ * prose and much of it is situational ("Melee attackers take 1d6 stun dmg",
+ * "Complex action to heal"), so anything not matched here is deliberately left
+ * unparsed and surfaced as text instead -- silently applying a mis-read bonus
+ * would be worse than not applying it. `unapplied` carries those so the UI can
+ * show them and nothing is lost.
+ */
+const INFUSION_SLOT_COLUMNS = ["Firearm", "Protection", "Drone", "Digital", "Physical"];
+
+// "Firearms 2" -> "Firearm"; "Protection 2" -> "Protection"; else the slot name.
+function infusionSlotColumn(slot) {
+  const base = String(slot || "").replace(/\s*\d+$/, "").trim();
+  return base === "Firearms" ? "Firearm" : base;
+}
+
+function infusionStatMods(entries) {
+  const mods = {
+    pools: { Brawn: 0, Finesse: 0, Focus: 0, Resolve: 0 },
+    ballistic: 0, impact: 0, move: 0,
+    applied: [],     // [{ text, source }] — what was folded into the numbers
+    unapplied: [],   // [{ text, source }] — situational prose, shown as-is
+  };
+  for (const e of entries) {
+    const eff = String(e.effect || "").trim();
+    if (!eff) continue;
+    // Split on commas so "+2 Brawn Pool, +2 I armor" contributes both halves —
+    // and so a clause that ISN'T numeric ("+1 to I armor, +2d to melee attacks")
+    // still reaches `unapplied` instead of being swallowed by its sibling.
+    for (const clause of eff.split(",")) {
+      const c = clause.trim();
+      if (!c) continue;
+      let hit = false;
+      let m;
+      // Pools: "+4 Brawn Pool" | "+1 Finesse Pool" | "Finesse +2" | "+2 Brawn"
+      for (const pool of POOL_NAMES) {
+        const re = new RegExp(
+          `(?:\\+(\\d+)\\s*${pool}(?:\\s*Pool)?\\b|\\b${pool}\\s*\\+(\\d+))`, "i");
+        if ((m = c.match(re))) {
+          mods.pools[pool] += toInt(m[1] || m[2]);
+          mods.applied.push({ text: `+${toInt(m[1] || m[2])} ${pool} Pool`, source: e.spirit });
+          hit = true;
+        }
+      }
+      // Armor: "+2 to B/I armor" | "+1B Armor" | "+2 B Armor" | "+1 to I armor"
+      if ((m = c.match(/\+(\d+)\s*(?:to\s*)?B\s*\/\s*I\s*armor/i))) {
+        mods.ballistic += toInt(m[1]); mods.impact += toInt(m[1]);
+        mods.applied.push({ text: `+${toInt(m[1])} Ballistic & Impact armor`, source: e.spirit });
+        hit = true;
+      } else if ((m = c.match(/\+(\d+)\s*(?:to\s*)?B\b(?!\s*\/)[^.]*?armor/i))) {
+        mods.ballistic += toInt(m[1]);
+        mods.applied.push({ text: `+${toInt(m[1])} Ballistic armor`, source: e.spirit });
+        hit = true;
+      } else if ((m = c.match(/\+(\d+)\s*(?:to\s*)?I\b(?!\s*\/)[^.]*?armor/i))) {
+        mods.impact += toInt(m[1]);
+        mods.applied.push({ text: `+${toInt(m[1])} Impact armor`, source: e.spirit });
+        hit = true;
+      }
+      // Movement: "+5m Movement"
+      if ((m = c.match(/\+(\d+)\s*m\b[^.]*?mov/i))) {
+        mods.move += toInt(m[1]);
+        mods.applied.push({ text: `+${toInt(m[1])}m Movement`, source: e.spirit });
+        hit = true;
+      }
+      if (!hit) mods.unapplied.push({ text: c, source: e.spirit, slot: e.slot });
+    }
+  }
+  return mods;
+}
+
+/* Resolve the spirits currently placed in infusion slots into a display list
+ * plus the stat mods above. Returns an empty result outside play. */
+function resolveInfusions(character, data) {
+  const placed = ((character.play || {}).infusion_spirits) || {};
+  const owned = new Set((character.speaker || {}).infusions || []);
+  const entries = [];
+  for (const [slot, spirit] of Object.entries(placed)) {
+    // Ignore a placement whose slot the character no longer owns.
+    if (!spirit || (owned.size && !owned.has(slot))) continue;
+    const row = findRow(data.speaker_spirits, "Spirit", spirit);
+    if (!row) continue;
+    const column = infusionSlotColumn(slot);
+    if (!INFUSION_SLOT_COLUMNS.includes(column)) continue;
+    entries.push({ slot, spirit, column, element: row.Element || "",
+                   effect: row[column] || "" });
+  }
+  entries.sort((a, b) => a.slot.localeCompare(b.slot));
+  return { list: entries, mods: infusionStatMods(entries) };
+}
+
 // ============================================================== play mode (post-finalize)
 function deepCopy(value) {
   return (typeof structuredClone === "function")
@@ -2551,6 +2650,13 @@ function calculate(character) {
     for (const [pool, n] of Object.entries(character.play.pool_kismet)) {
       if (pool in pools) pools[pool] += toInt(asNumber(n));
     }
+  }
+  // Spirits placed in infusion slots (play only). Flat pool bonuses land here;
+  // armor and movement are folded into combat below.
+  const infusions = finalized ? resolveInfusions(character, data)
+                              : { list: [], mods: infusionStatMods([]) };
+  for (const [pool, n] of Object.entries(infusions.mods.pools)) {
+    if (n && pool in pools) pools[pool] += n;
   }
 
   const skillScoring = scoreSkills(character, heritage, amp, augments, warnings, errors);
@@ -2698,11 +2804,32 @@ function calculate(character) {
     armor.ballistic_armor, armor.impact_armor,
     armor.ballistic_armor_max);
 
+  // Fold infusion armor / movement into the derived combat stats, and name the
+  // spirit in armor_sources so the Overview shows where it came from.
+  if (infusions.mods.ballistic || infusions.mods.impact) {
+    combat.ballistic_armor += infusions.mods.ballistic;
+    combat.impact_armor += infusions.mods.impact;
+    for (const e of infusions.list) {
+      const own = infusionStatMods([e]);
+      if (own.ballistic || own.impact) {
+        combat.armor_sources.push({ name: `${e.spirit} (${e.slot} infusion)`,
+                                    b: own.ballistic, i: own.impact });
+      }
+    }
+  }
+  if (infusions.mods.move) combat.move += infusions.mods.move;
+
   const martialArtsList = resolveMartialArts(character, data);
   const martialArt = aggregateMartialArts(martialArtsList);   // combined, for combat consumers
   const initiative = deriveInitiative(pools, finalAttributes, heritage, augments, amp,
                                       martialArt, data);
   const poolNotes = derivePoolNotes(heritage, augments, amp, martialArt);
+  // Name the spirit behind each pool bonus that was folded in above, so the
+  // number and its reason sit together.
+  for (const a of infusions.mods.applied) {
+    const m = a.text.match(/^\+(\d+)\s+(\w+)\s+Pool$/);
+    if (m && poolNotes[m[2]]) poolNotes[m[2]].push(`+${m[1]} (${a.source} infusion)`);
+  }
 
   const combatOut = {};
   for (const [k, v] of Object.entries(combat)) {
@@ -2818,6 +2945,10 @@ function calculate(character) {
     combat: combatOut,
     initiative,
     pool_notes: poolNotes,
+    // Spirits currently placed in infusion slots: the resolved list plus which
+    // of their effects were folded into the numbers and which stay situational.
+    infusions: infusions.list,
+    infusion_mods: infusions.mods,
     weapons: weapons.items,
     armor: armor.items,
     drones: vehicles.drones,

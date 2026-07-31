@@ -137,7 +137,6 @@ const CHELONIAN_IMPACT_ARMOR = 3;
 // --- combat derived stats ------------------------------------------------------
 const GHOST_RATING_DICE = "2d6";
 const CONDITION_TRACK_BASE = 6;
-const REPLICANT_CONDITION_BONUS = 6;
 const REPLICANT_BONUS_ATTRIBUTE_POINTS = 6;
 const REPLICANT_BONUS_SKILL_POINTS = 6;
 const BASE_MOVE_METERS = 6;
@@ -2283,13 +2282,13 @@ function deriveExploitActions(character, data, magicType, augments, amp) {
 function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeight,
                            armorWeight, gearWeight, cyberwareZoeticRating,
                            armorBallistic, armorImpact, armorBallisticMax) {
-  const isReplicant = heritage.type === "Replicant";
-  const conditionBonus = isReplicant ? REPLICANT_CONDITION_BONUS : 0;
-  // 1/2 attribute rounds down but never below 1, then +6 base track.
+  // 1/2 attribute rounds down but never below 1, then +6 base track. This is
+  // the same for every heritage -- Replicants used to get a further +6 here,
+  // which no rule backs (issue #23).
   const physicalCondition = (CONDITION_TRACK_BASE
-                             + Math.max(1, Math.floor(finalAttributes.Body / 2)) + conditionBonus);
+                             + Math.max(1, Math.floor(finalAttributes.Body / 2)));
   const stunCondition = (CONDITION_TRACK_BASE
-                         + Math.max(1, Math.floor(finalAttributes.Willpower / 2)) + conditionBonus);
+                         + Math.max(1, Math.floor(finalAttributes.Willpower / 2)));
 
   const hasChelonian = amp.powers_taken.has("Aspect of the Chelonian");
   // Perfect Situational Awareness grants +3d on dodge AND soak — fold it into

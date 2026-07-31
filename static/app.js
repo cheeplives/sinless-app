@@ -447,10 +447,26 @@ function chipValue(key) {
     case "inf": return { text: `${m.infusion_pts.remaining} / ${m.infusion_pts.budget} left`, cls: m.infusion_pts.remaining < 0 ? "neg" : "" };
     case "rel": return { text: `${m.relationship_pts.remaining} / ${m.relationship_pts.budget} left`, cls: m.relationship_pts.remaining < 0 ? "neg" : "" };
     case "cash": return { text: `${fmt(CALC.budget.remaining)} left`, cls: CALC.budget.remaining < 0 ? "neg" : "" };
+    // Bare numbers for the floating tracker, which carries its own label.
+    // "ok" once every point is spent, so landing exactly on budget reads as done.
+    case "skill-left": {
+      const r = CALC.skill_points.remaining;
+      return { text: `${r} / ${CALC.skill_points.budget}`, cls: r < 0 ? "neg" : r === 0 ? "ok" : "" };
+    }
   }
   return null;
 }
 const chip = (key, magic) => el("span", Object.assign({ class: "chip", "data-chip": key }, magic ? { "data-magic": "1" } : {}), "\u2026");
+
+/* Skill points remaining, pinned to the viewport while the Stats & Skills tab
+ * is open. The skill list runs well past a screen, so the rail's budget row
+ * scrolls out of reach exactly when you're spending. Built on the same
+ * [data-chip] hook as the inline chips, so renderBudgetChips() keeps it current
+ * after every stepper click without a re-render. */
+function skillPointsTracker() {
+  return el("div", { class: "sp-fab", title: "Skill points remaining" },
+    el("span", { class: "k" }, "Skill pts"), chip("skill-left"));
+}
 
 /* ZR house rule: each full point of gear/weapon ZR is \u22121d on spellcasting rolls
  * (Channeling, Conjuring, Sorcery). Renders the current penalty as a note for
@@ -483,6 +499,15 @@ const TABS = [
   ["drones", "Drones & Vehicles"],
   ["gear", "Gear & Costs"],
 ];
+/* The chargen tab strip is sticky and wraps to two or three rows as the window
+ * narrows, so its height isn't a constant anything can hard-code. Publish it the
+ * way renderSheet publishes --sh-sticky-h, so overlays can park clear of it. */
+function publishTabsHeight() {
+  const nav = document.getElementById("tabs");
+  if (nav) document.documentElement.style.setProperty("--cg-tabs-h", nav.offsetHeight + "px");
+}
+window.addEventListener("resize", publishTabsHeight);
+
 function renderTabs() {
   const nav = $("#tabs"); nav.innerHTML = "";
   for (const [id, label] of TABS) {
@@ -491,6 +516,7 @@ function renderTabs() {
       onclick: () => { activeTab = id; renderTabs(); renderPanel(); },
     }, label));
   }
+  publishTabsHeight();
 }
 function renderPanel() {
   const p = $("#panel"); p.innerHTML = "";
@@ -1048,6 +1074,7 @@ function tabStats(p) {
     el("h3", {}, "Charisma Pool Bonus \u2014 add \u00bc CHA to one pool"), chaSel));
 
   p.append(el("h2", {}, "Skills ", chip("skill")));
+  p.append(skillPointsTracker());
   p.append(el("p", { class: "hint" },
     "1 point per rank, max 6 at creation. Untrained skills in a group roll at the group's best skill \u22122. "
     + "Martial Arts sits with the Brawn skills \u2014 one skill per style, 2 points per rank."));

@@ -309,6 +309,24 @@ input:focus,select:focus,button:focus{outline:2px solid var(--manon-dim);outline
  * alerts must stay a floating overlay or errors would hide at page bottom. */
 @media (max-width:960px){#rail-alerts{left:10px;right:10px;width:auto;max-height:40vh}}
 
+/* Floating skill-points tracker (Stats & Skills tab only). Bottom-RIGHT because
+   #rail-alerts owns the bottom-left, and below its z-index so an error is never
+   covered by a counter. Read-only, so pointer-events:none — it floats over the
+   skill rows and must never swallow a click meant for the stepper underneath. */
+.sp-fab{position:fixed;right:14px;bottom:14px;z-index:55;pointer-events:none;
+  display:flex;align-items:center;gap:8px;padding:8px 13px;
+  background:var(--panel);border:1px solid var(--manon-dim);border-radius:9px;
+  box-shadow:0 6px 22px rgba(0,0,0,.5)}
+.sp-fab .k{font-family:var(--disp);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim)}
+.sp-fab .chip{font-size:13px}
+/* Alerts go full-width along the bottom here, so move the tracker to the top
+   rather than letting the two overlap — below the sticky tab strip, whose
+   height changes as the tabs wrap (published as --cg-tabs-h by renderTabs). */
+@media (max-width:960px){
+  .sp-fab{bottom:auto;top:calc(var(--ws-h) + var(--cg-tabs-h,0px) + 8px)}
+}
+
 /* ---------- main ---------- */
 #main{padding:0 26px 60px}
 #tabs{display:flex;flex-wrap:wrap;gap:2px;position:sticky;top:var(--ws-h);background:var(--ink);z-index:5;

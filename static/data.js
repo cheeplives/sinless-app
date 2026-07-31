@@ -673,6 +673,7 @@ const DATA_BUNDLE ={
 {"Bond":"4","Cost":"13"}
 ],
 "speaker_elements":[
+{"Element":"Dionysian","Pool":"","Cost":""},
 {"Element":"Earth","Pool":"Brawn","Cost":"10"},
 {"Element":"Fire","Pool":"Focus","Cost":"10"},
 {"Element":"Galvanic","Pool":"","Cost":""},
@@ -690,6 +691,10 @@ const DATA_BUNDLE ={
 {"Infusions":"Physical","Cost":"10"}
 ],
 "speaker_spirits":[
+{"Spirit":"Alcimacheia the Menad","Element":"Dionysian","Cost":"8","Firearm":"Firearm DMG also affect adj target","Protection":"Character gains +2d on all soak rolls","Drone":"All Drones gain +1 to B/I armor","Digital":"Software that attack shaman take 1 dmg","Physical":"+4 Brawn Pool"},
+{"Spirit":"Bachinal","Element":"Dionysian","Cost":"8","Firearm":"Firearm attks deal stun and -1d to tgt's actions","Protection":"Melee attackers take 1d6 stun dmg","Drone":"All Tgts w/n 12m of Drone get -1 to all tests","Digital":"Software attackers take 1d6 direct damage","Physical":"Complex action to heal 1d6 wounds (touch)"},
+{"Spirit":"Eriphe the Menad","Element":"Dionysian","Cost":"8","Firearm":"Attacks from your firearm heal you 1/2 the dmg inflicted","Protection":"You always have full cover, +2 B Armor","Drone":"All Drones gain +2 Hardening","Digital":"Sofware that attacks shaman -2d","Physical":"Gain +4d to all Etiquette Rolls"},
+{"Spirit":"Cisseis the Menad","Element":"Dionysian","Cost":"8","Firearm":"Tgts hit with firearm attacks aflicted with Madness","Protection":"Allies w/n 5m of a you heal 1 dmg/rnd","Drone":"All Drones gain +5m Movement","Digital":"Decrease targeted Software Hardening by 2","Physical":"+2 Reaction"},
 {"Spirit":"Terra Factorem","Element":"Earth","Cost":"3","Firearm":"+1 to Barrier Destruction","Protection":"Character gains +2 free dice on Soak","Drone":"Drones gain +3 Health","Digital":"Attacks ignore 2 Hardening","Physical":"+1 to I armor, +2d to melee attacks"},
 {"Spirit":"Pacha Mama","Element":"Earth","Cost":"5","Firearm":"Firearm attacks Heal damage","Protection":"Regenerate 1 wound/10 minutes","Drone":"Complex Action to grow temp copy of a Drone","Digital":"Hostile Sofware Agents -1d to all tests","Physical":"+2 Resolve Pool"},
 {"Spirit":"Ignis Dicen","Element":"Fire","Cost":"3","Firearm":"Firearm +1d6 fire dmg","Protection":"Melee attackers take 1d6 fire dmg","Drone":"Drone Attacks do +1d6 direct fire damage","Digital":"Attacks strip 1 hardening from tgt","Physical":"Immune to fire, +1d6 fire dmg to melee"},

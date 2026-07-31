@@ -184,7 +184,7 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
   `Ballistic` and `Impact` are armor values (labelled *B Armor* / *I Armor* on
   the sheet). `Statblock Of` is normally blank; where the stats belong to a
   cohort the spirit summons rather than to the spirit itself it names that
-  cohort, and the sheet titles the panel *Statblock — <that name>* (`Bachinal`,
+  cohort, and the sheet titles the panel *Statblock — <that name>* (`Bacchanal`,
   `Cisseis the Menad`, `Mound of Skulls`). `Miasma` and `Stormwing` have no
   statblock at all and say so in `Special`.
 - **`weapon_mods`** — `Laser Sight` and `Flashlight` each appear **twice**, once

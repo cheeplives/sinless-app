@@ -558,6 +558,40 @@ function migrateRenamedAugments(character) {
   }
 }
 
+/* Spirits renamed in the base data, old name -> new. Same contract as
+ * RENAMED_AUGMENTS: `speaker_spirits` rows resolve by name, so a rename orphans
+ * the spirit on every saved character -- its relationship cost stops counting,
+ * an infusion slot holding it goes blank, and a bond tile loses its writeup.
+ * Add an entry whenever a Spirit changes name and never remove one.
+ *
+ * "Bachinal" was a misspelling of the Bacchanal(ia) its own service names
+ * already used. */
+const RENAMED_SPIRITS = {
+  "Bachinal": "Bacchanal",
+};
+
+/* Apply RENAMED_SPIRITS everywhere a spirit name is stored on a character:
+ * chargen relationships, the play-mode infusion slots and bond slots, and the
+ * `link` on a Focus/Fetish/Spirit Bag. Idempotent. */
+function migrateRenamedSpirits(character) {
+  const to = name => RENAMED_SPIRITS[name] || name;
+  const speaker = character.speaker;
+  if (speaker && Array.isArray(speaker.relationships)) {
+    speaker.relationships = speaker.relationships.map(to);
+  }
+  const play = character.play || {};
+  for (const [slot, name] of Object.entries(play.infusion_spirits || {})) {
+    play.infusion_spirits[slot] = to(name);
+  }
+  for (const bond of play.bond_slots || []) {
+    if (bond && bond.spirit) bond.spirit = to(bond.spirit);
+  }
+  // Focus/Fetish link to a spell, ritual or spirit; Spirit Bags to a spirit.
+  for (const item of character.gear || []) {
+    if (item && item.link) item.link = to(item.link);
+  }
+}
+
 function mergeDefaults(character) {
   const defaults = defaultCharacter();
   const isPlainObject = v => v && typeof v === "object" && !Array.isArray(v);
@@ -595,6 +629,7 @@ function mergeDefaults(character) {
 
   // Follow renamed data rows onto saved characters (see RENAMED_AUGMENTS).
   migrateRenamedAugments(character);
+  migrateRenamedSpirits(character);
 
   // The per-unit Damage counter was a free-form tally no code ever read, and the
   // Physical Condition track superseded it. Carry a recorded Damage over into

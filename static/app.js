@@ -2150,14 +2150,19 @@ function fittedEditor(it, weaponTables, guard) {
 /* Vehicle Condition selector — scales the base price only (Pristine ×1, Good
  * ×0.75, Fair ×0.5, Poor ×0.25). Shared by chargen and the play sheet; `onChange`
  * is the caller's recompute/re-render. */
+/* Condition picker for a drone or vehicle. Scales the base chassis price, and a
+ * condition carrying a gameplay rider (Blinged) shows it alongside — reported,
+ * not applied, since it only counts when the unit is actually on show. */
 function vehicleConditionSelect(it, onChange) {
   it.condition = it.condition || "Pristine";
   const sel = el("select", { onchange: e => { it.condition = e.target.value; onChange(); } },
     ...RULES.VEHICLE_CONDITIONS.map(c =>
       el("option", { value: c }, `${c} (×${RULES.VEHICLE_CONDITION_FACTORS[c]})`)));
   sel.value = it.condition;
+  const effect = RULES.VEHICLE_CONDITION_EFFECTS[it.condition];
   return el("label", { class: "sub", style: "display:inline-flex;align-items:center;gap:6px;margin-top:4px" },
-    el("span", {}, "Condition"), sel);
+    el("span", {}, "Condition"), sel,
+    effect ? el("span", { style: "color:var(--manon)" }, effect) : null);
 }
 
 function tabDrones(p) {
@@ -2248,7 +2253,7 @@ function tabDrones(p) {
               `Move ${r.Move} \u00b7 Body ${r.Body} \u00b7 Handling ${r.Handling}` +
               (r.Frame ? ` \u00b7 ${r.Frame}` : "") + (r.Effect ? ` \u00b7 ${r.Effect}` : "")),
             el("div", { class: "sub", style: overLimit ? "color:var(--bad)" : "" }, limits),
-            kind === "vehicle" ? vehicleConditionSelect(it, refresh) : null,
+            vehicleConditionSelect(it, refresh),
             fittedEditor(it, wtabs, guard)),
           el("td", { class: "num" }, el("b", {}, fmt(calcRow.cost ?? r.Cost))),
           el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));

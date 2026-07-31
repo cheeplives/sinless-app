@@ -2032,8 +2032,16 @@ const CARGO_PER_WEIGHT_BLOCK = 3;
 const VEHICLE_MIN_CARGO = 1;
 const VEHICLE_WEAPON_BODY_DIVISOR = 3;
 // Vehicle Condition scales the base price (not fitted weapons/mods).
-const VEHICLE_CONDITIONS = ["Pristine", "Good", "Fair", "Poor"];
-const VEHICLE_CONDITION_FACTORS = { Pristine: 1, Good: 0.75, Fair: 0.5, Poor: 0.25 };
+/* Condition scales the base chassis price. Pristine..Poor describe wear;
+ * "Blinged" is the opposite direction — a customised showpiece at triple price
+ * that turns heads. Applies to drones as well as vehicles.
+ * VEHICLE_CONDITION_EFFECTS carries any gameplay rider a condition brings; it's
+ * reported on the unit rather than applied, matching how armor Style etiquette
+ * bonuses work (the engine has no etiquette-bonus mechanism, and the bonus only
+ * counts when you're actually showing the thing off). */
+const VEHICLE_CONDITIONS = ["Blinged", "Pristine", "Good", "Fair", "Poor"];
+const VEHICLE_CONDITION_FACTORS = { Blinged: 3, Pristine: 1, Good: 0.75, Fair: 0.5, Poor: 0.25 };
+const VEHICLE_CONDITION_EFFECTS = { Blinged: "+2 Street Etiquette" };
 
 function priceFittedVehicle(entry, baseRow, data, weaponAndModTables, gearCostMultiplier) {
   // Vehicle Condition AND the small-heritage surcharge scale the BASE price
@@ -3113,7 +3121,7 @@ return {
   augmentLimbRequirement, augmentMeleeDamage,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,
-  VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS,
+  VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,
   surchargeFor,
 };
 

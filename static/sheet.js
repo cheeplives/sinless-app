@@ -3759,7 +3759,11 @@ function unitLoadoutTable(entries) {
       + (statMods.body ? ` (base ${r.Body})` : "")
       + ((ball || imp) ? ` · ${ball}B/${imp}I` : "")
       + (statMods.hardening ? ` · Hardening ${statMods.hardening}` : "")
-      + ` · ${cfg.capLabel} ${cfg.capOf(r)}`;
+      + ` · ${cfg.capLabel} ${cfg.capOf(r)}`
+      // A condition carrying a gameplay rider (Blinged) reports it here; it is
+      // never applied to a stat.
+      + (u.condition && RULES.VEHICLE_CONDITION_EFFECTS[u.condition]
+          ? ` · ${u.condition}: ${RULES.VEHICLE_CONDITION_EFFECTS[u.condition]}` : "");
     // Damage read-out, so the Gear inventory reflects it too (the interactive
     // tracks live on the Rigging tab).
     const dst = (CHAR.play.rigging.units || {})[unitStateKey(table, u)] || {};
@@ -4053,7 +4057,7 @@ function shRigging(body) {
                 + ` · weapons ${summary.weapon_count ?? u.weapons.length}/${summary.weapon_cap ?? cfg.capOf(r)}`;
             })()),
           r.Effect ? el("div", { class: "sub", style: "color:var(--manon)" }, r.Effect) : null,
-          cfg.table === "vehicles" ? vehicleConditionSelect(u, () => playChangedRecalc()) : null,
+          vehicleConditionSelect(u, () => playChangedRecalc()),
           // Physical Condition + Vehicle Integrity tracks (issue #22), then
           // Inertia sitting with them. Inertia is a free-form tally the engine
           // never reads — it's a place to note momentum during a chase. The old

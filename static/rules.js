@@ -532,6 +532,33 @@ function migrateUnitAttachments(character, tables) {
   }
 }
 
+/* Augments renamed in the base data, old name -> new. Rows resolve by name, so a
+ * rename silently orphans the item on every saved character unless it's followed
+ * here. Add an entry whenever an augment's Name changes and never remove one --
+ * an old save can surface at any time.
+ *
+ * "Cybertechronic Ears" was a misspelling of the "Cybertech*t*ronic" its sibling
+ * Cybertechtronic Eyes uses. */
+const RENAMED_AUGMENTS = {
+  "Cybertechronic Ears": "Cybertechtronic Ears",
+};
+
+/* Apply RENAMED_AUGMENTS everywhere an augment name is stored on a character:
+ * the chargen list, anything bought in play, and the `mounted` arrays that hang
+ * off armor / weapons / gear hosts. Idempotent. */
+function migrateRenamedAugments(character) {
+  const rename = list => {
+    for (const entry of list || []) {
+      if (entry && RENAMED_AUGMENTS[entry.name]) entry.name = RENAMED_AUGMENTS[entry.name];
+    }
+  };
+  rename(character.augments);
+  rename(((character.play || {}).purchases || {}).augments);
+  for (const hosts of [character.armor, character.weapons, character.gear]) {
+    for (const host of hosts || []) rename(host && host.mounted);
+  }
+}
+
 function mergeDefaults(character) {
   const defaults = defaultCharacter();
   const isPlainObject = v => v && typeof v === "object" && !Array.isArray(v);
@@ -566,6 +593,9 @@ function mergeDefaults(character) {
   // Re-file unit mods that legacy saves stored in `weapons` (see above). Uses
   // the merged bundle so homebrew mods are recognised too.
   migrateUnitAttachments(character, BUNDLE && BUNDLE.tables);
+
+  // Follow renamed data rows onto saved characters (see RENAMED_AUGMENTS).
+  migrateRenamedAugments(character);
 
   // The per-unit Damage counter was a free-form tally no code ever read, and the
   // Physical Condition track superseded it. Carry a recorded Damage over into

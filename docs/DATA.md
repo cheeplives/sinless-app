@@ -11,7 +11,7 @@ catalogue of every table, and the gotchas that bite people editing it.
 > | Where | What |
 > |---|---|
 > | `HOMEBREW_CONFIG` — `static/homebrew.js` | `nameKey` per homebrew-eligible table |
-> | `NAME_KEYS` — `tools/promote_homebrew.py` | the same 15 tables, for promotion |
+> | `NAME_KEYS` — `tools/promote_homebrew.py` | the same 16 tables, for promotion |
 > | `findRow(data.X, "Col")` — `static/rules.js` | per-lookup literals |
 > | the catalogue below | all 36 tables |
 >
@@ -148,7 +148,7 @@ call graphs.
 | `speaker_bond_costs` | 4 | `Bond` | Cumulative bond-slot costs | rules |
 | `speaker_elements` | 6 | `Element` | Elements and their `Pool` | app |
 | `speaker_infusions` | 7 | `Infusions` | Infusion costs — **key is plural** | rules, app |
-| `speaker_spirits` | 12 | `Spirit` | Spirits; one column per infusion type | rules, app, sheet |
+| `speaker_spirits` | 16 | `Spirit` | Spirits; one column per infusion type, plus the bound writeup (`Bound Services`, statblock, `Special`) | rules, app, sheet, homebrew |
 | `spells` | 64 | `Name` | Spells by `School`; `Drain`, `Duration` | rules, app, sheet, homebrew |
 | `vehicle_ballistic_weapons` | 8 | `Vehicle Ballistic Weapon` | Vehicle ballistics | rules, app, sheet |
 | `vehicle_energy_weapons` | 5 | `Vehicle Energy Weapon` | Vehicle energy weapons | rules, app, sheet |
@@ -157,11 +157,12 @@ call graphs.
 | `weapon_mods` | 18 | `Modification` | Weapon mods by `Slot` | rules, app, sheet, homebrew |
 | `weapons` | 106 | `Weapon` | Weapons by `Type`; `Accuracy`, `Damage`, `Pen` | rules, app, sheet, homebrew |
 
-15 of these are **homebrew-eligible** (users can add rows, and packs can be
-promoted): `rituals`, `spells`, `misc_gear`, `augments`, `weapons`, `armor`,
-`vehicles`, `drones`, `weapon_mods`, `vehicle_ballistic_weapons`,
-`vehicle_energy_weapons`, `drone_ballistic_weapons`, `drone_energy_weapons`,
-`vehicle_mods`, `drone_mods`. The rest are core rules data, editable only here.
+16 of these are **homebrew-eligible** (users can add rows, and packs can be
+promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
+`weapons`, `armor`, `vehicles`, `drones`, `weapon_mods`,
+`vehicle_ballistic_weapons`, `vehicle_energy_weapons`,
+`drone_ballistic_weapons`, `drone_energy_weapons`, `vehicle_mods`,
+`drone_mods`. The rest are core rules data, editable only here.
 
 ### Per-table quirks
 
@@ -169,6 +170,23 @@ promoted): `rituals`, `spells`, `misc_gear`, `augments`, `weapons`, `armor`,
   characters are restricted to a single school (`rules.js:1550`).
 - **`speaker_infusions`** — key column is `"Infusions"`, plural. The only table
   that does this (`rules.js:1567`).
+- **`speaker_spirits`** — two text conventions, both parsed in `app.js`
+  (`splitSpiritEntries` / `parseSpiritServices` / `withForce`) and rendered by
+  `bondSpiritDetail` in `sheet.js`:
+  - `Bound Services`, `Attacks` and `Special` hold **several entries in one
+    cell, separated by `" | "`**. A service is `Name: text`; the name is
+    everything before the first colon when that colon falls within 40
+    characters, so ordinary prose colons stay in the body.
+  - **`[F]` is the spirit's Force**, substituted live from the Force set on the
+    bond slot (`play.bond_slots[i].force`) and shown as a dotted `F` when that
+    is still 0. Write `[F]d6`, `6+[F]`, `2x[F]` — never the literal word.
+
+  `Ballistic` and `Impact` are armor values (labelled *B Armor* / *I Armor* on
+  the sheet). `Statblock Of` is normally blank; where the stats belong to a
+  cohort the spirit summons rather than to the spirit itself it names that
+  cohort, and the sheet titles the panel *Statblock — <that name>* (`Bachinal`,
+  `Cisseis the Menad`, `Mound of Skulls`). `Miasma` and `Stormwing` have no
+  statblock at all and say so in `Special`.
 - **`weapon_mods`** — `Laser Sight` and `Flashlight` each appear **twice**, once
   per `Slot` (Overbarrel / Underbarrel). Identity is really `Slot`+`Modification`,
   but `findRow(data.weapon_mods, "Modification", …)` (`rules.js:1659`) returns the

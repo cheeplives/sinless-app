@@ -674,17 +674,70 @@ function stepper(get, set, min = 0, max = 99) {
  * rather than being lost on the next keystroke. It's ephemeral UI state and
  * deliberately NOT saved with the character. */
 const openDescriptions = new Set();
+
+/* The <details> shell on its own, for bodies that are structured markup rather
+ * than a paragraph (spirit statblocks). `key` carries the same remembered-open
+ * contract as descriptionExpander. */
+function expanderPanel(key, label, ...children) {
+  return el("details", { class: "desc-expander",
+    ...(openDescriptions.has(key) ? { open: "1" } : {}),
+    ontoggle: e => {
+      if (e.target.open) openDescriptions.add(key); else openDescriptions.delete(key);
+    } },
+    el("summary", {}, label),
+    el("div", { class: "desc-body" }, ...children));
+}
+
 function descriptionExpander(text, key, label = "More Details") {
   const body = String(text || "").trim();
   if (!body) return null;
-  const id = key || body.slice(0, 48);
-  return el("details", { class: "desc-expander",
-    ...(openDescriptions.has(id) ? { open: "1" } : {}),
-    ontoggle: e => {
-      if (e.target.open) openDescriptions.add(id); else openDescriptions.delete(id);
-    } },
-    el("summary", {}, label),
-    el("div", { class: "desc-body" }, body));
+  return expanderPanel(key || body.slice(0, 48), label, body);
+}
+
+/* Spirit writeups (speaker_spirits "Bound Services", "Attacks", "Special") pack
+ * several entries into one column, joined by " | ", each optionally prefixed
+ * with "Name: ". data.js is one row per line, so a delimiter beats one row per
+ * ability -- and homebrew identifies rows by a single column, which a per-
+ * ability table couldn't do. Returns [] for blank input. */
+function splitSpiritEntries(str) {
+  return String(str || "").split("|").map(s => s.trim()).filter(Boolean);
+}
+function parseSpiritServices(str) {
+  return splitSpiritEntries(str).map(entry => {
+    const at = entry.indexOf(":");
+    // Only treat the colon as a name separator when it looks like a label --
+    // a long run before it is prose ("Note: ..." vs "...ratio 2:1").
+    if (at > 0 && at <= 40) {
+      return { name: entry.slice(0, at).trim(), text: entry.slice(at + 1).trim() };
+    }
+    return { name: "", text: entry };
+  });
+}
+
+/* Every service of a spirit as one block, for places that show a whole spirit
+ * at once (the chargen relationship picker) rather than one expander per
+ * service the way a bond tile does. Returns null when there's no writeup. */
+function spiritServiceList(row, force = 0) {
+  const services = parseSpiritServices(row["Bound Services"]);
+  if (!services.length) return null;
+  return el("div", {}, ...services.map(svc => el("div", { class: "spirit-svc" },
+    svc.name ? el("b", {}, svc.name + ": ") : null, ...withForce(svc.text, force))));
+}
+
+/* Spirit ability text writes the spirit's Force as the token [F] ("[F]d6"), so
+ * a bound spirit's numbers can be resolved live from the Force set on its bond
+ * slot. Force 0 means "not set yet" and shows a hoverable F instead. Returns an
+ * array of nodes to spread into el(). */
+function withForce(text, force) {
+  const parts = String(text || "").split("[F]");
+  const out = [parts[0]];
+  for (let i = 1; i < parts.length; i++) {
+    out.push(force > 0
+      ? el("b", { class: "force-term", title: "Force" }, String(force))
+      : el("span", { class: "force-term unset", title: "Force (not set)" }, "F"));
+    out.push(parts[i]);
+  }
+  return out;
 }
 
 /* Sort comparator that clusters the four spellcasting skills at the top of a
@@ -1340,10 +1393,14 @@ function tabSpeaker(p) {
     onRemove: i => CHAR.speaker.relationships.splice(i, 1),
     render: (name, i, del) => {
       const s = DATA.tables.speaker_spirits.find(x => x.Spirit === name) || {};
+      const svcList = spiritServiceList(s);
       return el("tr", {},
         el("td", {}, el("b", {}, name), el("div", { class: "sub" }, `${s.Element} \u00b7 cost ${s.Cost}`)),
         el("td", { class: "sub" },
-          `Firearm: ${s.Firearm} \u00b7 Protection: ${s.Protection} \u00b7 Physical: ${s.Physical}`),
+          `Firearm: ${s.Firearm} \u00b7 Protection: ${s.Protection} \u00b7 Physical: ${s.Physical}`,
+          // What this spirit grants once bound, so the two halves of the choice
+          // (infusion benefit vs. bound services) can be compared while buying.
+          svcList ? expanderPanel(`speaker_spirits:${name}`, "Bound services", svcList) : null),
         el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
     },
   }));

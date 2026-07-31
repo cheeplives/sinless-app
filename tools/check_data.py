@@ -61,7 +61,7 @@ ALLOWED_NON_ASCII = {
 # win wherever a mod is looked up by name alone. See docs/DATA.md.
 KNOWN_DUPLICATES = {"weapon_mods": {"laser sight", "flashlight"}}
 
-# Key columns for the 21 tables that homebrew does not cover. Harvested from the
+# Key columns for the 20 tables that homebrew does not cover. Harvested from the
 # findRow literals and the index loops in rules.js; a tuple means the row's
 # identity is composite (no single column is unique on its own).
 EXTRA_KEY_COLUMNS = {
@@ -86,7 +86,6 @@ EXTRA_KEY_COLUMNS = {
     "speaker_bond_costs": "Bond",
     "speaker_elements": "Element",
     "speaker_infusions": "Infusions",   # plural, unlike every other key column
-    "speaker_spirits": "Spirit",
 }
 
 # Composite-key tables where one column must ALSO stay unique on its own because

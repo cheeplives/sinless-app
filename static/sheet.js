@@ -126,7 +126,7 @@ function ensurePlay() {
     decking: { active_deck: "", loaded: [] },
     rigging: { active_rig: "", units: {} },
     infusion_spirits: {},                 // infusion slot -> spirit placed in it
-    bond_slots: [],                       // [{ spirit, favors }] spirits placed in bonds
+    bond_slots: [],                       // [{ spirit, force, favors }] spirits placed in bonds
   };
   CHAR.play = CHAR.play || {};
   for (const [k, v] of Object.entries(d)) {
@@ -2995,6 +2995,57 @@ function isStackableAugment(name) {
   return name === "Chipjack" || name === "Memory-1 EB" || name === "Knowledge Skillsoft";
 }
 
+/* The bound half of a spirit's writeup, for one bond tile: its services, its
+ * statblock and its appearance, each behind its own expander so four bound
+ * spirits still fit in the card. `force` resolves the [F] terms in the text.
+ * Returns an array of nodes (possibly empty) to append to the tile. */
+function bondSpiritDetail(name, row, force) {
+  const out = [];
+  const services = parseSpiritServices(row["Bound Services"]);
+  for (const svc of services) {
+    out.push(expanderPanel(`bond:${name}:${svc.name || svc.text.slice(0, 24)}`,
+      svc.name || "Service", ...withForce(svc.text, force)));
+  }
+  if (!services.length) {
+    out.push(el("p", { class: "hint" }, "No bound-services writeup for this spirit yet."));
+  }
+
+  // Ballistic/Impact are armor values, so they're labelled the way the rest of
+  // the app labels armor. Omit any stat this spirit doesn't list.
+  const stats = [["Move", row.Movement], ["Init", row.Initiative],
+    ["Condition", row.Condition], ["B Armor", row.Ballistic],
+    ["I Armor", row.Impact], ["Def Dice", row["Defense Dice"]]]
+    .filter(([, v]) => String(v || "").trim());
+  const attacks = splitSpiritEntries(row.Attacks);
+  const special = splitSpiritEntries(row.Special);
+  if (stats.length || attacks.length || special.length) {
+    const kids = [];
+    if (stats.length) {
+      kids.push(el("div", { class: "sh-spirit-stats" },
+        ...stats.map(([k, v]) => el("div", {},
+          el("div", { class: "k" }, k),
+          el("div", { class: "v" }, ...withForce(v, force))))));
+    }
+    for (const a of attacks) {
+      kids.push(el("div", { class: "sh-spirit-line" }, ...withForce(a, force)));
+    }
+    for (const sp of special) {
+      kids.push(el("div", { class: "sh-spirit-line sub" }, ...withForce(sp, force)));
+    }
+    // A few spirits list the statblock of the cohort they summon rather than
+    // their own; "Statblock Of" names it so the label says whose it is. Spirits
+    // with no stats at all (Miasma, Stormwing) carry only their special rules.
+    const of = String(row["Statblock Of"] || "").trim();
+    const label = !stats.length && !attacks.length ? "Special"
+      : of ? `Statblock — ${of}` : "Statblock";
+    out.push(expanderPanel(`bond:${name}:stats`, label, ...kids));
+  }
+
+  const look = descriptionExpander(row.Appearance, `bond:${name}:look`, "Appearance");
+  if (look) out.push(look);
+  return out;
+}
+
 /* ------------------------------------------------ magic tab */
 function shMagic(body) {
   const type = CALC.magic.type;
@@ -3248,7 +3299,7 @@ function shMagic(body) {
     const bondCount = s.bonds || 0;
     card.append(el("h4", { class: "sh-h4" }, `Bonds — ${bondCount} slot(s), track favors owed`));
     if (!bondCount) card.append(el("p", { class: "hint" }, "No spirit bonds purchased in chargen."));
-    while (play.bond_slots.length < bondCount) play.bond_slots.push({ spirit: "", favors: 0 });
+    while (play.bond_slots.length < bondCount) play.bond_slots.push({ spirit: "", force: 0, favors: 0 });
     if (play.bond_slots.length > bondCount) play.bond_slots.length = bondCount;
     const bondTiles = el("div", { class: "sh-bond-tiles" });
     play.bond_slots.forEach((bond, bi) => {
@@ -3256,11 +3307,24 @@ function shMagic(body) {
         el("option", { value: "" }, "— empty —"),
         ...s.relationships.map(n => el("option", { value: n }, n)));
       sel.value = bond.spirit || "";
-      bondTiles.append(el("div", { class: "sh-bond-tile" + (bond.spirit ? " active" : "") },
+      const row = bond.spirit ? spiritRow(bond.spirit) : {};
+      // Each slot keeps one identity colour (see --bond-N in style.css) so four
+      // bound spirits stay tellable apart; slots past the fourth wrap around.
+      const tile = el("div", { class: `sh-bond-tile slot-${(bi % 4) + 1}`
+          + (bond.spirit ? " active" : "") },
         el("div", { class: "k" }, `Bond ${bi + 1}`),
-        sel,
-        el("div", { class: "sh-bond-fav" },
-          miniCounter("Favors", () => bond.favors || 0, v => { bond.favors = v; }, 0, 99))));
+        sel);
+      if (row.Element) tile.append(el("div", { class: "sh-bond-meta" },
+        el("span", { class: "sh-tag magic" }, row.Element)));
+      // Force drives the [F] terms in the ability text below, so it sits with
+      // Favors above the detail rather than buried under it.
+      tile.append(el("div", { class: "sh-bond-fav" },
+        bond.spirit
+          ? miniCounter("Force", () => bond.force || 0, v => { bond.force = v; }, 0, 12)
+          : null,
+        miniCounter("Favors", () => bond.favors || 0, v => { bond.favors = v; }, 0, 99)));
+      if (bond.spirit) tile.append(...bondSpiritDetail(bond.spirit, row, bond.force || 0));
+      bondTiles.append(tile);
     });
     if (bondCount) card.append(bondTiles);
 
@@ -4327,6 +4391,17 @@ function buildMarkdown() {
         + ` (bonds: ${CHAR.speaker.bonds || 0})`);
     if (CHAR.speaker.infusions.length)
       L.push("**Infusions:** " + CHAR.speaker.infusions.join(" · "));
+    // Bound spirits carry their Force and the services they're currently owed
+    // for; the full writeup stays in the app rather than bloating the export.
+    for (const [bi, bond] of (play.bond_slots || []).entries()) {
+      if (!bond.spirit) continue;
+      const row = DATA.tables.speaker_spirits.find(x => x.Spirit === bond.spirit) || {};
+      const names = parseSpiritServices(row["Bound Services"])
+        .map(svc => svc.name).filter(Boolean);
+      L.push(`**Bond ${bi + 1}:** ${bond.spirit} (Force ${bond.force || 0}`
+        + `, favors owed ${bond.favors || 0})`
+        + (names.length ? " — " + names.join(" · ") : ""));
+    }
     L.push("");
   }
 

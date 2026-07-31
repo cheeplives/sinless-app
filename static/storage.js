@@ -80,7 +80,7 @@ function deleteCharacter(name) {
  * exact column schema of that table (string values, marker Custom:"Y").
  * homebrew.js merges these into DATA_BUNDLE.tables at boot and after edits. */
 const CUSTOM_TABLES = [
-  "rituals", "spells", "misc_gear", "augments", "weapons", "armor",
+  "rituals", "spells", "speaker_spirits", "misc_gear", "augments", "weapons", "armor",
   "vehicles", "drones", "weapon_mods",
   "vehicle_ballistic_weapons", "vehicle_energy_weapons",
   "drone_ballistic_weapons", "drone_energy_weapons",

@@ -40,7 +40,7 @@ function hbOnline() {
 }
 
 /* ---- per-table editor config ------------------------------------------ */
-/* The 15 homebrew-eligible data.js tables and the columns the editor exposes.
+/* The 16 homebrew-eligible data.js tables and the columns the editor exposes.
  * Field flags: ta = textarea, select = fixed choices (app logic gates on the
  * value), datalist = suggestions but free-form allowed, hint = placeholder.
  *
@@ -55,6 +55,29 @@ const HOMEBREW_CONFIG = {
     { key: "Time", hint: "e.g. 10 min" },
     { key: "Effect", ta: true },
     { key: "Description", ta: true },
+  ]},
+  speaker_spirits: { label: "Spirits", nameKey: "Spirit", fields: [
+    { key: "Spirit" },
+    { key: "Element", datalist: () => hbDistinct("speaker_elements", "Element") },
+    { key: "Cost", hint: "relationship points" },
+    { key: "Firearm", ta: true },
+    { key: "Protection", ta: true },
+    { key: "Drone", ta: true },
+    { key: "Digital", ta: true },
+    { key: "Physical", ta: true },
+    { key: "Appearance", ta: true },
+    // Services/Attacks/Special pack several entries into one cell, separated by
+    // " | ". Write the spirit's Force as [F] and the sheet resolves it live.
+    { key: "Bound Services", ta: true },
+    { key: "Movement" },
+    { key: "Initiative" },
+    { key: "Condition" },
+    { key: "Ballistic" },
+    { key: "Impact" },
+    { key: "Defense Dice" },
+    { key: "Statblock Of", hint: "blank unless the stats are a summoned cohort's" },
+    { key: "Attacks", ta: true },
+    { key: "Special", ta: true },
   ]},
   spells: { label: "Spells", nameKey: "Name", fields: [
     { key: "Name" },

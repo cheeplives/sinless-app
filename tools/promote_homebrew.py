@@ -30,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_JS = REPO_ROOT / "static" / "data.js"
 SW_JS = REPO_ROOT / "sw.js"
 
-# The 15 homebrew-eligible tables and the column that holds each row's identity
+# The 16 homebrew-eligible tables and the column that holds each row's identity
 # name. Mirrors HOMEBREW_CONFIG in static/homebrew.js -- keep in sync if that
 # changes; tools/check_data.py verifies they agree (and that both match the data).
 # The full table catalogue lives in docs/DATA.md. Only these tables are
@@ -38,6 +38,7 @@ SW_JS = REPO_ROOT / "sw.js"
 NAME_KEYS = {
     "rituals": "Name",
     "spells": "Name",
+    "speaker_spirits": "Spirit",
     "misc_gear": "Item",
     "augments": "Name",
     "weapons": "Weapon",

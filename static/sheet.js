@@ -4041,12 +4041,12 @@ function shRigging(body) {
           el("div", { class: "sh-unit-title" }, nameInput, removeBtn),
           el("div", { class: "sub" }, el("b", {}, u.name), " · ",
             (() => {
+              // Move moved out to its own box beside Inertia — it's the stat you
+              // reach for constantly in a chase, so it shouldn't be buried here.
               const sm = unitAttachments(cfg, u).statMods;
               const ball = toInt(r.Ballistic) + sm.ballistic, imp = toInt(r.Impact) + sm.impact;
               const eBody = Math.max(0, toInt(r.Body) + sm.body);
-              return `Move ${r.Move}`
-                + (sm.infusion_move ? ` +${sm.infusion_move}m (infusion)` : "")
-                + ` · Handling ${r.Handling} · Body ${eBody}`
+              return `Handling ${r.Handling} · Body ${eBody}`
                 + (sm.body ? ` (base ${r.Body})` : "")
                 + ((ball || imp) ? ` · Armor ${ball}B/${imp}I` : "")
                 + (sm.hardening ? ` · Hardening ${sm.hardening}` : "")
@@ -4061,6 +4061,20 @@ function shRigging(body) {
           // Condition track but was uncapped and equally inert.
           unitConditionTracks(cfg, u, st, u.label || u.name),
           el("div", { class: "sh-unit-ctr sh-unit-inertia" },
+            // Move gets its own tile: it's read constantly during a chase, and
+            // it's derived (base + any Drone-infusion bonus) so it's a readout,
+            // not a counter.
+            (() => {
+              const bonus = unitAttachments(cfg, u).statMods.infusion_move || 0;
+              const base = String(r.Move || "0");
+              const num = parseInt(base, 10);
+              const unit = base.replace(/^\d+\s*/, "") || "m";
+              return el("div", { class: "sh-unit-stat" + (bonus ? " boosted" : ""),
+                title: bonus ? `${base} base +${bonus}m from a spirit infusion` : "Movement rate" },
+                el("span", { class: "lbl" }, "Move"),
+                el("b", {}, Number.isFinite(num) ? `${num + bonus}${unit}` : base),
+                bonus ? el("span", { class: "delta" }, `+${bonus}`) : null);
+            })(),
             unitReadonly
               // Read-only shares report the value but can't edit it, matching
               // the condition tracks above.

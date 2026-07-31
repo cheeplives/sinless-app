@@ -723,7 +723,18 @@ input.sh-unit-name:hover{border-color:var(--manon-dim)}
 input.sh-unit-name:focus{border-color:var(--manon);background:var(--panel-2)}
 input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-unit-ctr{display:flex;gap:8px}
-.sh-unit-inertia{margin-top:8px}
+.sh-unit-inertia{margin-top:8px;align-items:center}
+/* Derived read-out tile sitting with the unit's counters (Move). Boxed and
+   larger than the stat line it came out of, since it's read constantly in a
+   chase; `.boosted` marks a value raised by a spirit infusion. */
+.sh-unit-stat{display:inline-flex;align-items:baseline;gap:6px;
+  border:1px solid var(--line);border-radius:6px;background:var(--panel);
+  padding:4px 10px}
+.sh-unit-stat .lbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.sh-unit-stat b{font-family:var(--mono);font-size:15px}
+.sh-unit-stat.boosted{border-color:var(--manon-dim)}
+.sh-unit-stat.boosted b{color:var(--manon)}
+.sh-unit-stat .delta{font-size:10px;color:var(--manon)}
 .sh-unit-details{margin:6px 0 4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:2px 8px}
 .sh-unit-details>summary{cursor:pointer;font-size:12px;color:var(--dim);padding:4px 0;user-select:none}
 .sh-unit-details[open]>summary{color:var(--text);margin-bottom:4px}

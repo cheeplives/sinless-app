@@ -1404,8 +1404,13 @@ function cumulativeAttributeCost(level, costTable) {
   return costTable[clampedLevel] !== undefined ? costTable[clampedLevel] : clampedLevel;
 }
 
+/* `infusionAdjustment` is an optional 4th adjustment source: temporary boosts
+ * from spirits placed in infusion slots. It lands in `adjust` (so every derived
+ * stat sees it) and in `max` (so a supernatural boost doesn't trip the
+ * "exceeds its maximum" warning) — the same treatment heritage adjustments get.
+ * It never touches pointsSpent, which is derived from base levels alone. */
 function scoreAttributes(character, data, startingAttributePoints, heritage, augments, amp,
-                         warnings, errors) {
+                         warnings, errors, infusionAdjustment) {
   const costTable = {};
   for (const row of data.attribute_costs) costTable[toInt(Number(row.Level))] = toInt(Number(row.Cost));
   const baseLevel = {};
@@ -1422,15 +1427,18 @@ function scoreAttributes(character, data, startingAttributePoints, heritage, aug
 
   const attributes = {};
   for (const name of ATTRIBUTES) {
+    const infusionBonus = toInt((infusionAdjustment || {})[name]);
     const adjustment = (heritage.attribute_adjustment[name]
                         + augments.attribute_adjustment[name]
-                        + amp.attribute_adjustment[name]);
+                        + amp.attribute_adjustment[name]
+                        + infusionBonus);
     const finalValue = baseLevel[name] + adjustment;
     const maxValue = (ATTRIBUTE_MAX_BASELINE
                       + heritage.attribute_max_adjustment[name]
                       + heritage.attribute_adjustment[name]
                       + augments.attribute_max_adjustment[name]
-                      + amp.attribute_max_adjustment[name]);
+                      + amp.attribute_max_adjustment[name]
+                      + infusionBonus);
     attributes[name] = { base: baseLevel[name], adjust: adjustment,
                          final: finalValue, max: maxValue };
     if (finalValue > maxValue) {
@@ -2484,10 +2492,12 @@ function infusionSlotColumn(slot) {
 function infusionStatMods(entries) {
   const mods = {
     pools: { Brawn: 0, Finesse: 0, Focus: 0, Resolve: 0 },
+    attributes: {},  // attribute name -> temporary delta
     ballistic: 0, impact: 0, move: 0,
     applied: [],     // [{ text, source }] — what was folded into the numbers
     unapplied: [],   // [{ text, source }] — situational prose, shown as-is
   };
+  for (const a of ATTRIBUTES) mods.attributes[a] = 0;
   for (const e of entries) {
     const eff = String(e.effect || "").trim();
     if (!eff) continue;
@@ -2506,6 +2516,19 @@ function infusionStatMods(entries) {
         if ((m = c.match(re))) {
           mods.pools[pool] += toInt(m[1] || m[2]);
           mods.applied.push({ text: `+${toInt(m[1] || m[2])} ${pool} Pool`, source: e.spirit });
+          hit = true;
+        }
+      }
+      // Attributes: "+2 Reaction". Attribute and pool names never overlap, so
+      // this can't collide with the pool patterns above. Fed into scoreAttributes
+      // as a fourth adjustment source, so pools, initiative, condition tracks and
+      // melee damage all pick it up without any of them knowing about infusions.
+      for (const attr of ATTRIBUTES) {
+        const re = new RegExp(`(?:\\+(\\d+)\\s*${attr}\\b|\\b${attr}\\s*\\+(\\d+))`, "i");
+        if ((m = c.match(re))) {
+          const n = toInt(m[1] || m[2]);
+          mods.attributes[attr] += n;
+          mods.applied.push({ text: `+${n} ${attr}`, source: e.spirit });
           hit = true;
         }
       }
@@ -2639,9 +2662,18 @@ function calculate(character) {
     replicantSkillBonus = REPLICANT_BONUS_SKILL_POINTS;
   }
 
+  // Spirits placed in infusion slots (play only). Resolved BEFORE attributes are
+  // scored so a temporary attribute boost flows through every derived stat --
+  // pools, initiative, condition tracks, melee damage -- instead of being
+  // bolted on afterwards. The attribute POINT BUDGET is unaffected: scoreAttributes
+  // computes points spent from the character's own base levels, never from
+  // adjustments, which is exactly how heritage/augment/amp bonuses already work.
+  const infusions = finalized ? resolveInfusions(character, data)
+                              : { list: [], mods: infusionStatMods([]) };
+
   const attributeScoring = scoreAttributes(
     character, data, priorities.starting_attr_pts + replicantAttrBonus,
-    heritage, augments, amp, warnings, errors);
+    heritage, augments, amp, warnings, errors, infusions.mods.attributes);
   const finalAttributes = attributeScoring.final;
 
   const pools = computePools(finalAttributes, character.cha_pool_choice || "Brawn");
@@ -2651,10 +2683,8 @@ function calculate(character) {
       if (pool in pools) pools[pool] += toInt(asNumber(n));
     }
   }
-  // Spirits placed in infusion slots (play only). Flat pool bonuses land here;
-  // armor and movement are folded into combat below.
-  const infusions = finalized ? resolveInfusions(character, data)
-                              : { list: [], mods: infusionStatMods([]) };
+  // Flat infusion pool bonuses (attribute boosts already went in above, via
+  // scoreAttributes, so they're baked into these pool totals already).
   for (const [pool, n] of Object.entries(infusions.mods.pools)) {
     if (n && pool in pools) pools[pool] += n;
   }

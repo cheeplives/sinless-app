@@ -1606,6 +1606,39 @@ function scoreSkills(character, heritage, amp, augments, warnings, errors) {
   };
 }
 
+/* Which skill a weapon is attacked with, keyed by the weapons table's `Type`.
+ * "Cybergun" isn't a row Type -- implanted guns have their own table and are
+ * always pistols, so they're mapped here too. */
+const WEAPON_TYPE_SKILL = {
+  Melee: "Melee Weapons",
+  Thrown: "Throwing Weapons",
+  PistolLt: "Firearms", PistolMed: "Firearms", PistolHvy: "Firearms",
+  SMG: "Firearms", Rifle: "Firearms", Shotgun: "Firearms",
+  Cybergun: "Firearms",
+  Heavy: "Heavy Weapons", GrenadeLauncher: "Heavy Weapons",
+  Energy: "Energy Weapons",
+};
+
+/* The handful of weapons that don't follow their Type: cyber implants are
+ * Cybertech Combat rather than Melee Weapons, and knuckles are Unarmed. Keyed
+ * by the exact name in the data (the asterisk is part of these two). */
+const WEAPON_NAME_SKILL = {
+  "Brass Knuckles*": "Unarmed Combat",
+  "Monofilament Whip*": "Cybertech Combat",
+  "Elbow Spurs": "Cybertech Combat",
+  "Knee Spurs": "Cybertech Combat",
+  "Hand Razors": "Cybertech Combat",
+  "Hand Blade": "Cybertech Combat",
+  "Fangs": "Cybertech Combat",
+};
+
+/** Canonical skill for a weapon, or null when nothing maps. Name beats Type.
+ *  Granted weapons carry a "×2" count suffix, which isn't part of the name. */
+function weaponSkillName(name, type) {
+  const bare = String(name || "").replace(/\s*[x×]\s*\d+$/i, "").trim();
+  return WEAPON_NAME_SKILL[bare] || WEAPON_TYPE_SKILL[type] || null;
+}
+
 // Short forms used in gear/drone effect text -> canonical skill name.
 const SKILL_ALIASES = {
   "Reconnaissance": ["Reconnaissance", "Recon"],
@@ -3153,6 +3186,7 @@ return {
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage,
+  weaponSkillName,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,

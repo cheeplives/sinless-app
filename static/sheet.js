@@ -1248,6 +1248,21 @@ function shOverview(body) {
   if (equippedWeapons.length || cyberguns.length || wornArmor.length
       || grantedWeapons.length || traitGear.length || ammoOnHand.length
       || (CALC.combat.armor_sources || []).length) {
+    /* The dice you actually roll to attack with this weapon, shown next to its
+     * type: rank in the mapped skill (CALC .final already folds in the untrained
+     * group fallback, so Unarmed 4 shows Melee Weapons as 2) plus the weapon's
+     * own Accuracy. Melee rows list Reach and carry no Accuracy, so those come
+     * out as the bare skill. Returns null when nothing maps, so it can be
+     * dropped straight into el(). */
+    const weaponSkillDice = (name, type, accuracy) => {
+      const skill = RULES.weaponSkillName(name, type);
+      const s = skill && (CALC.skills || {})[skill];
+      if (!s) return null;
+      const acc = +accuracy || 0;
+      return el("b", { class: "wpn-dice",
+        title: `${skill} ${s.final}${acc ? ` + Accuracy ${acc}` : ""}`
+          + ` = ${s.final + acc} dice` }, ` (${s.final + acc})`);
+    };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
@@ -1271,7 +1286,9 @@ function shOverview(body) {
             stats: el("td", { class: "sub" },
               // Mirror the full Gear-tab stat line (issue #15): rate of fire /
               // Reach, Firing modes, ZR, Weight, Hardening, Rarity all included.
-              `${r.Type || ""} · `
+              `${r.Type || ""}`,
+              weaponSkillDice(w.name, r.Type, calcRow.Accuracy ?? r.Accuracy),
+              " · "
               + (r.Type === "Melee" ? `Reach ${r.Reach || 0}` : `Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}`)
               + ` · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"}`
               + ` · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
@@ -1290,7 +1307,8 @@ function shOverview(body) {
           return {
             name: el("b", {}, cg.name + " (smart)"),
             stats: el("td", { class: "sub" },
-              `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
+              "Cybergun", weaponSkillDice(cg.name, "Cybergun", g.Acc),
+              ` · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
             last: el("td", { class: "sub" }, "Implanted (Augments tab)"),
           };
         },
@@ -1323,9 +1341,16 @@ function shOverview(body) {
       const gt = el("table");
       gt.append(el("tr", {}, el("th", {}, "Natural / cyber weapon"),
         el("th", {}, "Stats"), el("th", {}, "Source")));
+      // Cyber implants (Hand Razors, Spurs, Fangs, …) roll Cybertech Combat
+      // rather than Melee Weapons; weaponSkillName knows the exceptions by name.
+      // `gw.stats` is a preformatted line (Snake's ranged Spit), so it's left be.
       grantedWeapons.forEach(gw => gt.append(el("tr", {},
         el("td", {}, el("b", {}, gw.name)),
-        el("td", { class: "sub" }, gw.stats || `Melee · DMG ${gw.damage} · Reach ${gw.reach}`),
+        gw.stats
+          ? el("td", { class: "sub" }, gw.stats)
+          : el("td", { class: "sub" }, "Melee",
+              weaponSkillDice(gw.name, "Melee", 0),
+              ` · DMG ${gw.damage} · Reach ${gw.reach}`),
         el("td", { class: "sub" }, gw.source))));
       loadout.append(gt);
     }
@@ -1338,11 +1363,13 @@ function shOverview(body) {
       traitGear.forEach(g => {
         const w = g.weapon;
         const stats = g.kind === "weapon" && w
-          ? `${w.Type || ""} · Acc ${w.Accuracy || 0} · DMG ${w.Damage || "—"} · Pen ${w.Pen || 0} · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`
-          : "Extra limb (free mount)";
+          ? [`${w.Type || ""}`, weaponSkillDice(w.Weapon, w.Type, w.Accuracy),
+             ` · Acc ${w.Accuracy || 0} · DMG ${w.Damage || "—"} · Pen ${w.Pen || 0}`
+             + ` · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`]
+          : ["Extra limb (free mount)"];
         tt.append(el("tr", {},
           el("td", {}, el("b", {}, g.label)),
-          el("td", { class: "sub" }, stats),
+          el("td", { class: "sub" }, ...stats),
           el("td", { class: "sub" }, g.source)));
       });
       loadout.append(tt);

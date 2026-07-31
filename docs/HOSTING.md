@@ -67,6 +67,18 @@ Edit `api/config.php`:
 - `session.cookie_secure` — leave `true` (HTTPS). Optionally set
   `session.save_path` to a private writable dir outside the web root.
 
+> **If users report having to re-login every day**, it's almost always one of
+> these two, not OAuth:
+> - The session cookie is only kept until the browser closes. That's
+>   `session.cookie_lifetime => 0`; omit the key to follow `idle_timeout`
+>   instead.
+> - PHP garbage-collected the session **file**. `boot_session()` raises
+>   `session.gc_maxlifetime` to the idle window, but on hosts where GC runs from
+>   cron rather than from PHP (Debian/Ubuntu packaging) that ini is ignored and
+>   the system sweep wins. On shared hosting another tenant's sweep can delete
+>   your files too. Setting `session.save_path` to your own private directory
+>   fixes both — it is the reliable fix, not just a hardening nicety.
+
 **Keep `config.php` secret.** The bundled `.htaccess` denies web access to it and
 `.gitignore` keeps it out of git. Best of all: move it above the web root and
 adjust the `require` path at the top of `api/lib.php`.

@@ -86,6 +86,12 @@ return [
     'name'            => 'sinless_sid',
     'idle_timeout'    => 60 * 60 * 24 * 14,   // seconds of inactivity before logout (14d)
     'absolute_timeout'=> 60 * 60 * 24 * 60,   // hard cap on a session's life (60d)
+    // How long the browser keeps the session cookie. Omit to follow
+    // idle_timeout (the window slides on each request, capped by
+    // absolute_timeout). Set 0 for a browser-session cookie that dies when the
+    // browser closes -- more private on shared machines, but it means users
+    // re-login every time they restart the browser.
+    // 'cookie_lifetime' => 0,
     // Set false ONLY for local http testing; MUST be true in production (HTTPS).
     'cookie_secure'   => true,
     // Optional dedicated session file dir (recommended on shared hosting so

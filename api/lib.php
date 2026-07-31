@@ -99,9 +99,27 @@ function boot_session(): void {
   ini_set('session.use_only_cookies', '1');
   ini_set('session.cookie_httponly', '1');
 
+  $idle = (int) ($s['idle_timeout'] ?? 1209600);
+  $abs  = (int) ($s['absolute_timeout'] ?? 5184000);
+  // How long the browser keeps the cookie. 0 means "until the browser closes",
+  // which silently overrode the idle_timeout above and logged people out roughly
+  // daily whenever they restarted their browser (issue #25). Default it to the
+  // idle window so the declared policy is the one that actually applies; set it
+  // to 0 in config to deliberately get browser-session cookies back.
+  $cookieLife = array_key_exists('cookie_lifetime', $s)
+    ? (int) $s['cookie_lifetime'] : $idle;
+
+  // PHP garbage-collects session FILES on its own schedule -- the default
+  // gc_maxlifetime is 1440s (24 min), so the server could drop a session long
+  // before the cookie or idle_timeout said it should. Keep the files at least as
+  // long as the idle window. NB on distros where GC runs from cron instead of
+  // PHP (Debian/Ubuntu packaging), this ini has no effect and a private
+  // session.save_path is the reliable fix -- see docs/HOSTING.md.
+  ini_set('session.gc_maxlifetime', (string) max($idle, 1440));
+
   session_name($s['name'] ?? 'sinless_sid');
   session_set_cookie_params([
-    'lifetime' => 0,                          // session cookie (dies with browser)
+    'lifetime' => $cookieLife,
     'path'     => '/',
     'secure'   => (bool) ($s['cookie_secure'] ?? true),
     'httponly' => true,
@@ -111,14 +129,29 @@ function boot_session(): void {
 
   // Idle + absolute timeout enforcement.
   $now = time();
-  $idle = (int) ($s['idle_timeout'] ?? 1209600);
-  $abs  = (int) ($s['absolute_timeout'] ?? 5184000);
   if (isset($_SESSION['user_id'])) {
     $expired = ($now - ($_SESSION['last_seen'] ?? $now)) > $idle
             || ($now - ($_SESSION['created'] ?? $now)) > $abs;
     if ($expired) { destroy_session(); }
   }
-  if (isset($_SESSION['user_id'])) $_SESSION['last_seen'] = $now;
+  if (isset($_SESSION['user_id'])) {
+    $_SESSION['last_seen'] = $now;
+    // PHP only emits the cookie when it creates or regenerates a session, so a
+    // persistent cookie would otherwise expire a fixed idle_timeout after LOGIN
+    // no matter how active the user was. Re-send it to slide the window, but not
+    // past the session's absolute deadline.
+    if ($cookieLife > 0) {
+      $deadline = ($_SESSION['created'] ?? $now) + $abs;
+      $life = min($cookieLife, max(0, $deadline - $now));
+      if ($life > 0) {
+        setcookie(session_name(), session_id(), [
+          'expires'  => $now + $life, 'path' => '/',
+          'secure'   => (bool) ($s['cookie_secure'] ?? true),
+          'httponly' => true, 'samesite' => 'Lax',
+        ]);
+      }
+    }
+  }
   if (!isset($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }
 

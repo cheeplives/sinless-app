@@ -2190,16 +2190,35 @@ function fittedEditor(it, weaponTables, guard) {
       + (r.Ammo ? ` \u00b7 Ammo ${r.Ammo}` : "")
       + (r.ModeEffect ? ` \u00b7 ${r.ModeEffect}` : "");
   };
+  // The picker is one combined list, but the two kinds live in separate arrays:
+  // rules.js reads unit.mods for a mod's stat effects, and
+  // migrateUnitAttachments moves any mod found in unit.weapons across on the
+  // next recalc. So render BOTH arrays and route each add/remove to the one the
+  // name belongs to -- otherwise a fitted mod drops out of this list on the next
+  // recalc while still being charged for and still affecting the unit's stats,
+  // with no way left to take it off (issue #24).
+  const modName = m => (typeof m === "string" ? m : (m && m.name) || "");
+  const entries = [
+    ...(it.weapons || []).map((name, i) => ({ name, list: "weapons", i })),
+    ...(it.mods || []).map((m, i) => ({ name: modName(m), list: "mods", i })),
+  ].filter(e => e.name);
   return fittedItemsEditor({
-    items: it.weapons || [],
+    items: entries.map(e => e.name),
     placeholder: "Fit weapon/mod\u2026",
     optionElements: weaponTables.map(([table, nameColumn]) =>
       el("optgroup", { label: nameColumn },
         ...DATA.tables[table].map(r => el("option", { value: r[nameColumn] },
           `${r[nameColumn]} \u2014 ${fmt(r.Cost)} \u00b7 wt ${r.Weight || 0}`
           + (r.ModeEffect ? " \u00b7 " + r.ModeEffect : ""))))),
-    onAdd: name => (it.weapons ??= []).push(name),
-    onRemove: index => it.weapons.splice(index, 1),
+    onAdd: name => {
+      const found = findFitting(name, weaponTables);
+      const key = found && !found.isWeapon ? "mods" : "weapons";
+      (it[key] ??= []).push(name);
+    },
+    onRemove: index => {
+      const e = entries[index];
+      if (e) (it[e.list] || []).splice(e.i, 1);
+    },
     guard,
     effectOf: describeFitting,
   });
@@ -2280,7 +2299,12 @@ function tabDrones(p) {
       render: (it, i, del) => {
         const r = DATA.tables[table].find(x => x[nameKey] === it.name) || {};
         const calcRow = (CALC[key] || [])[i] || {};
-        const fitted = () => (it.weapons || []).map(n => findFitting(n, wtabs)).filter(Boolean);
+        // Both arrays count toward WW and hard points -- rules.js prices and
+        // limits off the union too, so reading only `weapons` here let a mod
+        // slip past the weight guard once migrateUnitAttachments moved it.
+        const fitted = () => [...(it.weapons || []), ...(it.mods || [])]
+          .map(n => findFitting(typeof n === "string" ? n : (n && n.name), wtabs))
+          .filter(Boolean);
         const guard = name => {
           const cand = findFitting(name, wtabs);
           if (!cand) return null;

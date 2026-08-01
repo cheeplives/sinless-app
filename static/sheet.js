@@ -1261,7 +1261,7 @@ function shOverview(body) {
       const acc = +accuracy || 0;
       return el("b", { class: "wpn-dice",
         title: `${skill} ${s.final}${acc ? ` + Accuracy ${acc}` : ""}`
-          + ` = ${s.final + acc} dice` }, ` (${s.final + acc})`);
+          + ` = ${s.final + acc} dice` }, `(${s.final + acc}d)`);
     };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
@@ -1341,15 +1341,16 @@ function shOverview(body) {
       const gt = el("table");
       gt.append(el("tr", {}, el("th", {}, "Natural / cyber weapon"),
         el("th", {}, "Stats"), el("th", {}, "Source")));
-      // Cyber implants (Hand Razors, Spurs, Fangs, …) roll Cybertech Combat
-      // rather than Melee Weapons; weaponSkillName knows the exceptions by name.
+      // These are attacks made with the body, so they resolve against the
+      // "Natural" pseudo-type (Unarmed Combat) unless weaponSkillName knows the
+      // name -- the bladed implants roll Cybertech Combat instead.
       // `gw.stats` is a preformatted line (Snake's ranged Spit), so it's left be.
       grantedWeapons.forEach(gw => gt.append(el("tr", {},
         el("td", {}, el("b", {}, gw.name)),
         gw.stats
           ? el("td", { class: "sub" }, gw.stats)
           : el("td", { class: "sub" }, "Melee",
-              weaponSkillDice(gw.name, "Melee", 0),
+              weaponSkillDice(gw.name, "Natural", 0),
               ` · DMG ${gw.damage} · Reach ${gw.reach}`),
         el("td", { class: "sub" }, gw.source))));
       loadout.append(gt);

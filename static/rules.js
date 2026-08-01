@@ -1607,8 +1607,10 @@ function scoreSkills(character, heritage, amp, augments, warnings, errors) {
 }
 
 /* Which skill a weapon is attacked with, keyed by the weapons table's `Type`.
- * "Cybergun" isn't a row Type -- implanted guns have their own table and are
- * always pistols, so they're mapped here too. */
+ * Two keys aren't row Types: "Cybergun" (implanted guns have their own table
+ * and are always pistols) and "Natural", the fallback for granted weapons --
+ * amp-power and heritage attacks like Iron Fist or a Shark's bite are made with
+ * the body, so they default to Unarmed Combat rather than Melee Weapons. */
 const WEAPON_TYPE_SKILL = {
   Melee: "Melee Weapons",
   Thrown: "Throwing Weapons",
@@ -1617,19 +1619,20 @@ const WEAPON_TYPE_SKILL = {
   Cybergun: "Firearms",
   Heavy: "Heavy Weapons", GrenadeLauncher: "Heavy Weapons",
   Energy: "Energy Weapons",
+  Natural: "Unarmed Combat",
 };
 
-/* The handful of weapons that don't follow their Type: cyber implants are
- * Cybertech Combat rather than Melee Weapons, and knuckles are Unarmed. Keyed
- * by the exact name in the data (the asterisk is part of these two). */
+/* The handful of weapons that don't follow their Type: bladed cyber implants
+ * are Cybertech Combat, while knuckles and fangs are Unarmed. Keyed by the
+ * exact name in the data (the asterisk is part of those two). */
 const WEAPON_NAME_SKILL = {
   "Brass Knuckles*": "Unarmed Combat",
+  "Fangs": "Unarmed Combat",
   "Monofilament Whip*": "Cybertech Combat",
   "Elbow Spurs": "Cybertech Combat",
   "Knee Spurs": "Cybertech Combat",
   "Hand Razors": "Cybertech Combat",
   "Hand Blade": "Cybertech Combat",
-  "Fangs": "Cybertech Combat",
 };
 
 /** Canonical skill for a weapon, or null when nothing maps. Name beats Type.

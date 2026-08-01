@@ -343,8 +343,8 @@ const DATA_BUNDLE ={
 {"Drone Mod":"Advanced Hardening","ZR":"","BI":"","Cost":"11000","Weight":"2","ModeEffect":"+4 Base Hardening"},
 {"Drone Mod":"Armor","ZR":"","BI":"","Cost":"800","Weight":"1","ModeEffect":"+1 Ballistic Armor"},
 {"Drone Mod":"Improved Armor","ZR":"","BI":"","Cost":"1600","Weight":"2","ModeEffect":"+2 Ballistic Armor"},
-{"Drone Mod":"Improved Frame","ZR":"","BI":"","Cost":"800","Weight":"1","ModeEffect":"+1 Impact Armor"},
-{"Drone Mod":"Reinforced Frame","ZR":"","BI":"","Cost":"1600","Weight":"2","ModeEffect":"+2 Impact Armor"},
+{"Drone Mod":"Frame","ZR":"","BI":"","Cost":"800","Weight":"1","ModeEffect":"+1 Impact Armor"},
+{"Drone Mod":"Improved Frame","ZR":"","BI":"","Cost":"1600","Weight":"2","ModeEffect":"+2 Impact Armor"},
 {"Drone Mod":"Battle Ram","ZR":"","BI":"","Cost":"1800","Weight":"2","ModeEffect":"Double damage and takes 1/2 damage from Ram"}
 ],
 "heritages":[
@@ -824,8 +824,8 @@ const DATA_BUNDLE ={
 {"Vehicle Mod":"Advanced Hardening","ZR":"","BI":"","Cost":"11000","Weight":"2","ModeEffect":"+4 Base Hardening"},
 {"Vehicle Mod":"Armor","ZR":"","BI":"","Cost":"800","Weight":"1","ModeEffect":"+1 Ballistic Armor"},
 {"Vehicle Mod":"Improved Armor","ZR":"","BI":"","Cost":"1600","Weight":"2","ModeEffect":"+2 Ballistic Armor"},
-{"Vehicle Mod":"Improved Frame","ZR":"","BI":"","Cost":"800","Weight":"1","ModeEffect":"+1 Impact Armor"},
-{"Vehicle Mod":"Reinforced Frame","ZR":"","BI":"","Cost":"1600","Weight":"2","ModeEffect":"+2 Impact Armor"},
+{"Vehicle Mod":"Frame","ZR":"","BI":"","Cost":"800","Weight":"1","ModeEffect":"+1 Impact Armor"},
+{"Vehicle Mod":"Improved Frame","ZR":"","BI":"","Cost":"1600","Weight":"2","ModeEffect":"+2 Impact Armor"},
 {"Vehicle Mod":"Battle Ram","ZR":"","BI":"","Cost":"1800","Weight":"2","ModeEffect":"Double damage and takes 1/2 damage from Ram"}
 ],
 "weapons":[

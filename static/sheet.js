@@ -1032,6 +1032,16 @@ function loadoutMove(items, i, dir) {
   items.forEach((it, k) => it.setOrder(k));
   playChanged();
 }
+// The Gear tab lists ARE their backing array in order, so reordering there moves
+// the element itself rather than layering a stored order over several stores.
+// `after` re-renders: playChanged for name-keyed lists, playChangedRecalc where
+// a CALC array is index-aligned to the one being moved (armor).
+function arrayMove(arr, i, dir, after = playChanged) {
+  const j = i + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  after();
+}
 
 // Cyberguns are augments with a chosen gun; surface them as read-only weapons
 // on the Overview loadout and the Gear weapons list.
@@ -1391,7 +1401,8 @@ function shOverview(body) {
       // each recalc, so their order is stored by source name in a play-state map.
       const gmap = (CHAR.play.granted_armor_order = CHAR.play.granted_armor_order || {});
       const at = el("table");
-      at.append(el("tr", {}, el("th", {}, "Armor"), el("th", {}, "B / I"), el("th", {}, "Notes")));
+      at.append(el("tr", {}, el("th", {}, "Armor"), el("th", { class: "num" }, "B / I"),
+        el("th", {}, "Notes")));
       const items = [];
       wornArmor.forEach((a, idx) => items.push({
         ins: idx, getOrder: () => a.lo, setOrder: v => { a.lo = v; },
@@ -2534,7 +2545,10 @@ function shGear(body) {
       const canMod = !["Melee", "Thrown", "GrenadeLauncher", "Heavy", "Energy"].includes(r.Type);
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
       t.append(el("tr", {},
-        el("td", {}, el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
+        el("td", {},
+          reorderHandle(() => arrayMove(CHAR.weapons, wi, -1), () => arrayMove(CHAR.weapons, wi, 1),
+            wi > 0, wi < CHAR.weapons.length - 1),
+          el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
           el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type)),
           shMountEditor(w, r, w.equipped !== false)),
         el("td", { class: "sub" },
@@ -2586,7 +2600,7 @@ function shGear(body) {
   ];
   if (CHAR.armor.length) {
     const t = el("table");
-    t.append(el("tr", {}, el("th", {}, "Armor"), el("th", {}, "B / I"),
+    t.append(el("tr", {}, el("th", {}, "Armor"), el("th", { class: "num" }, "B / I"),
       el("th", {}, "Extras"), el("th", {}, "Worn"), el("th", {}, "")));
     CHAR.armor.forEach((a, ai) => {
       const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
@@ -2619,7 +2633,12 @@ function shGear(body) {
       const arow = (CALC.armor || [])[ai] || {};
       const aeffects = arow.effects || [];
       t.append(el("tr", {},
-        el("td", {}, el("b", {}, a.name),
+        el("td", {},
+          // CALC.armor is index-aligned to CHAR.armor, so a move has to recalc.
+          reorderHandle(() => arrayMove(CHAR.armor, ai, -1, playChangedRecalc),
+            () => arrayMove(CHAR.armor, ai, 1, playChangedRecalc),
+            ai > 0, ai < CHAR.armor.length - 1),
+          el("b", {}, a.name),
           el("div", { class: "sub" },
             ([arow.material, arow.style].filter(Boolean).join(" · ") || r.Slot || "") + ` · wt ${r.wt || 0}`),
           aeffects.length ? el("div", { class: "sub armor-effects" },
@@ -2654,21 +2673,28 @@ function shGear(body) {
 
   // ===== Gear list (chargen + bought in play) — remove buttons
   // (Augments moved to their own tab.)
+  // Two backing stores rendered as one table (chargen kit, then bought-in-play).
+  // Reordering stays inside an item's own array — moving across the boundary
+  // would silently relabel a purchase — so the handles stop at each block's edge.
   const gearEntries = [
-    ...CHAR.gear.map(g => ({ ref: g, inPlay: false })),
-    ...play.purchases.gear.map(g => ({ ref: g, inPlay: true }))];
+    ...CHAR.gear.map(g => ({ ref: g, inPlay: false, arr: CHAR.gear })),
+    ...play.purchases.gear.map(g => ({ ref: g, inPlay: true, arr: play.purchases.gear }))];
   const gt = el("table");
   gt.append(el("tr", {}, el("th", {}, "Item"), el("th", { class: "num" }, "Qty"),
     el("th", {}, "Effect"), el("th", {}, "Carried"), el("th", {}, "")));
-  gearEntries.forEach(({ ref: g, inPlay }) => {
+  gearEntries.forEach(({ ref: g, inPlay, arr }) => {
     const r = DATA.tables.misc_gear.find(x => x.Item === g.name) || {};
     // Focus/Fetish/Spirit Bag links (chosen in chargen) now show — and stay
     // editable — on the sheet (issue #14). gearLinkSelect returns null otherwise.
     const ro = !!(activeTabObj() && activeTabObj().readonly);
     const linkSel = (!ro && typeof gearLinkSelect === "function")
       ? gearLinkSelect(g, playChangedRecalc) : null;
+    const gi = arr.indexOf(g);
     gt.append(el("tr", {},
-      el("td", {}, el("b", {}, g.name),
+      el("td", {},
+        reorderHandle(() => arrayMove(arr, gi, -1), () => arrayMove(arr, gi, 1),
+          gi > 0, gi < arr.length - 1),
+        el("b", {}, g.name),
         inPlay ? el("span", { class: "sh-tag" }, "bought in play") : null,
         linkSel ? el("div", { class: "sub sh-gearlink" }, "Linked to ", linkSel)
           : (g.link ? el("div", { class: "sub" }, `Linked to ${g.link}`) : null),

@@ -13,7 +13,7 @@
  */
 "use strict";
 
-const CACHE_VERSION = "sinless-v119";
+const CACHE_VERSION = "sinless-v120";
 
 const PRECACHE = [
   "./",

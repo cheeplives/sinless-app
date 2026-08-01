@@ -412,6 +412,18 @@ input[type=checkbox]{accent-color:var(--manon)}
    margin rather than a leading space: the mono font renders a space wide, which
    read as a gap between the type and its own rating. */
 .wpn-dice{font-family:var(--mono);color:var(--manon);margin-left:3px}
+
+/* character images on the Notes tab — auto-fit so 1–6 pictures all look
+   deliberate, and a click swaps one cell to full width for a closer look. */
+.sh-imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+  gap:12px;margin-top:6px}
+.sh-img-cell{display:flex;flex-direction:column;gap:5px;min-width:0}
+.sh-img{width:100%;height:150px;object-fit:cover;cursor:zoom-in;display:block;
+  border:1px solid var(--line);border-radius:8px;background:var(--panel-2)}
+.sh-img.big{height:auto;max-height:70vh;object-fit:contain;cursor:zoom-out}
+.sh-img-cell:has(.sh-img.big){grid-column:1/-1}
+.sh-img-foot{display:flex;align-items:center;gap:6px}
+.sh-img-foot input{flex:1;min-width:0}
 /* Category / A-Z switch (sortToggle) — a segmented pair, not two buttons */
 .cat-sort{display:flex;align-items:center;gap:6px;margin:10px 0 2px}
 .cat-sort .sub{font-size:10px;letter-spacing:.1em;text-transform:uppercase}

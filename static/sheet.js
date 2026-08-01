@@ -125,6 +125,7 @@ function ensurePlay() {
     purchases: { gear: [], augments: [], amp_powers: [], spells: [], hacking_levels: 0 },
     decking: { active_deck: "", loaded: [] },
     rigging: { active_rig: "", units: {} },
+    images: [],                           // [{ url (data URL), caption, big }]
     infusion_spirits: {},                 // infusion slot -> spirit placed in it
     bond_slots: [],                       // [{ spirit, force, favors }] spirits placed in bonds
   };
@@ -1545,6 +1546,135 @@ function notesCard(rows) {
     el("h3", {}, "Notes"),
     el("p", { class: "hint", style: "margin:2px 0 8px" }, "Notes save automatically while you type."),
     ta);
+}
+
+/* ---- character images (portrait, crest, …) --------------------------------
+ * Stored on the character as data URLs, so a picture travels with a save, a
+ * cloud sync and a JSON export instead of living only on one device. The cost
+ * is that images share the server's 256 KB per-character payload cap
+ * (read_json_body in api/lib.php rejects anything bigger with a 413), so
+ * everything here exists to keep a save from ever being refused: uploads are
+ * downscaled and re-encoded, and the running total is checked before storing. */
+const IMAGE_MAX_EDGE = 512;      // longest side, px — plenty for a sheet portrait
+const IMAGE_MAX_COUNT = 6;
+const IMAGE_BUDGET = 180 * 1024; // total data-URL chars across all images
+const imageBytes = url => (url || "").length;
+const imagesUsed = () => (CHAR.play.images || []).reduce((n, im) => n + imageBytes(im.url), 0);
+const fmtKB = n => `${Math.round(n / 1024)} KB`;
+
+/* Downscale + re-encode a picked file, returning { url, bytes, flattened }.
+ * `room` is how many data-URL chars are still available.
+ *
+ * Transparency only survives PNG, and PNG of a photo is enormous, so the format
+ * follows the image: alpha means a logo, no alpha means a picture. A big
+ * transparent logo shrinks — still as PNG — before transparency is given up,
+ * because a smaller crest beats a crest with a rectangle of background behind
+ * it. Only when no PNG size fits does it flatten to JPEG, and it says so.
+ * Rejects with a message fit to show the user. */
+function prepareImage(file, room) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("Couldn't read that file."));
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error(`${file.name} isn't an image this browser can read.`));
+      img.onload = () => {
+        const draw = edge => {
+          const scale = Math.min(1, edge / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          return canvas;
+        };
+        const full = draw(IMAGE_MAX_EDGE);
+        const px = full.getContext("2d").getImageData(0, 0, full.width, full.height).data;
+        let hasAlpha = false;
+        for (let i = 3; i < px.length; i += 4) { if (px[i] < 255) { hasAlpha = true; break; } }
+
+        const fits = url => imageBytes(url) <= room;
+        let best = null;                       // smallest thing we produced, for the error
+        const consider = (url, flattened) => {
+          if (!best || imageBytes(url) < imageBytes(best.url)) best = { url, flattened };
+          return fits(url) ? { url, bytes: imageBytes(url), flattened } : null;
+        };
+        if (hasAlpha) {
+          for (const edge of [IMAGE_MAX_EDGE, 384, 256, 160]) {
+            const hit = consider(draw(edge).toDataURL("image/png"), false);
+            if (hit) { resolve(hit); return; }
+          }
+        }
+        for (const edge of [IMAGE_MAX_EDGE, 384, 256]) {
+          const canvas = draw(edge);
+          for (const q of [0.82, 0.7, 0.58, 0.46]) {
+            const hit = consider(canvas.toDataURL("image/jpeg", q), hasAlpha);
+            if (hit) { resolve(hit); return; }
+          }
+        }
+        reject(new Error(`${file.name} won't fit — needs at least `
+          + `${fmtKB(imageBytes(best.url))}, ${fmtKB(Math.max(0, room))} free. `
+          + `Remove an image first.`));
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+function imagesCard() {
+  CHAR.play.images = CHAR.play.images || [];
+  const list = CHAR.play.images;
+  const used = imagesUsed();
+  const card = el("div", { class: "card sh-card" }, el("h3", {}, "Images"));
+  card.append(el("p", { class: "hint", style: "margin:2px 0 8px" },
+    `Portrait, crest, gang logo — up to ${IMAGE_MAX_COUNT}. Saved with the character, `
+    + `so they sync and travel in an export. Large files are scaled to `
+    + `${IMAGE_MAX_EDGE}px and re-compressed to stay inside the size limit.`));
+
+  const grid = el("div", { class: "sh-imgs" });
+  list.forEach((im, i) => {
+    const shot = el("img", { class: "sh-img" + (im.big ? " big" : ""), src: im.url,
+      alt: im.caption || "Character image", title: "Click to enlarge",
+      onclick: () => { im.big = !im.big; playChanged(); } });
+    const cap = el("input", { type: "text", placeholder: "Caption…",
+      oninput: e => { im.caption = e.target.value; playChanged(false); } });
+    cap.value = im.caption || "";
+    grid.append(el("div", { class: "sh-img-cell" }, shot,
+      el("div", { class: "sh-img-foot" }, cap,
+        el("button", { class: "row-del", title: "Remove this image",
+          onclick: () => { list.splice(i, 1); playChanged(); } }, "✕")),
+      el("div", { class: "sub" }, fmtKB(imageBytes(im.url)))));
+  });
+  if (list.length) card.append(grid);
+
+  const status = el("div", { class: "hint" },
+    `${list.length} / ${IMAGE_MAX_COUNT} images · ${fmtKB(used)} of ${fmtKB(IMAGE_BUDGET)} used`);
+  const picker = el("input", { type: "file", accept: "image/*", multiple: "1",
+    style: "display:none",
+    onchange: async e => {
+      const files = [...e.target.files];
+      e.target.value = "";                     // so the same file can be re-picked
+      const notes = [];
+      for (const file of files) {
+        if ((CHAR.play.images || []).length >= IMAGE_MAX_COUNT) {
+          notes.push(`Stopped at ${IMAGE_MAX_COUNT} images.`); break;
+        }
+        try {
+          const out = await prepareImage(file, IMAGE_BUDGET - imagesUsed());
+          CHAR.play.images.push({ url: out.url, caption: file.name.replace(/\.[^.]+$/, "") });
+          if (out.flattened) notes.push(`${file.name}: transparency flattened to fit.`);
+        } catch (err) { notes.push(err.message); }
+      }
+      if (notes.length) alert(notes.join("\n"));
+      playChanged();
+    } });
+  const addBtn = el("button", { class: "btn-add",
+    disabled: list.length >= IMAGE_MAX_COUNT ? "1" : null,
+    onclick: () => picker.click() },
+    list.length >= IMAGE_MAX_COUNT ? "Limit reached" : "Add image…");
+  card.append(el("div", { class: "sh-advrow", style: "border:0;padding:8px 0 0" },
+    status, addBtn), picker);
+  return card;
 }
 
 /* skills belonging to one pool — shown when its pool card is clicked */
@@ -4281,6 +4411,7 @@ function shNotes(body) {
   }
   const traits = heritageTraitsCard();
   if (traits) body.append(traits);
+  body.append(imagesCard());
   body.append(notesCard(18));
 }
 

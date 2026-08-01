@@ -1322,6 +1322,14 @@ function shOverview(body) {
         wt.append(el("tr", {}, el("td", {}, handle, c.name), c.stats, c.last));
       });
       loadout.append(wt);
+      // A weapon you own but haven't equipped is absent from this table, which
+      // reads as the sheet having lost it. Name them, and say where to fix it.
+      const stowed = CHAR.weapons.filter(w => w.equipped === false);
+      if (stowed.length) {
+        loadout.append(el("p", { class: "hint" },
+          `Not equipped, so not listed above: ${stowed.map(w => w.name).join(" · ")}. `
+          + `Tick Equip on the Gear tab to carry ${stowed.length > 1 ? "them" : "it"}.`));
+      }
     }
     // Ammo on hand, listed under the weapons it feeds (issue #21). Uses remaining
     // are tracked on the Gear tab; Effect/Notes come straight from the table.

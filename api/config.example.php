@@ -94,8 +94,14 @@ return [
     // 'cookie_lifetime' => 0,
     // Set false ONLY for local http testing; MUST be true in production (HTTPS).
     'cookie_secure'   => true,
-    // Optional dedicated session file dir (recommended on shared hosting so
-    // other tenants can't read session files). Must be writable, outside webroot.
+    // Where session FILES live. Leave blank and the app puts them in
+    // <parent of web root>/.sinless-sessions/<session name> -- on shared hosting
+    // that's your account home, outside the web root and owned by you. Keeping
+    // them off the shared default (/tmp) is what stops another tenant's cleanup,
+    // or a cron sweep that ignores gc_maxlifetime, from logging everyone out.
+    // Set an absolute path here to override; it must be writable by PHP. If the
+    // directory can't be used the app falls back to PHP's default rather than
+    // breaking every login, and logs why when the path was set explicitly.
     'save_path'       => '',
   ],
 

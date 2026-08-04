@@ -64,20 +64,41 @@ Edit `api/config.php`:
 - `admin_identities` — **add your own** email or `provider:id` here so your first
   sign-in is auto-approved and made admin (that's how you approve everyone else).
 - `approval_webhook_url` — a Discord/Slack *incoming webhook* URL (step 5).
-- `session.cookie_secure` — leave `true` (HTTPS). Optionally set
-  `session.save_path` to a private writable dir outside the web root.
+- `session.cookie_secure` — leave `true` (HTTPS). `session.save_path` can stay
+  blank: the app now keeps session files in its own private directory (below).
+
+### Session files live in their own directory
+
+Leave `session.save_path` blank and `boot_session()` puts session files in
+`<parent of web root>/.sinless-sessions/<session name>`, creating it `0700`. On
+shared hosting the parent of the web root is your account home, so the directory
+is outside the web root and owned by you. On DreamHost with the site at
+`/home/USER/YOURDOMAIN`, that resolves to
+`/home/USER/.sinless-sessions/sinless_sid`.
+
+Set an absolute path in config to override. Either way, if the directory can't
+be created or written the app **falls back to PHP's default rather than breaking
+every login**, and logs the reason when the path was set explicitly.
+
+Two things follow from owning the directory:
+
+- Nothing else sweeps it. That's the point — the shared default is cleaned on a
+  schedule you don't control, and a cron sweep ignores `gc_maxlifetime`.
+- PHP's own garbage collection becomes the only cleanup, so `boot_session()`
+  raises `session.gc_probability` when the host has it at `0` (which is exactly
+  what cron-sweeping distros ship). Without that, files would accumulate forever.
 
 > **If users report having to re-login every day**, it's almost always one of
 > these two, not OAuth:
 > - The session cookie is only kept until the browser closes. That's
 >   `session.cookie_lifetime => 0`; omit the key to follow `idle_timeout`
 >   instead.
-> - PHP garbage-collected the session **file**. `boot_session()` raises
+> - PHP garbage-collected the session **file** early. `boot_session()` raises
 >   `session.gc_maxlifetime` to the idle window, but on hosts where GC runs from
->   cron rather than from PHP (Debian/Ubuntu packaging) that ini is ignored and
->   the system sweep wins. On shared hosting another tenant's sweep can delete
->   your files too. Setting `session.save_path` to your own private directory
->   fixes both — it is the reliable fix, not just a hardening nicety.
+>   cron rather than from PHP that ini is ignored and the system sweep wins — and
+>   on shared hosting another tenant's sweep can delete your files too. The
+>   private `save_path` above is what actually fixes this; confirm it resolved by
+>   checking that `.sinless-sessions/` exists and is filling with `sess_*` files.
 
 **Keep `config.php` secret.** The bundled `.htaccess` denies web access to it and
 `.gitignore` keeps it out of git. Best of all: move it above the web root and

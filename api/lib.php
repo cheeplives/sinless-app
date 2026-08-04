@@ -90,10 +90,68 @@ function db(): PDO {
 }
 
 // --- hardened session ------------------------------------------------------
+
+/**
+ * A private directory to keep session files in, or null to leave PHP's default
+ * alone. Owning the directory is the reliable half of the issue-#25 fix: the
+ * shared default (/tmp or /var/lib/php/sessions) is swept on a schedule we do
+ * not control -- a cron sweep ignores our gc_maxlifetime, and on shared hosting
+ * another tenant's sweep can delete our files outright.
+ *
+ * `session.save_path` in config wins. Otherwise derive one from the parent of
+ * the web root, which on shared hosts (DreamHost included) is the account home
+ * -- outside the web root, and ours. The session name is appended so two
+ * instances on one account (say beta and live) never share a directory.
+ *
+ * Falls back to PHP's default whenever the directory can't be used, because a
+ * save_path that doesn't exist or isn't writable takes down every login. An
+ * explicitly configured path that fails is logged; a failed auto-derivation is
+ * not, since it just means the host doesn't allow it (open_basedir, say).
+ */
+function session_dir(array $s): ?string {
+  $configured = trim((string) ($s['save_path'] ?? ''));
+  $dir = $configured;
+  if ($dir === '') {
+    $root = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+    if ($root === '') return null;
+    $parent = dirname($root);
+    // dirname('/foo') is '/' -- refuse to plant a directory at the filesystem
+    // root, and don't bother if the parent isn't there.
+    if ($parent === '' || $parent === '/' || $parent === '.' || !is_dir($parent)) return null;
+    $name = (string) preg_replace('/[^A-Za-z0-9_.-]/', '', (string) ($s['name'] ?? 'sinless_sid'));
+    if ($name === '') $name = 'sinless_sid';
+    $dir = $parent . '/.sinless-sessions/' . $name;
+  }
+
+  if (!is_dir($dir)) @mkdir($dir, 0700, true);
+  if (!is_dir($dir) || !is_writable($dir)) {
+    if ($configured !== '')
+      error_log("session.save_path '$dir' is not a writable directory — "
+        . 'falling back to the PHP default, which may be swept early (issue #25).');
+    return null;
+  }
+  @chmod($dir, 0700);
+  // Only matters if the derivation ever lands inside the web root; the files are
+  // 0600 under a 0700 dir regardless, so this is belt-and-braces.
+  $ht = $dir . '/.htaccess';
+  if (!file_exists($ht)) @file_put_contents($ht, "Require all denied\n");
+  return $dir;
+}
+
 function boot_session(): void {
   if (session_status() === PHP_SESSION_ACTIVE) return;
   $s = cfg('session', []);
-  if (!empty($s['save_path'])) session_save_path($s['save_path']);
+  $ownDir = session_dir($s);
+  if ($ownDir !== null) {
+    session_save_path($ownDir);
+    // Once the files are ours, PHP's own GC is the only thing that will ever
+    // clean them. Hosts that sweep from cron ship gc_probability=0, which would
+    // otherwise leave every session file here forever, so make sure GC runs.
+    if ((int) ini_get('session.gc_probability') < 1) {
+      ini_set('session.gc_probability', '1');
+      ini_set('session.gc_divisor', '100');
+    }
+  }
 
   ini_set('session.use_strict_mode', '1');   // reject attacker-supplied session ids
   ini_set('session.use_only_cookies', '1');

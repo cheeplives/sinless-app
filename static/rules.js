@@ -1837,17 +1837,17 @@ const AMMO_FITS = {
   "Cased":           takesConventionalRounds,
   "Explosive":       takesConventionalRounds,
   "AM-3 Rifle ammo": row => /AM-3/i.test(String(row.Weapon || "")),
-  // Vehicle and drone mounts -- never a weapon a character carries.
-  "Micro missile (HEAP)": () => false,
-  "Micro Missile (anti-personnel)": () => false,
-  "Tank Rounds (HEAP)": () => false,
-  "Tank Rounds (HE)": () => false,
-  "Vulcan Cannon": () => false,
-  "20/25mm Cannon": () => false,
-  "30mm Cannon": () => false,
 };
+/* Every round that belongs to a vehicle / drone mount is barred from personal
+ * weapons outright. Derived from UNIT_AMMO_FITS below so the two lists can't
+ * drift -- adding a mount round in one place excludes it from the other. */
+function ammoIsMountOnly(item) {
+  return Object.prototype.hasOwnProperty.call(UNIT_AMMO_FITS, String(item || ""));
+}
 function ammoFitsWeapon(ammoRow, weaponRow) {
-  const rule = AMMO_FITS[String((ammoRow && ammoRow.Item) || "")];
+  const item = String((ammoRow && ammoRow.Item) || "");
+  if (ammoIsMountOnly(item)) return false;
+  const rule = AMMO_FITS[item];
   return rule ? !!rule(weaponRow || {}) : true;
 }
 
@@ -1860,6 +1860,13 @@ const UNIT_AMMO_FITS = {
   "Micro Missile (anti-personnel)": /missile launcher/i,
   "Tank Rounds (HEAP)": /tank cannon/i,
   "Tank Rounds (HE)": /tank cannon/i,
+  "Tank Rounds (KE)": /tank cannon/i,
+  "Tank Rounds (Cannister)": /tank cannon/i,
+  // The autocannons name their rounds in prose; these are those rounds. The
+  // vehicle mount is "Autocannons" and the drone one "Autocannon", so match both.
+  "Autocannon AP": /autocannon/i,
+  "Autocannon HEI": /autocannon/i,
+  "Autocannon Tracer": /autocannon/i,
   "20/25mm Cannon": /^25mm cannon$/i,
   "30mm Cannon": /^30mm cannon$/i,
   "Vulcan Cannon": /vulcan/i,

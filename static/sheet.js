@@ -1192,6 +1192,17 @@ function munitionPicker(entry, weaponRow) {
       label(r))));
 }
 
+/* What a mount is loaded with, and the stat mods it lends. Same parsing as
+   personal ammo -- the exotic rounds state their effect the same way. */
+function unitLoadedAmmo(table, unit, wi, wn) {
+  const st = unitGunState(table, unit, wi);
+  const fits = ownedAmmoRows().filter(a => RULES.ammoFitsUnitWeapon(a, wn));
+  const row = fits.find(a => a.Item === st.ammo);
+  if (!row) return { row: null, name: "", mods: RULES.ammoStatMods(""), notes: [] };
+  const mods = RULES.ammoStatMods(row.Effect);
+  return { row, name: row.Item, mods, notes: mods.notes };
+}
+
 /* Firing state for a mount, kept in play state because a unit's weapons are
    stored as bare names with nothing to hang it on. Keyed by the unit's slot and
    the weapon's index within it, alongside the condition tracks. */
@@ -4737,12 +4748,25 @@ function shRigging(body) {
         // Energy mounts run on Heat and carry no Modes/Ammo columns at all.
         const isEnergy = wr["Heat Limit"] !== undefined || wr.Heat !== undefined;
         const fireCtl = unitGunControls(cfg.table, u, wi, wn, wr, isEnergy);
+        // The loaded round shifts what the mount actually puts downrange.
+        const uAmmo = isEnergy ? { row: null, name: "", mods: RULES.ammoStatMods(""), notes: [] }
+                               : unitLoadedAmmo(cfg.table, u, wi, wn);
+        const uBase = { acc: wr.Accuracy || 0, damage: wr.Damage || "—", pen: wr.Pen || 0 };
+        const uShot = uAmmo.row ? RULES.applyAmmoStats(uBase, uAmmo.mods) : uBase;
+        const uBit = (label, key) => el("span",
+          (uAmmo.row && String(uShot[key]) !== String(uBase[key]))
+            ? { class: "wpn-ammo-mod", title: `${uAmmo.name} loaded` } : {},
+          `${label} ${uShot[key]}`);
         return el("div", { class: "sub", style: "margin:4px 0" },
           el("span", { class: "chip", style: "cursor:pointer", title: "Remove weapon",
             onclick: () => removeUnitWeapon(u, wi, cfg.table) }, wn + " ✕"),
-          ` DMG ${wr.Damage || "—"} · Acc ${wr.Accuracy || 0}`
-          + (ammo ? ` · Mag ${ammo}` : "") + (wr.Pen ? ` · Pen ${wr.Pen}` : ""),
+          " ", uBit("DMG", "damage"), " · ", uBit("Acc", "acc"),
+          (ammo ? ` · Mag ${ammo}` : ""),
+          wr.Pen ? el("span", {}, " · ") : null, wr.Pen ? uBit("Pen", "pen") : null,
           fireCtl,
+          uAmmo.notes.length
+            ? el("div", { class: "sub wpn-ammo-note", style: "margin-left:4px" },
+                `${uAmmo.name}: ${uAmmo.notes.join(" · ")}`) : null,
           effect ? el("div", { class: "sub", style: "margin:2px 0 0 4px;color:var(--manon)" }, effect) : null,
           modChips.length ? el("div", { style: "margin:2px 0 0 4px" }, ...modChips) : null,
           addWeaponMod ? el("div", { class: "sub", style: "margin:2px 0 0 4px" },

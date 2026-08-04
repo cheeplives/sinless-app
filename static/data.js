@@ -18,9 +18,9 @@ const DATA_BUNDLE ={
 "tables":{
 "cyberguns":[
 {"Type":"Palm Pistol","Acc":"0","Dmg":"2","Ammo":"5","Modes":"SS","Rarity":"3","Pen":"2","Cost":"300"},
-{"Type":"Forearm SMG","Acc":"3","Dmg":"3","Ammo":"40","Modes":"SS, SA, BF","Rarity":"4","Pen":"3","Cost":"2000"},
-{"Type":"Heavy Pistol","Acc":"2","Dmg":"6","Ammo":"15","Modes":"SS, SA","Rarity":"4","Pen":"4","Cost":"500"},
-{"Type":"Shotgun","Acc":"2","Dmg":"10","Ammo":"5","Modes":"SA","Rarity":"3","Pen":"3","Cost":"2500"}
+{"Type":"Forearm SMG","Acc":"3","Dmg":"3","Ammo":"40","Modes":"SS, DT, BF","Rarity":"4","Pen":"3","Cost":"2000"},
+{"Type":"Heavy Pistol","Acc":"2","Dmg":"6","Ammo":"15","Modes":"SS, DT","Rarity":"4","Pen":"4","Cost":"500"},
+{"Type":"Shotgun","Acc":"2","Dmg":"10","Ammo":"5","Modes":"DT","Rarity":"3","Pen":"3","Cost":"2500"}
 ],
 "amp_powers":[
 {"Name":"Adrenaline Boost","ZP Cost":"4","Effect":"+1 Simple Action/Round. Only available once","Description":"This grants the amp an additional simple action each round, three total, usable for any type of action. This can only be taken once."},
@@ -512,6 +512,11 @@ const DATA_BUNDLE ={
 {"Item":"Micro Missile (anti-personnel)","Class":"Ammo (Exotic)","Cost":"78000","Dependence":"","Weight":"","Rarity":"6","Effect":"40 Damage, explodes as grenade","Notes":"For Vehicle Missile Launcher","Mount Types":"","Mount ZP":""},
 {"Item":"Tank Rounds (HEAP)","Class":"Ammo (Exotic)","Cost":"4000","Dependence":"","Weight":"","Rarity":"7","Effect":"100 Damage, Ignores armor","Notes":"For Tank guns","Mount Types":"","Mount ZP":""},
 {"Item":"Tank Rounds (HE)","Class":"Ammo (Exotic)","Cost":"4000","Dependence":"","Weight":"","Rarity":"7","Effect":"40 Damage, Explodes as grenade","Notes":"For Tank guns","Mount Types":"","Mount ZP":""},
+{"Item":"Autocannon AP","Class":"Ammo (Exotic)","Cost":"150","Dependence":"","Weight":"","Rarity":"6","Effect":"Pen +2","Notes":"For Autocannons","Mount Types":"","Mount ZP":""},
+{"Item":"Autocannon HEI","Class":"Ammo (Exotic)","Cost":"150","Dependence":"","Weight":"","Rarity":"6","Effect":"Pen -2, Damage +4, 4m radius blast","Notes":"For Autocannons","Mount Types":"","Mount ZP":""},
+{"Item":"Autocannon Tracer","Class":"Ammo (Exotic)","Cost":"150","Dependence":"","Weight":"","Rarity":"6","Effect":"Acc +2","Notes":"For Autocannons","Mount Types":"","Mount ZP":""},
+{"Item":"Tank Rounds (KE)","Class":"Ammo (Exotic)","Cost":"4000","Dependence":"","Weight":"","Rarity":"7","Effect":"Ignores armor","Notes":"For Tank guns","Mount Types":"","Mount ZP":""},
+{"Item":"Tank Rounds (Cannister)","Class":"Ammo (Exotic)","Cost":"4000","Dependence":"","Weight":"","Rarity":"7","Effect":"Damage to all targets in a 15-degree cone","Notes":"For Tank guns","Mount Types":"","Mount ZP":""},
 {"Item":"Vulcan Cannon","Class":"Ammo (Exotic)","Cost":"12000","Dependence":"","Weight":"","Rarity":"5","Effect":"","Notes":"For Vulcan rotary cannon","Mount Types":"","Mount ZP":""},
 {"Item":"20/25mm Cannon","Class":"Ammo (Exotic)","Cost":"90","Dependence":"","Weight":"","Rarity":"5","Effect":"","Notes":"For Vehicle cannons","Mount Types":"","Mount ZP":""},
 {"Item":"30mm Cannon","Class":"Ammo (Exotic)","Cost":"137","Dependence":"","Weight":"","Rarity":"5","Effect":"","Notes":"For Vehicle cannons","Mount Types":"","Mount ZP":""}

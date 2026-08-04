@@ -1830,8 +1830,22 @@ function augmentAvailability(ownedEntries) {
   const rowOf = name => DATA.tables.augments.find(a => a.Name === name) || {};
   const isStackable = name =>
     STACKABLE_RE.test(name) || LIMB_TYPES.has(rowOf(name).Type || "");
+  // Families whose tiers are NAMED rather than numbered. Bone Lacing's materials
+  // are ranks in disguise -- plastic < aluminum < titanium in cost, ZR, Body and
+  // armor alike -- but parse() only understands a trailing digit, so all three
+  // read as separate one-rank families and a character could buy the lot. Listed
+  // here they behave exactly like Wired Reflexes: taking one drops it and every
+  // grade below it, leaving the better grades buyable as an upgrade.
+  const NAMED_TIERS = {
+    "Bone Lacing": { plastic: 1, aluminum: 2, titanium: 3 },
+  };
   // name -> {family, rank}
   const parse = name => {
+    for (const [family, tiers] of Object.entries(NAMED_TIERS)) {
+      if (!name.startsWith(family + "-")) continue;
+      const rank = tiers[name.slice(family.length + 1).trim().toLowerCase()];
+      if (rank) return { family, rank };
+    }
     const m = name.match(/^(.*?)[\s-]*(\d+)\s*$/);
     return m ? { family: m[1].trim(), rank: +m[2] } : { family: name, rank: 1 };
   };

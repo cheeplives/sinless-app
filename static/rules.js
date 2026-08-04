@@ -1013,14 +1013,33 @@ function augmentMeleeDamage(row, strength, martialMods) {
 // grant a bare-handed strike. Surfaced on the Overview loadout beside carried
 // weapons so their auto-calculated (Strength-based) damage and Reach are visible
 // in one place. Each: { name, damage, reach, source }.
+/* Implants that carry a Damage value but are NOT melee attacks rolled off a
+ * skill: the implant supplies the whole dice pool itself. Curated here beside
+ * the other special cases (Iron Fist, Shark, Snake) rather than parsed out of
+ * the Effect prose -- the description is written for humans and editing it
+ * shouldn't silently change what the sheet rolls. `dice` is the complete attack
+ * pool, so consumers get a number rather than a preformatted string.
+ *
+ * Adding a data column instead would mean touching every augment row: the table
+ * currently has a uniform column set, and a column present on one row only is
+ * exactly what promote_homebrew.base_columns() drops (it reads row 0). */
+const FIXED_POOL_IMPLANTS = {
+  "Eye Laser": { kind: "Ranged 2m", dice: 8, note: "one shot — burns out the eye" },
+};
+
 function collectGrantedWeapons(augments, amp, strength, martialMods) {
   const list = [];
   // Cyber melee implants + Fangs: any owned augment with a structured Damage.
   for (const [row, count] of augments.rows) {
     const dmg = augmentMeleeDamage(row, strength, martialMods);
     if (dmg === "") continue;
-    list.push({ name: count > 1 ? `${row.Name} ×${count}` : row.Name,
-      damage: dmg, reach: 0, source: "Cyberware" });
+    const name = count > 1 ? `${row.Name} ×${count}` : row.Name;
+    const fixed = FIXED_POOL_IMPLANTS[row.Name];
+    if (fixed) {
+      list.push({ name, damage: String(row.Damage ?? ""), source: "Cyberware", ...fixed });
+      continue;
+    }
+    list.push({ name, damage: dmg, reach: 0, source: "Cyberware" });
   }
   // Iron Fist (Amp power): unarmed strikes deal physical ½STR + 6 at Reach 0.
   if (amp.powers_taken.has("Iron Fist")) {
@@ -1652,9 +1671,15 @@ const WEAPON_TYPE_SKILL = {
  * are Cybertech Combat, while knuckles and fangs are Unarmed. Keyed by the
  * exact name in the data (the asterisk is part of those two). */
 const WEAPON_NAME_SKILL = {
+  // The asterisk is part of the name in the data, but it's a footnote marker
+  // rather than meaningful identity -- a data cleanup or a homebrew re-entry
+  // that drops it would silently send Brass Knuckles to Melee Weapons (its Type)
+  // and the Whip to Melee too. Both spellings map, so neither can drift.
   "Brass Knuckles*": "Unarmed Combat",
+  "Brass Knuckles": "Unarmed Combat",
   "Fangs": "Unarmed Combat",
   "Monofilament Whip*": "Cybertech Combat",
+  "Monofilament Whip": "Cybertech Combat",
   "Elbow Spurs": "Cybertech Combat",
   "Knee Spurs": "Cybertech Combat",
   "Hand Razors": "Cybertech Combat",

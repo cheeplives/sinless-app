@@ -1372,14 +1372,23 @@ function shOverview(body) {
       // "Natural" pseudo-type (Unarmed Combat) unless weaponSkillName knows the
       // name -- the bladed implants roll Cybertech Combat instead.
       // `gw.stats` is a preformatted line (Snake's ranged Spit), so it's left be.
-      grantedWeapons.forEach(gw => gt.append(el("tr", {},
-        el("td", {}, el("b", {}, gw.name)),
-        gw.stats
-          ? el("td", { class: "sub" }, gw.stats)
-          : el("td", { class: "sub" }, "Melee",
-              weaponSkillDice(gw.name, "Natural", 0),
-              ` · DMG ${gw.damage} · Reach ${gw.reach}`),
-        el("td", { class: "sub" }, gw.source))));
+      // `gw.dice` is a fixed pool the implant supplies itself (Eye Laser): show
+      // that number instead of asking for a skill rating it doesn't roll off,
+      // and let `kind`/`note` replace the Melee/Reach framing that doesn't fit.
+      grantedWeapons.forEach(gw => {
+        const dice = gw.dice != null
+          ? el("b", { class: "wpn-dice", title:
+              `${gw.dice} dice — a fixed pool from the implant, not a skill rating` },
+              `(${gw.dice}d)`)
+          : weaponSkillDice(gw.name, "Natural", 0);
+        gt.append(el("tr", {},
+          el("td", {}, el("b", {}, gw.name)),
+          gw.stats
+            ? el("td", { class: "sub" }, gw.stats)
+            : el("td", { class: "sub" }, gw.kind || "Melee", dice,
+                ` · DMG ${gw.damage}` + (gw.note ? ` · ${gw.note}` : ` · Reach ${gw.reach}`)),
+          el("td", { class: "sub" }, gw.source)));
+      });
       loadout.append(gt);
     }
     // Heavy Torso / No Head free-mount gear — weapons (with stats) and extra
@@ -4694,7 +4703,10 @@ function buildMarkdown() {
       L.push(`- **${cg.name}** (smart) — DMG ${g.Dmg} · Acc ${g.Acc} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`);
     });
     grantedWeapons.forEach(gw => {
-      L.push(`- **${gw.name}** — ${gw.stats || `Melee · DMG ${gw.damage} · Reach ${gw.reach}`} (${gw.source})`);
+      const line = gw.stats
+        || `${gw.kind || "Melee"}${gw.dice != null ? ` ${gw.dice}d` : ""} · DMG ${gw.damage}`
+           + (gw.note ? ` · ${gw.note}` : ` · Reach ${gw.reach}`);
+      L.push(`- **${gw.name}** — ${line} (${gw.source})`);
     });
     traitGear.forEach(g => {
       const w = g.weapon;

@@ -1114,21 +1114,27 @@ function ownedAmmoRows() {
   return [...seen.values()];
 }
 
+/* Ammo the character owns that this particular weapon will actually chamber. */
+function ammoOptionsFor(type, name) {
+  return ownedAmmoRows().filter(r => RULES.ammoFitsWeapon(r, type, name));
+}
+
 /* Which ammo an entry is loaded with. An unset choice falls back to Standard --
    the plain rounds a gun is assumed to carry, and they have no effect, so the
    default changes no numbers. Falls through to nothing when the character owns
-   no Standard, and when a previously chosen type has since been sold off. */
-function ammoNameFor(entry) {
-  const owned = ownedAmmoRows();
-  if (owned.some(x => x.Item === entry.ammo)) return entry.ammo;
+   no Standard, when a previously chosen type has since been sold off, and when
+   a choice made before the compatibility rules no longer fits this weapon. */
+function ammoNameFor(entry, type, weaponName) {
+  const fits = ammoOptionsFor(type, weaponName);
+  if (fits.some(x => x.Item === entry.ammo)) return entry.ammo;
   if (entry.ammo === "") return "";                       // explicitly unloaded
-  return owned.some(x => x.Item === "Standard") ? "Standard" : "";
+  return fits.some(x => x.Item === "Standard") ? "Standard" : "";
 }
 
 /* The ammo an entry is loaded with, plus its parsed stat mods. */
-function loadedAmmoFor(entry) {
+function loadedAmmoFor(entry, type, weaponName) {
   const none = { row: null, name: "", mods: RULES.ammoStatMods(""), notes: [] };
-  const name = ammoNameFor(entry);
+  const name = ammoNameFor(entry, type, weaponName);
   if (!name) return none;
   const row = ownedAmmoRows().find(x => x.Item === name);
   if (!row) return none;
@@ -1162,15 +1168,17 @@ function loadedGrenadeFor(entry) {
 /* Munition selector. Melee and thrown weapons load nothing, and neither do
    Energy weapons -- they run on Heat. Grenade launchers pick a grenade;
    everything else that fires, cyberguns included, picks ammunition. */
-function munitionPicker(entry, type) {
+function munitionPicker(entry, type, weaponName) {
   if (["Melee", "Thrown", "Energy"].includes(type)) return "—";
   const launcher = type === "GrenadeLauncher";
-  const owned = launcher ? ownedGrenadeRows() : ownedAmmoRows();
+  const owned = launcher ? ownedGrenadeRows() : ammoOptionsFor(type, weaponName);
   const key = r => (launcher ? r.Weapon : r.Item);
   if (!owned.length)
-    return el("span", { class: "sub" }, launcher ? "no grenades owned" : "none owned");
+    return el("span", { class: "sub" },
+      launcher ? "no grenades owned"
+        : (ownedAmmoRows().length ? "none this weapon takes" : "none owned"));
   const ro = !!(activeTabObj() && activeTabObj().readonly);
-  const cur = launcher ? loadedGrenadeFor(entry).name : ammoNameFor(entry);
+  const cur = launcher ? loadedGrenadeFor(entry).name : ammoNameFor(entry, type, weaponName);
   if (ro) return el("span", { class: "sub" }, cur || "—");
   const label = r => launcher
     ? `${r.Weapon.replace(/\s*Grenade$/i, "")} — DMG ${r.Damage || "—"}`
@@ -1540,14 +1548,19 @@ function shOverview(body) {
           // grenade launcher takes its Damage and Pen wholesale from the
           // chambered grenade -- its own Damage column just says "By Grenade".
           const baseAcc = calcRow.Accuracy ?? r.Accuracy ?? 0;
-          const base = { acc: baseAcc, damage: calcRow.Damage ?? r.Damage ?? "—", pen: r.Pen || 0 };
+          // Thrown weapons skip the melee damage pass, so a Knife would print
+          // "½ Str" rather than the number it resolves to.
+          let baseDmg = calcRow.Damage ?? r.Damage ?? "—";
+          if (RULES.isStrengthDamage(baseDmg))
+            baseDmg = RULES.meleeDamage(r, CALC.attributes.Strength.final);
+          const base = { acc: baseAcc, damage: baseDmg, pen: r.Pen || 0 };
           const isLauncher = r.Type === "GrenadeLauncher";
           // Melee, thrown and energy weapons load nothing, so they must not pick
           // up the default Standard round.
           const canLoad = !["Melee", "Thrown", "Energy"].includes(r.Type);
           const gren = isLauncher ? loadedGrenadeFor(w) : null;
           const ammo = (isLauncher || !canLoad)
-            ? { row: null, name: "", notes: [] } : loadedAmmoFor(w);
+            ? { row: null, name: "", notes: [] } : loadedAmmoFor(w, r.Type, w.name);
           const munName = isLauncher ? gren.name : ammo.name;
           const munNotes = isLauncher ? gren.notes : ammo.notes;
           const shot = isLauncher
@@ -1586,7 +1599,7 @@ function shOverview(body) {
                 ? el("div", { class: "sub wpn-ammo-note" }, `${munName}: ${munNotes.join(" · ")}`) : null),
             fire: el("td", { class: "sub" },
               modes.length ? firingModeControls(w, r, calcRow, modes, mode, kataOffered) : "—"),
-            ammo: el("td", { class: "sub" }, munitionPicker(w, r.Type)),
+            ammo: el("td", { class: "sub" }, munitionPicker(w, r.Type, w.name)),
           };
         },
       }));
@@ -1596,7 +1609,7 @@ function shOverview(body) {
           const g = cg.gun;
           // A cybergun loads ammo like any other firearm. The choice lives on
           // the source augment entry, since the gun row itself is shared data.
-          const ammo = loadedAmmoFor(cg.src);
+          const ammo = loadedAmmoFor(cg.src, "Cybergun", cg.name);
           const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen };
           const shot = RULES.applyAmmoStats(base, ammo.mods);
           const bit = (label, key) => el("span",
@@ -1614,7 +1627,7 @@ function shOverview(body) {
                 ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
             // Firing mode is fixed by the implant; ammo is not.
             fire: el("td", { class: "sub" }, g.Modes || "—"),
-            ammo: el("td", { class: "sub" }, munitionPicker(cg.src, "Cybergun")),
+            ammo: el("td", { class: "sub" }, munitionPicker(cg.src, "Cybergun", cg.name)),
           };
         },
       }));

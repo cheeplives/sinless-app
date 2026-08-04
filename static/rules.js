@@ -1776,21 +1776,48 @@ function ammoStatMods(effectText) {
 }
 
 /** Apply an ammo's parsed mods to a weapon's numbers. Absolute values win.
- *  Only cleanly numeric stats are adjusted: plenty of weapons state Damage as
- *  prose ("20 Stun", "10+fire", "By Grenade", "½ Str") and parsing a leading
- *  number out of those would silently discard the rest. Those keep their text
- *  and the adjustment is left for the table to apply. */
+ *  Damage is often stated as a number with prose attached ("20 Stun",
+ *  "10+fire"), so the adjustment lands on the leading number and the rest is
+ *  carried through untouched -- Flashbang + Flechette is "21 Stun", not "21".
+ *  Values with no leading number at all ("By Grenade", "By Missile", "½ Str",
+ *  "Tgt Brawn Test (4)", "-") describe damage some other way and are left
+ *  exactly as they are. */
 function applyAmmoStats(base, mods) {
   const one = (key, raw) => {
     if (mods.set[key] != null) return mods.set[key];
     const d = mods[key] || 0;
     if (!d) return raw;                              // nothing to apply
     const s = String(raw).trim();
-    if (!/^-?\d+$/.test(s)) return raw;              // not a bare number
-    return parseInt(s, 10) + d;
+    const m = /^(-?\d+)(.*)$/.exec(s);
+    if (!m) return raw;                              // no leading number
+    return `${parseInt(m[1], 10) + d}${m[2]}`;
   };
   return { acc: one("acc", base.acc), damage: one("damage", base.damage),
            pen: one("pen", base.pen) };
+}
+
+/* ---- ammo compatibility -----------------------------------------------------
+ * Which weapons an ammunition will actually chamber. The restrictions are prose
+ * in the gear table, so they're mapped here once, keyed by the exact Notes
+ * string -- eleven of them, all reviewable at a glance. A row whose Notes aren't
+ * listed is unrestricted.
+ *
+ * "For guns with cased ammo only" is deliberately absent: nothing in the data
+ * marks which guns are cased, so Cased stays selectable with its note shown
+ * rather than being guessed at. */
+const AMMO_RESTRICTIONS = {
+  "Shotguns only.": type => type === "Shotgun",
+  "Shotguns or Large-bore Guns": type => type === "Shotgun" || type === "Heavy",
+  "Ammo for AM-3 Rifle": (type, name) => /AM-3/i.test(name),
+  // Vehicle and drone mounts -- never a weapon a character carries.
+  "For Vehicle Missile Launcher": () => false,
+  "For Tank guns": () => false,
+  "For Vehicle cannons": () => false,
+  "For Vulcan rotary cannon": () => false,
+};
+function ammoFitsWeapon(ammoRow, weaponType, weaponName) {
+  const rule = AMMO_RESTRICTIONS[String((ammoRow && ammoRow.Notes) || "").trim()];
+  return rule ? !!rule(weaponType, String(weaponName || "")) : true;
 }
 
 /* ---- weapon specializations -------------------------------------------------
@@ -2140,8 +2167,20 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
 function meleeDamage(row, strength) {
   const mult = row["STR Mult"] !== undefined && row["STR Mult"] !== ""
     ? asNumber(row["STR Mult"]) : 0.5;
-  return String(toInt(asNumber(row.Damage)) + Math.floor(strength * mult))
+  const raw = String(row.Damage || "");
+  // "½ Str-1" (Shuriken) states the Strength share and then a flat adjustment.
+  // asNumber sees no leading digit and returns 0, which silently swallowed the
+  // adjustment and made a Shuriken hit as hard as a Knife.
+  const m = /str\s*([+-]\s*\d+)/i.exec(raw);
+  const adj = m ? toInt(m[1].replace(/\s+/g, "")) : 0;
+  return String(Math.max(0, toInt(asNumber(raw)) + Math.floor(strength * mult) + adj))
     + (row["Damage Bonus"] || "");
+}
+
+/** True when a Damage column defers to Strength ("½ Str", "½ Str-1") and so
+ *  needs meleeDamage() to become a number. */
+function isStrengthDamage(value) {
+  return /str/i.test(String(value || ""));
 }
 
 /**
@@ -3420,14 +3459,14 @@ return {
   MAGIC_TYPE_BY_PRIORITY, MAGIC_TYPES_ALLOWED_BY_PRIORITY,
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
-  rigStats, applyExtendedMagazine, meleeDamage, assignWeaponModSlots,
+  rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage, assignWeaponModSlots,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage,
   weaponSkillName,
   specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
   FIRING_MODES, weaponFiringModes, firingMode,
-  ammoStatMods, applyAmmoStats,
+  ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_RESTRICTIONS,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,

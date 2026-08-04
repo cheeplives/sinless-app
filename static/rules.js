@@ -1702,6 +1702,40 @@ function weaponSkillName(name, type) {
   return WEAPON_TYPE_SKILL[type] || null;
 }
 
+/* ---- firing modes -----------------------------------------------------------
+ * Each mode trades ammunition for bonus dice. Bonus dice are tracked apart from
+ * skill dice because they behave differently at the table, so the UI adds them
+ * to the same "bonus" pool as Accuracy rather than to the skill rating.
+ *
+ * SS is the default and buys nothing; it still spends the single round fired.
+ * "FA (40)" is a heavier full-auto that spends 40 rounds for 40 dice instead of
+ * the standard 20/20. */
+const FIRING_MODES = {
+  "SS":      { name: "Single Shot", dice: 0,  ammo: 1 },
+  "DT":      { name: "Double Tap",  dice: 1,  ammo: 2 },
+  "BF":      { name: "Burst Fire",  dice: 3,  ammo: 3 },
+  "FA":      { name: "Full Auto",   dice: 20, ammo: 20 },
+  "FA (40)": { name: "Full Auto (40)", dice: 40, ammo: 40 },
+};
+const FIRING_MODE_ORDER = ["SS", "DT", "BF", "FA", "FA (40)"];
+// Melee and thrown weapons aren't fired, so they get no mode at all.
+const UNFIRED_WEAPON_TYPES = new Set(["Melee", "Thrown"]);
+
+/** The firing modes a weapon offers, in a stable order.
+ *  Energy weapons are single-shot only: their "Firing modes" column carries a
+ *  weapon class (Laser pistol, Railgun, ...) rather than modes, and they run on
+ *  Heat rather than a magazine. Anything else with no recognised token falls
+ *  back to SS so every fired weapon has at least its default. */
+function weaponFiringModes(row) {
+  if (!row || UNFIRED_WEAPON_TYPES.has(row.Type)) return [];
+  if (row.Type === "Energy") return ["SS"];
+  const toks = String(row["Firing modes"] || "").split(",").map(t => t.trim());
+  const found = toks.filter(t => FIRING_MODES[t]);
+  const modes = FIRING_MODE_ORDER.filter(m => found.includes(m));
+  return modes.length ? modes : ["SS"];
+}
+function firingMode(key) { return FIRING_MODES[key] || FIRING_MODES.SS; }
+
 /* ---- weapon specializations -------------------------------------------------
  * A specialization is +1 to the skill when it covers what you're using and -1
  * when it doesn't, so it needs to be resolved per WEAPON rather than shown as a
@@ -3335,6 +3369,7 @@ return {
   augmentLimbRequirement, augmentMeleeDamage,
   weaponSkillName,
   specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
+  FIRING_MODES, weaponFiringModes, firingMode,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,

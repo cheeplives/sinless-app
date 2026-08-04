@@ -1103,6 +1103,70 @@ function equippedCyberguns() {
     - (typeof b.src.cgOrder === "number" ? b.src.cgOrder : 1e6 + b._ins));
 }
 
+/* Per-shot heat and its cap, read out of an Energy weapon's Notes
+   ("Heat 3 / max 15"). Null when the row doesn't state it. */
+function heatSpec(row) {
+  const m = /heat\s*(\d+)\s*\/\s*max\s*(\d+)/i.exec((row && row.Notes) || "");
+  return m ? { per: +m[1], max: +m[2] } : null;
+}
+
+/* Firing controls on each Overview weapon row.
+ *
+ * Ballistic weapons pick a firing mode -- its bonus dice are folded into the
+ * dice chip beside it -- and track a magazine: Fire spends that mode's rounds,
+ * Reload fills it. Rounds live on the weapon entry (like `mods` and `lo`) so
+ * they survive a reload; absent means a full magazine.
+ *
+ * Energy weapons have no magazine. They're single-shot and run on Heat, stated
+ * per shot and capped in their Notes, so they get a heat tracker instead of a
+ * round count. Heat starts at 1. */
+function firingModeControls(w, r, calcRow, modes, mode) {
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const wrap = el("div", { class: "sh-fire" });
+
+  if (r.Type === "Energy") {
+    const hs = heatSpec(r);
+    const cur = () => (w.heat == null ? 1 : Math.max(0, Math.floor(+w.heat) || 0));
+    wrap.append(el("span", { class: "sh-fire-mode" }, "SS"));
+    if (ro) wrap.append(el("span", { class: "sub" }, `Heat ${cur()}`));
+    else wrap.append(miniCounter("Heat", cur, v => { w.heat = v; }, 0, hs ? hs.max : 99));
+    wrap.append(el("span", { class: "sub" }, hs
+      ? ` ${hs.per} per shot · max ${hs.max}${cur() >= hs.max ? " — overheated" : ""}`
+      : " no heat rating listed"));
+    return wrap;
+  }
+
+  const maxAmmo = Math.max(0, parseInt(calcRow.Ammo ?? r.Ammo, 10) || 0);
+  const loaded = w.loaded == null ? maxAmmo
+    : Math.max(0, Math.min(Math.floor(+w.loaded) || 0, maxAmmo));
+  const md = RULES.firingMode(mode);
+  const optLabel = m => {
+    const d = RULES.FIRING_MODES[m];
+    return `${m} — ${d.name} (${d.dice ? `+${d.dice}b, ` : ""}${d.ammo} rd${d.ammo === 1 ? "" : "s"})`;
+  };
+  wrap.append(modes.length > 1 && !ro
+    ? el("select", { class: "sh-fire-sel", title: "Firing mode",
+        onchange: e => { w.mode = e.target.value; playChanged(); } },
+        ...modes.map(m => el("option", { value: m, ...(m === mode ? { selected: 1 } : {}) },
+          optLabel(m))))
+    : el("span", { class: "sh-fire-mode", title: md.name }, mode));
+
+  if (!maxAmmo) return wrap;
+  const dry = loaded < md.ammo;
+  wrap.append(el("span", { class: "sh-fire-mag" + (dry ? " dry" : "") },
+    `${loaded}/${maxAmmo} rds`));
+  if (ro) return wrap;
+  wrap.append(
+    el("button", { class: "btn small", disabled: dry ? "1" : null,
+      title: dry ? `Not enough rounds loaded for ${mode} (needs ${md.ammo})`
+                 : `Fire ${mode} — spends ${md.ammo} round${md.ammo === 1 ? "" : "s"}`,
+      onclick: () => { w.loaded = Math.max(0, loaded - md.ammo); playChanged(); } }, "Fire"),
+    el("button", { class: "btn small", disabled: loaded >= maxAmmo ? "1" : null,
+      title: "Reload to a full magazine",
+      onclick: () => { w.loaded = maxAmmo; playChanged(); } }, "Reload"));
+  return wrap;
+}
+
 function shOverview(body) {
   const play = CHAR.play;
   const econ = kismetEcon();
@@ -1300,7 +1364,7 @@ function shOverview(body) {
      * own Accuracy. Melee rows list Reach and carry no Accuracy, so those come
      * out as the bare skill. Returns null when nothing maps, so it can be
      * dropped straight into el(). */
-    const weaponSkillDice = (name, type, accuracy) => {
+    const weaponSkillDice = (name, type, accuracy, modeBonus = 0, modeLabel = "") => {
       const skill = RULES.weaponSkillName(name, type);
       const s = skill && (CALC.skills || {})[skill];
       if (!s) return null;
@@ -1317,12 +1381,28 @@ function shOverview(body) {
         return el("b", { class: "wpn-dice locked",
           title: `${skill} is trained only — needs at least 1 die in the skill or its group` },
           "(trained only)");
-      const total = Math.max(0, s.final + acc + spec.delta);
-      return el("b", { class: "wpn-dice" + (spec.delta ? (spec.delta > 0 ? " spec-on" : " spec-off") : ""),
-        title: `${skill} ${s.final}${acc ? ` + Accuracy ${acc}` : ""}`
-          + (spec.delta > 0 ? ` + 1 specialized in ${spec.term}` : "")
-          + (spec.delta < 0 ? ` − 1 outside your specialty (${spec.term})` : "")
-          + ` = ${total} dice` }, `(${total}d)`);
+      // Skill dice and bonus dice are kept apart because they behave
+      // differently at the table. The specialization moves the SKILL rating;
+      // Accuracy (mods already folded in by CALC) and the firing mode are
+      // bonus, and every bonus source collapses into one number.
+      const skillDice = Math.max(0, s.final + spec.delta);
+      const modeDice = +modeBonus || 0;
+      const bonus = acc + modeDice;
+      const why = [`${skill} ${s.final}`];
+      if (spec.delta > 0) why.push(`+1 specialized in ${spec.term}`);
+      if (spec.delta < 0) why.push(`−1 outside your specialty (${spec.term})`);
+      why.push(`= ${skillDice} skill dice`);
+      const bwhy = [];
+      if (acc) bwhy.push(`Accuracy ${acc}`);
+      if (modeDice) bwhy.push(`${modeLabel} +${modeDice}`);
+      return el("span", { class: "wpn-dice-set" },
+        el("b", { class: "wpn-dice" + (spec.delta ? (spec.delta > 0 ? " spec-on" : " spec-off") : ""),
+          title: why.join(" ") }, `(${skillDice}d`),
+        bonus
+          ? el("b", { class: "wpn-bonus", title: `Bonus dice: ${bwhy.join(" + ")}` },
+              ` +${bonus}b`)
+          : null,
+        el("b", { class: "wpn-dice" }, ")"));
     };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
@@ -1342,13 +1422,17 @@ function shOverview(body) {
           });
           if (w.upgr1 && r.Upgr1_Eff) modLines.push(`Upgrade 1 — ${r.Upgr1_Eff}`);
           if (w.upgr2 && r.Upgr2_Eff) modLines.push(`Upgrade 2 — ${r.Upgr2_Eff}`);
+          const modes = RULES.weaponFiringModes(r);
+          const mode = modes.includes(w.mode) ? w.mode : (modes[0] || "");
+          const md = mode ? RULES.firingMode(mode) : { dice: 0, ammo: 0, name: "" };
           return {
             name: el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
             stats: el("td", { class: "sub" },
               // Mirror the full Gear-tab stat line (issue #15): rate of fire /
               // Reach, Firing modes, ZR, Weight, Hardening, Rarity all included.
               `${r.Type || ""}`,
-              weaponSkillDice(w.name, r.Type, calcRow.Accuracy ?? r.Accuracy),
+              weaponSkillDice(w.name, r.Type, calcRow.Accuracy ?? r.Accuracy, md.dice, mode),
+              modes.length ? firingModeControls(w, r, calcRow, modes, mode) : null,
               " · "
               + (r.Type === "Melee" ? `Reach ${r.Reach || 0}` : `Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}`)
               + ` · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"}`

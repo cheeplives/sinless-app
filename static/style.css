@@ -752,6 +752,17 @@ label.opt input{margin-top:3px}
 .wpn-dice.spec-on{color:var(--ok)}
 .wpn-dice.spec-off{color:var(--amber)}
 .skill-spec-dead{color:var(--amber);font-size:11px;margin-top:2px}
+/* bonus dice sit apart from skill dice: same chip, different colour, so the two
+   never read as one number */
+.wpn-bonus{font-family:var(--mono);color:var(--amber)}
+/* per-weapon firing controls (mode, magazine / heat, Fire + Reload) */
+.sh-fire{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px}
+.sh-fire-mode{font-family:var(--mono);font-size:11px;color:var(--dim);
+  border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+.sh-fire-sel{font-size:11px;padding:2px 4px;max-width:230px}
+.sh-fire-mag{font-family:var(--mono);font-size:11px;color:var(--text)}
+.sh-fire-mag.dry{color:var(--bad)}
+.sh-fire .btn.small{padding:1px 8px;font-size:11px}
 
 .sh-track{margin-top:10px}
 .sh-track-head{display:flex;justify-content:space-between;font-family:var(--disp);font-size:12px;
@@ -1145,7 +1156,8 @@ body.sheet-readonly .sh-pool-btns,body.sheet-readonly .sh-pool-boost,
 body.sheet-readonly .mini-btn,body.sheet-readonly .stepper,
 body.sheet-readonly .sh-box,body.sheet-readonly .counter,
 body.sheet-readonly .btn-add,body.sheet-readonly .row-del,
-body.sheet-readonly .sh-reorder,
+body.sheet-readonly .sh-reorder,body.sheet-readonly .sh-fire button,
+body.sheet-readonly .sh-fire-sel,
 body.sheet-readonly .sh-init-roll,body.sheet-readonly .sh-roller-fab{
   pointer-events:none;opacity:.45}
 /* …but keep the read-only banner's own buttons fully usable. */

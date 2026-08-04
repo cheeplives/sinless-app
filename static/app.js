@@ -672,6 +672,29 @@ const optGroups = (rows, groupKey, nameKey, extra = r => "") => {
 const opts = (rows, nameKey, extra = r => "") =>
   rows.map(r => el("option", { value: r[nameKey] }, r[nameKey] + extra(r)));
 
+/* Owned vs carried counts for a gear entry. `carried` stays the boolean every
+ * other consumer reads -- the mounted-augment activity check in rules.js,
+ * mountEditor, shMountEditor -- while `carried_qty` narrows it to a subset, so
+ * you can own six grenades and take two on the run. Entries without the field
+ * (everything predating it) carry all they own, so nothing needs migrating.
+ * Lives here rather than in sheet.js because chargen and the play sheet share
+ * it, and app.js loads first. */
+function ownedQty(g) {
+  return Math.max(0, Math.floor(+g.qty || (g.qty === 0 ? 0 : 1)));
+}
+function carriedQty(g) {
+  const owned = ownedQty(g);
+  if (g.carried === false) return 0;
+  if (g.carried_qty == null) return owned;               // legacy: carries everything
+  return Math.max(0, Math.min(Math.floor(+g.carried_qty || 0), owned));
+}
+function setCarriedQty(g, n) {
+  const next = Math.max(0, Math.min(Math.floor(+n || 0), ownedQty(g)));
+  g.carried_qty = next;
+  g.carried = next > 0;      // carrying none must still read as "not carried"
+  return next;
+}
+
 function stepper(get, set, min = 0, max = 99) {
   const clamp = n => Math.max(min, Math.min(max, n));
   const sv = el("span", { class: "sv", title: "Click to type a value",
@@ -2511,10 +2534,17 @@ function tabGear(p) {
         costCell,
         el("td", { class: "num" }, stepper(() => it.qty || 1,
           v => { it.qty = v; costCell.textContent = fmt((+r.Cost || 0) * v); }, 1, 99)),
+        // More than one owned makes "how many am I carrying" a real question, so
+        // it gets a 0..owned spinner; a single item stays a plain yes/no.
         el("td", {},
           el("label", { class: "opt" },
-            el("input", { type: "checkbox", ...(it.carried !== false ? { checked: 1 } : {}),
-              onchange: e => { it.carried = e.target.checked; refresh(); } }),
+            ownedQty(it) > 1
+              ? stepper(() => carriedQty(it), v => setCarriedQty(it, v), 0, ownedQty(it))
+              : el("input", { type: "checkbox", ...(it.carried !== false ? { checked: 1 } : {}),
+                  onchange: e => {
+                    setCarriedQty(it, e.target.checked ? ownedQty(it) : 0);
+                    refresh();
+                  } }),
             el("span", {}, "Carried"))),
         el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
     },

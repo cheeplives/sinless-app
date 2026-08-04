@@ -2429,34 +2429,18 @@ function infusionAppliedLabel(spirit) {
   return applied ? "in stats" : "situational";
 }
 
-/* How many of an owned gear item are actually on the character. `carried` stays
- * the boolean everything else reads -- the mounted-augment activity check in
- * rules.js, shMountEditor, the chargen list -- and `carried_qty` narrows it to a
- * subset so you can own six grenades and carry two. Entries without the field
- * (everything predating it, and every chargen purchase) carry all they own, so
- * no migration is needed. */
-function carriedQty(g) {
-  const owned = Math.max(0, Math.floor(+g.qty || (g.qty === 0 ? 0 : 1)));
-  if (g.carried === false) return 0;
-  if (g.carried_qty == null) return owned;
-  return Math.max(0, Math.min(Math.floor(+g.carried_qty || 0), owned));
-}
-
-/* Carried-count spinner for a gear row: 0 .. owned. Keeps `carried` in step so
- * the boolean consumers above see "carrying none" as not carried. */
+/* Carried-count spinner for a gear row: 0 .. owned. carriedQty / setCarriedQty
+ * live in app.js (loaded first) so chargen and the play sheet share one
+ * definition of what "carried" means. */
 function shCarriedStepper(entry, onChange) {
-  const owned = Math.max(0, Math.floor(+entry.qty || 1));
   const val = el("span", { class: "sv" }, String(carriedQty(entry)));
   const set = async n => {
-    const next = Math.max(0, Math.min(n, owned));
-    entry.carried_qty = next;
-    entry.carried = next > 0;
-    val.textContent = String(next);
+    val.textContent = String(setCarriedQty(entry, n));
     await onChange();
   };
   const btn = (delta, label, title) => el("button", { class: "btn small", title,
     onclick: () => set(carriedQty(entry) + delta) }, label);
-  return el("span", { class: "stepper", title: `Carrying out of ${owned} owned` },
+  return el("span", { class: "stepper", title: `Carrying out of ${ownedQty(entry)} owned` },
     btn(-1, "–", "Carry one fewer — the rest stays in your stash"),
     val,
     btn(1, "+", "Carry one more"));
@@ -2805,10 +2789,10 @@ function shGear(body) {
     const linkSel = (!ro && typeof gearLinkSelect === "function")
       ? gearLinkSelect(g, playChangedRecalc) : null;
     const gi = arr.indexOf(g);
-    // Ammo counts in uses rather than pieces, so it keeps the plain carried
-    // toggle -- its qty stepper is already the round tracker.
+    // Ammo counts in uses rather than pieces: its Qty stepper is the rounds you
+    // own, and the Carried spinner is how many of those are on you.
     const isAmmo = (r.Class || "").startsWith("Ammo");
-    const owned = Math.max(0, Math.floor(+g.qty || 1));
+    const owned = ownedQty(g);
     const unitWt = wtNum(r.Weight);
     const carried = carriedQty(g);
     gearWeightCarried += unitWt * carried;
@@ -2838,12 +2822,11 @@ function shGear(body) {
           .filter(Boolean).join(" · ")),
       // More than one owned means "how many are on me" is a real question, so it
       // gets a spinner; a single item is still a plain yes/no.
-      el("td", {}, (!ro && !isAmmo && owned > 1)
+      el("td", {}, (!ro && owned > 1)
         ? shCarriedStepper(g, playChangedRecalc)
         : el("input", { type: "checkbox", ...(g.carried !== false ? { checked: 1 } : {}),
             onchange: async e => {
-              g.carried = e.target.checked;
-              g.carried_qty = e.target.checked ? owned : 0;
+              setCarriedQty(g, e.target.checked ? owned : 0);
               await playChangedRecalc();
             } })),
       el("td", {}, el("button", { class: "row-del", title: "Remove item",

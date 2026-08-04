@@ -1797,27 +1797,37 @@ function applyAmmoStats(base, mods) {
 }
 
 /* ---- ammo compatibility -----------------------------------------------------
- * Which weapons an ammunition will actually chamber. The restrictions are prose
- * in the gear table, so they're mapped here once, keyed by the exact Notes
- * string -- eleven of them, all reviewable at a glance. A row whose Notes aren't
- * listed is unrestricted.
- *
- * "For guns with cased ammo only" is deliberately absent: nothing in the data
- * marks which guns are cased, so Cased stays selectable with its note shown
- * rather than being guessed at. */
-const AMMO_RESTRICTIONS = {
-  "Shotguns only.": type => type === "Shotgun",
-  "Shotguns or Large-bore Guns": type => type === "Shotgun" || type === "Heavy",
-  "Ammo for AM-3 Rifle": (type, name) => /AM-3/i.test(name),
+ * Which weapons an ammunition will actually chamber. Keyed by ammo NAME rather
+ * than by the prose in Notes, because several of the restrictions aren't stated
+ * there at all -- Subsonic and the common special rounds carry no note. Each
+ * rule takes the weapon's data row, so it can read Type, name or Damage.
+ * Ammo not listed here (Standard, the exotic named rounds) is unrestricted. */
+const HEAVY_RIFLES = [/AM-3/i, /M334/i, /Panther/i];
+/* The common special rounds need a conventional bullet-firing gun: nothing that
+ * lobs grenades or missiles, and nothing that already delivers stun damage. */
+const takesConventionalRounds = row =>
+  !/by grenade|by missile|stun/i.test(String((row && row.Damage) || ""));
+const AMMO_FITS = {
+  "Buckshot":        row => row.Type === "Shotgun",
+  "Subsonic loads":  row => row.Type !== "Shotgun",
+  "API":             row => HEAVY_RIFLES.some(rx => rx.test(String(row.Weapon || ""))),
+  "Gel":             takesConventionalRounds,
+  "Flechette":       takesConventionalRounds,
+  "Cased":           takesConventionalRounds,
+  "Explosive":       takesConventionalRounds,
+  "AM-3 Rifle ammo": row => /AM-3/i.test(String(row.Weapon || "")),
   // Vehicle and drone mounts -- never a weapon a character carries.
-  "For Vehicle Missile Launcher": () => false,
-  "For Tank guns": () => false,
-  "For Vehicle cannons": () => false,
-  "For Vulcan rotary cannon": () => false,
+  "Micro missile (HEAP)": () => false,
+  "Micro Missile (anti-personnel)": () => false,
+  "Tank Rounds (HEAP)": () => false,
+  "Tank Rounds (HE)": () => false,
+  "Vulcan Cannon": () => false,
+  "20/25mm Cannon": () => false,
+  "30mm Cannon": () => false,
 };
-function ammoFitsWeapon(ammoRow, weaponType, weaponName) {
-  const rule = AMMO_RESTRICTIONS[String((ammoRow && ammoRow.Notes) || "").trim()];
-  return rule ? !!rule(weaponType, String(weaponName || "")) : true;
+function ammoFitsWeapon(ammoRow, weaponRow) {
+  const rule = AMMO_FITS[String((ammoRow && ammoRow.Item) || "")];
+  return rule ? !!rule(weaponRow || {}) : true;
 }
 
 /* ---- weapon specializations -------------------------------------------------
@@ -2139,7 +2149,8 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
                        "Ammo", "Pen", "Conceal", "Weight", "Hardening", "Notes"]) {
       item[col] = row[col] !== undefined ? row[col] : "";
     }
-    if (row.Type === "Melee") item.Damage = meleeDamage(row, strength);
+    if (row.Type === "Melee" && meleeDamageIsComputable(row.Damage))
+      item.Damage = meleeDamage(row, strength);
     item.smart = Boolean(entry.smart) || integratedSmart;
     // Accuracy: base + fitted-mod AccMod (Laser Sight / Red dot +1, Silencer −2)
     // + Smartlink (+1 on smart guns). Melee weapons carry no Accuracy value.
@@ -2173,14 +2184,36 @@ function meleeDamage(row, strength) {
   // adjustment and made a Shuriken hit as hard as a Knife.
   const m = /str\s*([+-]\s*\d+)/i.exec(raw);
   const adj = m ? toInt(m[1].replace(/\s+/g, "")) : 0;
-  return String(Math.max(0, toInt(asNumber(raw)) + Math.floor(strength * mult) + adj))
-    + (row["Damage Bonus"] || "");
+  // Read the base off the front of the string rather than through asNumber,
+  // which gives up on "6 Stun" and returned 0 -- a Stun Baton was losing its
+  // own 6 and reporting half Strength alone. "½ Str" has no leading digit, and
+  // correctly contributes no base.
+  const lead = /^\s*(-?\d+)/.exec(raw);
+  const total = Math.max(0, (lead ? parseInt(lead[1], 10) : 0)
+    + Math.floor(strength * mult) + adj);
+  // A qualifier after the number is part of the damage, not decoration: a Stun
+  // Baton's "6 Stun" must stay stun damage once Strength is folded in. Take the
+  // remainder by slicing past what `lead` matched -- a second regex would let
+  // \d+ backtrack and read "12" as 1 followed by a "2" qualifier. "Str" is not
+  // a qualifier to keep; it's the notation being resolved.
+  const rest = lead ? raw.slice(lead[0].length).trim() : "";
+  const suffix = (!isStrengthDamage(raw) && rest) ? " " + rest : "";
+  return String(total) + suffix + (row["Damage Bonus"] || "");
 }
 
 /** True when a Damage column defers to Strength ("½ Str", "½ Str-1") and so
  *  needs meleeDamage() to become a number. */
 function isStrengthDamage(value) {
   return /str/i.test(String(value || ""));
+}
+
+/** Whether meleeDamage can resolve this Damage column at all. A value that is
+ *  neither a number nor Strength-based describes damage some other way --
+ *  the Sickstick's "Tgt Brawn Test (4)" tests the TARGET's Brawn, and replacing
+ *  it with a computed number would state something the rules never said. */
+function meleeDamageIsComputable(value) {
+  const s = String(value == null ? "" : value).trim();
+  return s !== "" && (/^-?\d/.test(s) || isStrengthDamage(s));
 }
 
 /**
@@ -3459,14 +3492,15 @@ return {
   MAGIC_TYPE_BY_PRIORITY, MAGIC_TYPES_ALLOWED_BY_PRIORITY,
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
-  rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage, assignWeaponModSlots,
+  rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
+  meleeDamageIsComputable, assignWeaponModSlots,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage,
   weaponSkillName,
   specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
   FIRING_MODES, weaponFiringModes, firingMode,
-  ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_RESTRICTIONS,
+  ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_FITS,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,

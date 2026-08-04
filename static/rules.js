@@ -1665,7 +1665,16 @@ const WEAPON_NAME_SKILL = {
  *  Granted weapons carry a "×2" count suffix, which isn't part of the name. */
 function weaponSkillName(name, type) {
   const bare = String(name || "").replace(/\s*[x×]\s*\d+$/i, "").trim();
-  return WEAPON_NAME_SKILL[bare] || WEAPON_TYPE_SKILL[type] || null;
+  if (WEAPON_NAME_SKILL[bare]) return WEAPON_NAME_SKILL[bare];
+  // The cyber implants ship as "<base>-<variant>" rows -- Hand Razors-Improved,
+  // Hand Blade-Retractable, Knee Spurs-Retractable and so on. They are the same
+  // weapon with a different mounting, so they roll the base weapon's skill.
+  // Matching only the exact name silently dropped every variant through to the
+  // Type mapping, where granted weapons are "Natural" and default to Unarmed
+  // Combat -- the Overview showed Unarmed dice for a Cybertech Combat implant.
+  const base = bare.split("-")[0].trim();
+  if (WEAPON_NAME_SKILL[base]) return WEAPON_NAME_SKILL[base];
+  return WEAPON_TYPE_SKILL[type] || null;
 }
 
 // Short forms used in gear/drone effect text -> canonical skill name.

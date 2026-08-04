@@ -1114,33 +1114,80 @@ function ownedAmmoRows() {
   return [...seen.values()];
 }
 
-/* The ammo a weapon is loaded with, plus its parsed stat mods. Nothing loaded
-   (or the type no longer owned) reads as plain ammunition with no effect. */
-function loadedAmmoFor(w, r) {
+/* Which ammo an entry is loaded with. An unset choice falls back to Standard --
+   the plain rounds a gun is assumed to carry, and they have no effect, so the
+   default changes no numbers. Falls through to nothing when the character owns
+   no Standard, and when a previously chosen type has since been sold off. */
+function ammoNameFor(entry) {
+  const owned = ownedAmmoRows();
+  if (owned.some(x => x.Item === entry.ammo)) return entry.ammo;
+  if (entry.ammo === "") return "";                       // explicitly unloaded
+  return owned.some(x => x.Item === "Standard") ? "Standard" : "";
+}
+
+/* The ammo an entry is loaded with, plus its parsed stat mods. */
+function loadedAmmoFor(entry) {
   const none = { row: null, name: "", mods: RULES.ammoStatMods(""), notes: [] };
-  if (!w.ammo) return none;
-  const row = ownedAmmoRows().find(x => x.Item === w.ammo);
+  const name = ammoNameFor(entry);
+  if (!name) return none;
+  const row = ownedAmmoRows().find(x => x.Item === name);
   if (!row) return none;
   const mods = RULES.ammoStatMods(row.Effect);
   const notes = [...mods.notes, row.Notes || ""].filter(Boolean);
   return { row, name: row.Item, mods, notes };
 }
 
-/* Ammo selector for a weapon: the types the character owns. Melee and thrown
-   weapons take none, and neither do Energy weapons -- they run on Heat. */
-function ammoPicker(w, r) {
-  if (!r || ["Melee", "Thrown", "Energy"].includes(r.Type)) return "—";
-  const owned = ownedAmmoRows();
+/* Grenades the character owns. A launcher is loaded with these rather than with
+   ammunition -- its own Damage reads "By Grenade" -- and they're weapons in the
+   data, so they come from CHAR.weapons. Thrown weapons that aren't grenades
+   (Knife, Shuriken, Molotov) are not launchable. */
+function ownedGrenadeRows() {
+  const seen = new Map();
+  for (const w of CHAR.weapons) {
+    const row = DATA.tables.weapons.find(x => x.Weapon === w.name);
+    if (row && row.Type === "Thrown" && /grenade/i.test(row.Weapon) && !seen.has(row.Weapon))
+      seen.set(row.Weapon, row);
+  }
+  return [...seen.values()];
+}
+
+/* What a launcher currently has chambered, and the stats it lends. Unlike ammo
+   there's no sensible default -- an empty launcher deals "By Grenade". */
+function loadedGrenadeFor(entry) {
+  const row = ownedGrenadeRows().find(x => x.Weapon === entry.ammo);
+  if (!row) return { row: null, name: "", notes: [] };
+  return { row, name: row.Weapon, notes: [row.Notes || ""].filter(Boolean) };
+}
+
+/* Munition selector. Melee and thrown weapons load nothing, and neither do
+   Energy weapons -- they run on Heat. Grenade launchers pick a grenade;
+   everything else that fires, cyberguns included, picks ammunition. */
+function munitionPicker(entry, type) {
+  if (["Melee", "Thrown", "Energy"].includes(type)) return "—";
+  const launcher = type === "GrenadeLauncher";
+  const owned = launcher ? ownedGrenadeRows() : ownedAmmoRows();
+  const key = r => (launcher ? r.Weapon : r.Item);
   if (!owned.length)
-    return el("span", { class: "sub" }, "none owned");
+    return el("span", { class: "sub" }, launcher ? "no grenades owned" : "none owned");
   const ro = !!(activeTabObj() && activeTabObj().readonly);
-  const cur = owned.some(x => x.Item === w.ammo) ? w.ammo : "";
+  const cur = launcher ? loadedGrenadeFor(entry).name : ammoNameFor(entry);
   if (ro) return el("span", { class: "sub" }, cur || "—");
-  return el("select", { class: "sh-fire-sel", title: "Loaded ammunition",
-    onchange: e => { w.ammo = e.target.value; playChanged(); } },
-    el("option", { value: "" }, "— none —"),
-    ...owned.map(x => el("option", { value: x.Item, ...(x.Item === cur ? { selected: 1 } : {}) },
-      x.Effect ? `${x.Item} — ${x.Effect}` : x.Item)));
+  const label = r => launcher
+    ? `${r.Weapon.replace(/\s*Grenade$/i, "")} — DMG ${r.Damage || "—"}`
+    : (r.Effect ? `${r.Item} — ${r.Effect}` : r.Item);
+  return el("select", { class: "sh-fire-sel",
+    title: launcher ? "Chambered grenade" : "Loaded ammunition",
+    onchange: e => { entry.ammo = e.target.value; playChanged(); } },
+    el("option", { value: "" }, launcher ? "— empty —" : "— none —"),
+    ...owned.map(r => el("option", { value: key(r), ...(key(r) === cur ? { selected: 1 } : {}) },
+      label(r))));
+}
+
+/* Gun-Kata rank, or 0. Level 2 is the one that matters here: "Can fire +1
+   bullet (+1d for 1 ammo)". */
+function gunKataRank() {
+  const ma = (CALC.martial_arts || []).find(m => /^gun.?kata$/i.test(m.style || ""));
+  return ma ? (+ma.rank || 0) : 0;
 }
 
 /* Per-shot heat and its cap, read out of an Energy weapon's Notes
@@ -1160,7 +1207,7 @@ function heatSpec(row) {
  * Energy weapons have no magazine. They're single-shot and run on Heat, stated
  * per shot and capped in their Notes, so they get a heat tracker instead of a
  * round count. Heat starts at 1. */
-function firingModeControls(w, r, calcRow, modes, mode) {
+function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false) {
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const wrap = el("div", { class: "sh-fire" });
 
@@ -1201,15 +1248,27 @@ function firingModeControls(w, r, calcRow, modes, mode) {
   }));
 
   if (!maxAmmo) return wrap;
-  const dry = loaded < md.ammo;
+  // Gun-Kata 2 rides on whichever mode is selected: one more bullet, one more
+  // die. Offered per weapon so it can be left off when you don't want the cost.
+  const kataOn = kataOffered && !!w.kata;
+  const cost = md.ammo + (kataOn ? 1 : 0);
+  const dry = loaded < cost;
   wrap.append(el("span", { class: "sh-fire-mag" + (dry ? " dry" : "") },
     `${loaded}/${maxAmmo} rds`));
+  if (kataOffered) {
+    wrap.append(el("label", { class: "sh-fire-kata",
+      title: "Gun-Kata 2: fire +1 bullet for +1 die" },
+      el("input", { type: "checkbox", ...(kataOn ? { checked: 1 } : {}), ...(ro ? { disabled: "1" } : {}),
+        onchange: e => { w.kata = e.target.checked; playChanged(); } }),
+      el("span", {}, "Gun-Kata")));
+  }
   if (ro) return wrap;
   wrap.append(
     el("button", { class: "btn small", disabled: dry ? "1" : null,
-      title: dry ? `Not enough rounds loaded for ${mode} (needs ${md.ammo})`
-                 : `Fire ${mode} — spends ${md.ammo} round${md.ammo === 1 ? "" : "s"}`,
-      onclick: () => { w.loaded = Math.max(0, loaded - md.ammo); playChanged(); } }, "Fire"),
+      title: dry ? `Not enough rounds loaded for ${mode} (needs ${cost})`
+                 : `Fire ${mode} — spends ${cost} round${cost === 1 ? "" : "s"}`
+                   + (kataOn ? " (includes the Gun-Kata bullet)" : ""),
+      onclick: () => { w.loaded = Math.max(0, loaded - cost); playChanged(); } }, "Fire"),
     el("button", { class: "btn small", disabled: loaded >= maxAmmo ? "1" : null,
       title: "Reload to a full magazine",
       onclick: () => { w.loaded = maxAmmo; playChanged(); } }, "Reload"));
@@ -1413,7 +1472,7 @@ function shOverview(body) {
      * own Accuracy. Melee rows list Reach and carry no Accuracy, so those come
      * out as the bare skill. Returns null when nothing maps, so it can be
      * dropped straight into el(). */
-    const weaponSkillDice = (name, type, accuracy, modeBonus = 0, modeLabel = "") => {
+    const weaponSkillDice = (name, type, accuracy, bonuses = []) => {
       const skill = RULES.weaponSkillName(name, type);
       const s = skill && (CALC.skills || {})[skill];
       if (!s) return null;
@@ -1435,15 +1494,15 @@ function shOverview(body) {
       // Accuracy (mods already folded in by CALC) and the firing mode are
       // bonus, and every bonus source collapses into one number.
       const skillDice = Math.max(0, s.final + spec.delta);
-      const modeDice = +modeBonus || 0;
-      const bonus = acc + modeDice;
+      const extra = bonuses.reduce((n, b) => n + (+b.dice || 0), 0);
+      const bonus = acc + extra;
       const why = [`${skill} ${s.final}`];
       if (spec.delta > 0) why.push(`+1 specialized in ${spec.term}`);
       if (spec.delta < 0) why.push(`−1 outside your specialty (${spec.term})`);
       why.push(`= ${skillDice} skill dice`);
       const bwhy = [];
       if (acc) bwhy.push(`Accuracy ${acc}`);
-      if (modeDice) bwhy.push(`${modeLabel} +${modeDice}`);
+      for (const b of bonuses) if (+b.dice) bwhy.push(`${b.label} +${b.dice}`);
       return el("span", { class: "wpn-dice-set" },
         el("b", { class: "wpn-dice" + (spec.delta ? (spec.delta > 0 ? " spec-on" : " spec-off") : ""),
           title: why.join(" ") }, `(${skillDice}d`),
@@ -1476,17 +1535,36 @@ function shOverview(body) {
           const modes = RULES.weaponFiringModes(r);
           const mode = modes.includes(w.mode) ? w.mode : (modes[0] || "");
           const md = mode ? RULES.firingMode(mode) : { dice: 0, ammo: 0, name: "" };
-          // Loaded ammo shifts the numbers the line reports, so resolve it
-          // before building the stats rather than annotating afterwards.
-          const ammo = loadedAmmoFor(w, r);
+          // What's loaded shifts the numbers the line reports, so resolve it
+          // before building the stats rather than annotating afterwards. A
+          // grenade launcher takes its Damage and Pen wholesale from the
+          // chambered grenade -- its own Damage column just says "By Grenade".
           const baseAcc = calcRow.Accuracy ?? r.Accuracy ?? 0;
-          const shot = RULES.applyAmmoStats(
-            { acc: baseAcc, damage: calcRow.Damage ?? r.Damage ?? "—", pen: r.Pen || 0 },
-            ammo.mods);
-          const changed = k => ammo.row && String(shot[k]) !== String(
-            ({ acc: baseAcc, damage: calcRow.Damage ?? r.Damage ?? "—", pen: r.Pen || 0 })[k]);
+          const base = { acc: baseAcc, damage: calcRow.Damage ?? r.Damage ?? "—", pen: r.Pen || 0 };
+          const isLauncher = r.Type === "GrenadeLauncher";
+          // Melee, thrown and energy weapons load nothing, so they must not pick
+          // up the default Standard round.
+          const canLoad = !["Melee", "Thrown", "Energy"].includes(r.Type);
+          const gren = isLauncher ? loadedGrenadeFor(w) : null;
+          const ammo = (isLauncher || !canLoad)
+            ? { row: null, name: "", notes: [] } : loadedAmmoFor(w);
+          const munName = isLauncher ? gren.name : ammo.name;
+          const munNotes = isLauncher ? gren.notes : ammo.notes;
+          const shot = isLauncher
+            ? (gren.row ? { acc: baseAcc, damage: gren.row.Damage || "—", pen: gren.row.Pen || 0 }
+                        : { ...base })
+            : (ammo.row ? RULES.applyAmmoStats(base, ammo.mods) : { ...base });
+          // Gun-Kata 2 buys an extra bullet: +1 die for 1 more round. Opt-in per
+          // weapon, and only offered to a gun that actually feeds from a magazine.
+          const magSize = Math.max(0, parseInt(calcRow.Ammo ?? r.Ammo, 10) || 0);
+          const kataOffered = gunKataRank() >= 2 && magSize > 0 && modes.length > 0;
+          const kataOn = kataOffered && !!w.kata;
+          const bonuses = [];
+          if (md.dice) bonuses.push({ label: mode, dice: md.dice });
+          if (kataOn) bonuses.push({ label: "Gun-Kata", dice: 1 });
           const statBit = (label, key) => el("span",
-            changed(key) ? { class: "wpn-ammo-mod", title: `${ammo.name} ammo` } : {},
+            (munName && String(shot[key]) !== String(base[key]))
+              ? { class: "wpn-ammo-mod", title: `${munName} loaded` } : {},
             `${label} ${shot[key]}`);
           return {
             name: el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
@@ -1494,7 +1572,7 @@ function shOverview(body) {
               // Mirror the full Gear-tab stat line (issue #15): rate of fire /
               // Reach, ZR, Weight, Hardening, Rarity all included.
               `${r.Type || ""}`,
-              weaponSkillDice(w.name, r.Type, shot.acc, md.dice, mode),
+              weaponSkillDice(w.name, r.Type, shot.acc, bonuses),
               " · ",
               r.Type === "Melee" ? `Reach ${r.Reach || 0}` : statBit("Acc", "acc"),
               " · ", statBit("DMG", "damage"), " · ", statBit("Pen", "pen"),
@@ -1504,11 +1582,11 @@ function shOverview(body) {
               + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : ""),
               modNames.length
                 ? el("div", { class: "sub wpn-mods" }, "Mods: " + modNames.join(" · ")) : null,
-              ammo.notes.length
-                ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
+              munNotes.length
+                ? el("div", { class: "sub wpn-ammo-note" }, `${munName}: ${munNotes.join(" · ")}`) : null),
             fire: el("td", { class: "sub" },
-              modes.length ? firingModeControls(w, r, calcRow, modes, mode) : "—"),
-            ammo: el("td", { class: "sub" }, ammoPicker(w, r)),
+              modes.length ? firingModeControls(w, r, calcRow, modes, mode, kataOffered) : "—"),
+            ammo: el("td", { class: "sub" }, munitionPicker(w, r.Type)),
           };
         },
       }));
@@ -1516,16 +1594,27 @@ function shOverview(body) {
         ins: 1000 + idx, getOrder: () => cg.src.lo, setOrder: v => { cg.src.lo = v; },
         cells: () => {
           const g = cg.gun;
+          // A cybergun loads ammo like any other firearm. The choice lives on
+          // the source augment entry, since the gun row itself is shared data.
+          const ammo = loadedAmmoFor(cg.src);
+          const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen };
+          const shot = RULES.applyAmmoStats(base, ammo.mods);
+          const bit = (label, key) => el("span",
+            (ammo.row && String(shot[key]) !== String(base[key]))
+              ? { class: "wpn-ammo-mod", title: `${ammo.name} ammo` } : {},
+            `${label} ${shot[key]}`);
           return {
             name: el("b", {}, cg.name + " (smart)"),
             stats: el("td", { class: "sub" },
-              "Cybergun", weaponSkillDice(cg.name, "Cybergun", g.Acc),
-              ` · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Mag ${g.Ammo}`,
-              el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab")),
-            // Cyberguns are configured on the Augments tab, so their mode and
-            // ammo aren't editable here; show what the implant carries.
+              "Cybergun", weaponSkillDice(cg.name, "Cybergun", shot.acc, []),
+              " · ", bit("Acc", "acc"), " · ", bit("DMG", "damage"), " · ", bit("Pen", "pen"),
+              ` · Mag ${g.Ammo}`,
+              el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab"),
+              ammo.notes.length
+                ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
+            // Firing mode is fixed by the implant; ammo is not.
             fire: el("td", { class: "sub" }, g.Modes || "—"),
-            ammo: el("td", { class: "sub" }, "—"),
+            ammo: el("td", { class: "sub" }, munitionPicker(cg.src, "Cybergun")),
           };
         },
       }));

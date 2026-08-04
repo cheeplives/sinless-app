@@ -1775,13 +1775,19 @@ function ammoStatMods(effectText) {
   return out;
 }
 
-/** Apply an ammo's parsed mods to a weapon's numbers. Absolute values win. */
+/** Apply an ammo's parsed mods to a weapon's numbers. Absolute values win.
+ *  Only cleanly numeric stats are adjusted: plenty of weapons state Damage as
+ *  prose ("20 Stun", "10+fire", "By Grenade", "½ Str") and parsing a leading
+ *  number out of those would silently discard the rest. Those keep their text
+ *  and the adjustment is left for the table to apply. */
 function applyAmmoStats(base, mods) {
-  const num = v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
   const one = (key, raw) => {
     if (mods.set[key] != null) return mods.set[key];
-    const n = num(raw);
-    return n == null ? raw : n + (mods[key] || 0);
+    const d = mods[key] || 0;
+    if (!d) return raw;                              // nothing to apply
+    const s = String(raw).trim();
+    if (!/^-?\d+$/.test(s)) return raw;              // not a bare number
+    return parseInt(s, 10) + d;
   };
   return { acc: one("acc", base.acc), damage: one("damage", base.damage),
            pen: one("pen", base.pen) };

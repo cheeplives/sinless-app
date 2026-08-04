@@ -767,6 +767,9 @@ label.opt input{margin-top:3px}
 .wpn-ammo-mod{color:var(--ok)}
 .wpn-ammo-note{color:var(--amber);font-style:italic;margin-top:2px}
 .wpn-mods{margin-top:2px}
+.sh-fire-kata{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;
+  color:var(--manon);cursor:pointer;user-select:none;white-space:nowrap}
+.sh-fire-kata input{margin:0;width:12px;height:12px}
 
 .sh-track{margin-top:10px}
 .sh-track-head{display:flex;justify-content:space-between;font-family:var(--disp);font-size:12px;
@@ -1161,7 +1164,7 @@ body.sheet-readonly .mini-btn,body.sheet-readonly .stepper,
 body.sheet-readonly .sh-box,body.sheet-readonly .counter,
 body.sheet-readonly .btn-add,body.sheet-readonly .row-del,
 body.sheet-readonly .sh-reorder,body.sheet-readonly .sh-fire button,
-body.sheet-readonly .sh-fire-sel,
+body.sheet-readonly .sh-fire-sel,body.sheet-readonly .sh-fire-kata,
 body.sheet-readonly .sh-init-roll,body.sheet-readonly .sh-roller-fab{
   pointer-events:none;opacity:.45}
 /* …but keep the read-only banner's own buttons fully usable. */

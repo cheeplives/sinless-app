@@ -1711,31 +1711,52 @@ function weaponSkillName(name, type) {
  * "FA (40)" is a heavier full-auto that spends 40 rounds for 40 dice instead of
  * the standard 20/20. */
 const FIRING_MODES = {
-  "SS":      { name: "Single Shot", dice: 0,  ammo: 1 },
-  "DT":      { name: "Double Tap",  dice: 1,  ammo: 2 },
-  "BF":      { name: "Burst Fire",  dice: 3,  ammo: 3 },
-  "FA":      { name: "Full Auto",   dice: 20, ammo: 20 },
-  "FA (40)": { name: "Full Auto (40)", dice: 40, ammo: 40 },
+  "SS": { name: "Single Shot", dice: 0,  ammo: 1 },
+  "DT": { name: "Double Tap",  dice: 1,  ammo: 2 },
+  "BF": { name: "Burst Fire",  dice: 3,  ammo: 3 },
+  "FA": { name: "Full Auto",   dice: 20, ammo: 20 },
 };
-const FIRING_MODE_ORDER = ["SS", "DT", "BF", "FA", "FA (40)"];
 // Melee and thrown weapons aren't fired, so they get no mode at all.
 const UNFIRED_WEAPON_TYPES = new Set(["Melee", "Thrown"]);
 
-/** The firing modes a weapon offers, in a stable order.
- *  Most Energy weapons put a weapon class in the "Firing modes" column (Laser
- *  pistol, Railgun, ...) rather than modes, and are single-shot; they fall back
- *  to SS. But an Energy weapon that DOES name real modes keeps them -- the
- *  Militech X-3 spins up to full auto -- so the exception is data-driven rather
- *  than a hardcoded name. Anything else unrecognised also falls back to SS, so
- *  every fired weapon has at least its default. */
+/** Resolve a mode token to its trade, or null when it isn't a mode.
+ *  Vehicle and drone mounts scale their bursts -- "FA (40)", "FA (60)",
+ *  "BF (4)" -- where the parenthetical is the round count and the dice match
+ *  it, the same trade the base modes make at a bigger scale. Parsed generically
+ *  so a new size in the data needs no code. */
+function parseFiringMode(token) {
+  const key = String(token || "").trim();
+  if (FIRING_MODES[key]) return Object.assign({ key }, FIRING_MODES[key]);
+  const m = /^([A-Za-z]+)\s*\((\d+)\)$/.exec(key);
+  const base = m && FIRING_MODES[m[1].toUpperCase()];
+  if (!base) return null;
+  const n = +m[2];
+  return { key, name: `${base.name} (${n})`, dice: n, ammo: n };
+}
+function firingMode(token) {
+  return parseFiringMode(token) || Object.assign({ key: "SS" }, FIRING_MODES.SS);
+}
+
+/** The firing modes a weapon offers, cheapest first. Reads "Firing modes"
+ *  (personal weapons) or "Modes" (vehicle / drone mounts).
+ *  Most Energy weapons put a weapon class in that column (Laser pistol,
+ *  Railgun, ...) rather than modes, and are single-shot; they fall back to SS.
+ *  But an Energy weapon that DOES name real modes keeps them -- the Militech
+ *  X-3 spins up to full auto -- so the exception is data-driven rather than a
+ *  hardcoded name. A mount with a blank column (Oil Slick, Smokescreen) isn't
+ *  really fired and gets nothing. */
 function weaponFiringModes(row) {
   if (!row || UNFIRED_WEAPON_TYPES.has(row.Type)) return [];
-  const toks = String(row["Firing modes"] || "").split(",").map(t => t.trim());
-  const found = toks.filter(t => FIRING_MODES[t]);
-  const modes = FIRING_MODE_ORDER.filter(m => found.includes(m));
-  return modes.length ? modes : ["SS"];
+  const isUnit = row["Firing modes"] === undefined && row.Modes !== undefined;
+  const text = isUnit ? row.Modes : row["Firing modes"];
+  const found = String(text || "").split(",")
+    .map(t => parseFiringMode(t)).filter(Boolean);
+  if (!found.length) return isUnit ? [] : ["SS"];
+  const seen = new Set();
+  return found.sort((a, b) => a.ammo - b.ammo)
+    .filter(m => !seen.has(m.key) && seen.add(m.key))
+    .map(m => m.key);
 }
-function firingMode(key) { return FIRING_MODES[key] || FIRING_MODES.SS; }
 
 /* ---- ammunition --------------------------------------------------------------
  * Ammo effects are prose in the gear table ("Pen +1, Barrier +1", "+2 Acc, +3
@@ -1828,6 +1849,24 @@ const AMMO_FITS = {
 function ammoFitsWeapon(ammoRow, weaponRow) {
   const rule = AMMO_FITS[String((ammoRow && ammoRow.Item) || "")];
   return rule ? !!rule(weaponRow || {}) : true;
+}
+
+/* The exotic rounds exist for vehicle and drone mounts, and each names the
+ * mount it belongs to in its Notes. Matched here by mount name so the mount
+ * pickers offer only what actually fits, and the ordinary personal rounds --
+ * which say nothing about vehicles -- stay out of them entirely. */
+const UNIT_AMMO_FITS = {
+  "Micro missile (HEAP)": /missile launcher/i,
+  "Micro Missile (anti-personnel)": /missile launcher/i,
+  "Tank Rounds (HEAP)": /tank cannon/i,
+  "Tank Rounds (HE)": /tank cannon/i,
+  "20/25mm Cannon": /^25mm cannon$/i,
+  "30mm Cannon": /^30mm cannon$/i,
+  "Vulcan Cannon": /vulcan/i,
+};
+function ammoFitsUnitWeapon(ammoRow, unitWeaponName) {
+  const rx = UNIT_AMMO_FITS[String((ammoRow && ammoRow.Item) || "")];
+  return rx ? rx.test(String(unitWeaponName || "")) : false;
 }
 
 /* ---- weapon specializations -------------------------------------------------
@@ -3499,7 +3538,8 @@ return {
   augmentLimbRequirement, augmentMeleeDamage,
   weaponSkillName,
   specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
-  FIRING_MODES, weaponFiringModes, firingMode,
+  FIRING_MODES, weaponFiringModes, firingMode, parseFiringMode,
+  ammoFitsUnitWeapon,
   ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_FITS,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,

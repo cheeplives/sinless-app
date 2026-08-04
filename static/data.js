@@ -18,7 +18,7 @@ const DATA_BUNDLE ={
 "tables":{
 "cyberguns":[
 {"Type":"Palm Pistol","Acc":"0","Dmg":"2","Ammo":"5","Modes":"SS","Rarity":"3","Pen":"2","Cost":"300"},
-{"Type":"Forearm SMG","Acc":"3","Dmg":"3","Ammo":"40","Modes":"SS, SA, B","Rarity":"4","Pen":"3","Cost":"2000"},
+{"Type":"Forearm SMG","Acc":"3","Dmg":"3","Ammo":"40","Modes":"SS, SA, BF","Rarity":"4","Pen":"3","Cost":"2000"},
 {"Type":"Heavy Pistol","Acc":"2","Dmg":"6","Ammo":"15","Modes":"SS, SA","Rarity":"4","Pen":"4","Cost":"500"},
 {"Type":"Shotgun","Acc":"2","Dmg":"10","Ammo":"5","Modes":"SA","Rarity":"3","Pen":"3","Cost":"2500"}
 ],
@@ -321,10 +321,10 @@ const DATA_BUNDLE ={
 {"Drone Ballistic Weapon":"Missile Launcher","ZR":"","BI":"","Cost":"178500","Accuracy":"0","Damage":"150","Ammo":"1 missile","Modes":"SS","Rarity":"7","Weight":"1","Pen":"N/A","Effect":"150/75/25 dmg radius 8m/16m/20m. Ignores armor","ModeEffect":"SS 150/75/25 dmg radius 8m/16m/20m. Ignores armor"},
 {"Drone Ballistic Weapon":"Sentry Gun","ZR":"","BI":"","Cost":"750","Accuracy":"2","Damage":"4","Ammo":"40","Modes":"SS","Rarity":"2","Weight":"1","Pen":"3","Effect":"Cannot be mounted on aerial units","ModeEffect":"SS Cannot be mounted on aerial units"},
 {"Drone Ballistic Weapon":"Recoilless Gun","ZR":"","BI":"","Cost":"950","Accuracy":"4","Damage":"2","Ammo":"20","Modes":"SS","Rarity":"2","Weight":"1","Pen":"2","Effect":"","ModeEffect":"SS"},
-{"Drone Ballistic Weapon":"Mini Gun","ZR":"","BI":"","Cost":"2500","Accuracy":"1","Damage":"3","Ammo":"360","Modes":"SS, B, FA","Rarity":"3","Weight":"3","Pen":"3","Effect":"","ModeEffect":"SS, B, FA"},
-{"Drone Ballistic Weapon":"Grenade Launcher","ZR":"","BI":"","Cost":"8000","Accuracy":"3","Damage":"20","Ammo":"24","Modes":"SS, B","Rarity":"4","Weight":"2","Pen":"N/A","Effect":"","ModeEffect":"SS, B"},
-{"Drone Ballistic Weapon":"Autocannon","ZR":"","BI":"","Cost":"93000","Accuracy":"4","Damage":"9","Ammo":"120","Modes":"SS, B, FA","Rarity":"4","Weight":"3","Pen":"4","Effect":"Choose round: AP(+2 Pen), HEI(-2 Pen, +4 DMG at 4m radius), Tracer(+2 acc)","ModeEffect":"SS, B, FA Choose round: AP(+2 Pen), HEI(-2 Pen, +4 DMG at 4m radius), Tracer(+2 acc)"},
-{"Drone Ballistic Weapon":"Recoilless Rifle","ZR":"","BI":"","Cost":"20000","Accuracy":"3","Damage":"6","Ammo":"80","Modes":"SS, B","Rarity":"3","Weight":"2","Pen":"5","Effect":"","ModeEffect":"SS, B"},
+{"Drone Ballistic Weapon":"Mini Gun","ZR":"","BI":"","Cost":"2500","Accuracy":"1","Damage":"3","Ammo":"360","Modes":"SS, BF, FA","Rarity":"3","Weight":"3","Pen":"3","Effect":"","ModeEffect":"SS, BF, FA"},
+{"Drone Ballistic Weapon":"Grenade Launcher","ZR":"","BI":"","Cost":"8000","Accuracy":"3","Damage":"20","Ammo":"24","Modes":"SS, BF","Rarity":"4","Weight":"2","Pen":"N/A","Effect":"","ModeEffect":"SS, BF"},
+{"Drone Ballistic Weapon":"Autocannon","ZR":"","BI":"","Cost":"93000","Accuracy":"4","Damage":"9","Ammo":"120","Modes":"SS, BF, FA","Rarity":"4","Weight":"3","Pen":"4","Effect":"Choose round: AP(+2 Pen), HEI(-2 Pen, +4 DMG at 4m radius), Tracer(+2 acc)","ModeEffect":"SS, BF, FA Choose round: AP(+2 Pen), HEI(-2 Pen, +4 DMG at 4m radius), Tracer(+2 acc)"},
+{"Drone Ballistic Weapon":"Recoilless Rifle","ZR":"","BI":"","Cost":"20000","Accuracy":"3","Damage":"6","Ammo":"80","Modes":"SS, BF","Rarity":"3","Weight":"2","Pen":"5","Effect":"","ModeEffect":"SS, BF"},
 {"Drone Ballistic Weapon":"Oil Slick","ZR":"","BI":"","Cost":"285","Accuracy":"","Damage":"","Ammo":"1","Modes":"","Rarity":"","Weight":"1","Pen":"","Effect":"Ground targets -3 penalty on slick","ModeEffect":"Ground targets -3 penalty on slick"},
 {"Drone Ballistic Weapon":"Smokescreen","ZR":"","BI":"","Cost":"695","Accuracy":"","Damage":"","Ammo":"1","Modes":"","Rarity":"","Weight":"1","Pen":"","Effect":"30m wide/60m long smokescreen","ModeEffect":"30m wide/60m long smokescreen"}
 ],
@@ -805,11 +805,11 @@ const DATA_BUNDLE ={
 {"Vehicle Ballistic Weapon":"Oil Slick","ZR":"","BI":"","Cost":"490","Accuracy":"0","Damage":"0","Ammo":"6","Modes":"","Rarity":"5","Weight":"1","Pen":"","Effect":"Ground targets -3 penalty on slick","ModeEffect":"Ground targets -3 penalty on slick"},
 {"Vehicle Ballistic Weapon":"Machine Guns","ZR":"","BI":"","Cost":"14000","Accuracy":"2","Damage":"3","Ammo":"800","Modes":"FA (60)","Rarity":"4","Weight":"1","Pen":"3","Effect":"","ModeEffect":"FA (60)"},
 {"Vehicle Ballistic Weapon":"Autocannons","ZR":"","BI":"","Cost":"17000","Accuracy":"2","Damage":"4","Ammo":"800","Modes":"FA (60)","Rarity":"5","Weight":"2","Pen":"4","Effect":"Choose round: AP(+2 Pen), HEI(-2 Pen, +4 DMG at 4m radius), Tracer(+2 acc)","ModeEffect":"FA (60) Choose round: AP(+2 Pen), HEI(-2 Pen, +4 DMG at 4m radius), Tracer(+2 acc)"},
-{"Vehicle Ballistic Weapon":"25mm Cannon","ZR":"","BI":"","Cost":"34000","Accuracy":"4","Damage":"10","Ammo":"16","Modes":"SS, B","Rarity":"5","Weight":"3","Pen":"5","Effect":"","ModeEffect":"SS, B"},
-{"Vehicle Ballistic Weapon":"30mm Cannon","ZR":"","BI":"","Cost":"54000","Accuracy":"4","Damage":"15","Ammo":"12","Modes":"SS B","Rarity":"5","Weight":"3","Pen":"6","Effect":"","ModeEffect":"SS B"},
+{"Vehicle Ballistic Weapon":"25mm Cannon","ZR":"","BI":"","Cost":"34000","Accuracy":"4","Damage":"10","Ammo":"16","Modes":"SS, BF","Rarity":"5","Weight":"3","Pen":"5","Effect":"","ModeEffect":"SS, BF"},
+{"Vehicle Ballistic Weapon":"30mm Cannon","ZR":"","BI":"","Cost":"54000","Accuracy":"4","Damage":"15","Ammo":"12","Modes":"SS, BF","Rarity":"5","Weight":"3","Pen":"6","Effect":"","ModeEffect":"SS, BF"},
 {"Vehicle Ballistic Weapon":"Tank Cannon","ZR":"","BI":"","Cost":"35000","Accuracy":"2","Damage":"400","Ammo":"4","Modes":"SS","Rarity":"6","Weight":"4","Pen":"6","Effect":"Choose Round: KE(Ignores armor), HE(Damage 50 fire explosion), Cannister(Damage to all tgts in 15-degree cone)","ModeEffect":"SS Choose Round: KE(Ignores armor), HE(Damage 50 fire explosion), Cannister(Damage to all tgts in 15-degree cone)"},
 {"Vehicle Ballistic Weapon":"RPG Launcher","ZR":"","BI":"","Cost":"2000","Accuracy":"0","Damage":"*","Ammo":"1","Modes":"SS","Rarity":"3","Weight":"1","Pen":"*","Effect":"","ModeEffect":"SS"},
-{"Vehicle Ballistic Weapon":"Missile Launcher","ZR":"","BI":"","Cost":"178000","Accuracy":"0","Damage":"150","Ammo":"12","Modes":"SS, B (4)","Rarity":"6","Weight":"2","Pen":"0","Effect":"150/75/25 dmg radius 8m/16m/20m. Ignores armor","ModeEffect":"SS, B (4) 150/75/25 dmg radius 8m/16m/20m. Ignores armor"}
+{"Vehicle Ballistic Weapon":"Missile Launcher","ZR":"","BI":"","Cost":"178000","Accuracy":"0","Damage":"150","Ammo":"12","Modes":"SS, BF (4)","Rarity":"6","Weight":"2","Pen":"0","Effect":"150/75/25 dmg radius 8m/16m/20m. Ignores armor","ModeEffect":"SS, BF (4) 150/75/25 dmg radius 8m/16m/20m. Ignores armor"}
 ],
 "vehicle_energy_weapons":[
 {"Vehicle Energy Weapon":"Pulse Cannon","ZR":"","BI":"","Cost":"125000","Accuracy":"0","Damage":"10","Heat":"3","Heat Limit":"15","Rarity":"4","Weight":"1","Pen":"0","ModeEffect":"Pain causes penalty to next round equal to damage taken"},

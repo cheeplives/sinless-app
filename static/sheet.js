@@ -1192,6 +1192,82 @@ function munitionPicker(entry, weaponRow) {
       label(r))));
 }
 
+/* Firing state for a mount, kept in play state because a unit's weapons are
+   stored as bare names with nothing to hang it on. Keyed by the unit's slot and
+   the weapon's index within it, alongside the condition tracks. */
+function unitGunState(table, unit, wi) {
+  const rg = CHAR.play.rigging;
+  const slot = (rg.units[unitStateKey(table, unit)] ??= {});
+  const guns = (slot.guns ??= {});
+  return (guns[wi] ??= {});
+}
+
+/* Firing controls for a mounted weapon: mode + magazine for a ballistic mount,
+   a heat tracker for an energy one. Energy mounts state Heat and Heat Limit in
+   their own columns, so unlike personal energy weapons nothing has to be parsed
+   out of prose. */
+function unitGunControls(table, unit, wi, wn, wr, isEnergy) {
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const st = unitGunState(table, unit, wi);
+  const wrap = el("div", { class: "sh-fire" });
+
+  if (isEnergy) {
+    const per = parseInt(wr.Heat, 10) || 0;
+    const max = parseInt(wr["Heat Limit"], 10) || 0;
+    if (!per && !max) return null;                 // no heat rating on this mount
+    const cur = () => (st.heat == null ? 1 : Math.max(0, Math.floor(+st.heat) || 0));
+    if (ro) wrap.append(el("span", { class: "sub" }, `Heat ${cur()}`));
+    else wrap.append(miniCounter("Heat", cur, v => { st.heat = v; }, 0, max || 99));
+    wrap.append(el("span", { class: "sub" },
+      ` ${per} per shot · max ${max}${max && cur() >= max ? " — overheated" : ""}`));
+    return wrap;
+  }
+
+  const modes = RULES.weaponFiringModes(wr);
+  if (!modes.length) return null;                  // Oil Slick / Smokescreen
+  const mode = modes.includes(st.mode) ? st.mode : modes[0];
+  const md = RULES.firingMode(mode);
+  wrap.append(modes.length > 1 && !ro
+    ? el("select", { class: "sh-fire-sel", title: "Firing mode",
+        onchange: e => { st.mode = e.target.value; playChanged(); } },
+        ...modes.map(m => {
+          const d = RULES.firingMode(m);
+          return el("option", { value: m, ...(m === mode ? { selected: 1 } : {}) },
+            `${m} — ${d.name} (${d.dice ? `+${d.dice}b, ` : ""}${d.ammo} rd${d.ammo === 1 ? "" : "s"})`);
+        }))
+    : el("span", { class: "sh-fire-mode", title: md.name }, mode));
+
+  // "1 missile" and the like aren't counts, so those mounts get no magazine.
+  const maxAmmo = /^\s*\d+\s*$/.test(String(wr.Ammo || "")) ? parseInt(wr.Ammo, 10) : 0;
+  if (maxAmmo) {
+    const loaded = st.loaded == null ? maxAmmo
+      : Math.max(0, Math.min(Math.floor(+st.loaded) || 0, maxAmmo));
+    const dry = loaded < md.ammo;
+    wrap.append(el("span", { class: "sh-fire-mag" + (dry ? " dry" : "") },
+      `${loaded}/${maxAmmo} rds`));
+    if (!ro) wrap.append(
+      el("button", { class: "btn small", disabled: dry ? "1" : null,
+        title: dry ? `Not enough rounds for ${mode} (needs ${md.ammo})`
+                   : `Fire ${mode} — spends ${md.ammo} round${md.ammo === 1 ? "" : "s"}`,
+        onclick: () => { st.loaded = Math.max(0, loaded - md.ammo); playChanged(); } }, "Fire"),
+      el("button", { class: "btn small", disabled: loaded >= maxAmmo ? "1" : null,
+        title: "Reload to a full magazine",
+        onclick: () => { st.loaded = maxAmmo; playChanged(); } }, "Reload"));
+  }
+
+  // Exotic rounds are mount-specific; ordinary personal ammo never fits one.
+  const fits = ownedAmmoRows().filter(a => RULES.ammoFitsUnitWeapon(a, wn));
+  if (fits.length && !ro) {
+    const cur = fits.some(a => a.Item === st.ammo) ? st.ammo : "";
+    wrap.append(el("select", { class: "sh-fire-sel", title: "Loaded ammunition",
+      onchange: e => { st.ammo = e.target.value; playChanged(); } },
+      el("option", { value: "" }, "— none —"),
+      ...fits.map(a => el("option", { value: a.Item, ...(a.Item === cur ? { selected: 1 } : {}) },
+        a.Effect ? `${a.Item} — ${a.Effect}` : a.Item))));
+  }
+  return wrap;
+}
+
 /* Gun-Kata rank, or 0. Level 2 is the one that matters here: "Can fire +1
    bullet (+1d for 1 ammo)". */
 function gunKataRank() {
@@ -4194,7 +4270,7 @@ const modDoublesAmmo = row => !!row && /doubl\w*\s+ammo/i.test(row.ModeEffect ||
 
 // Remove a mounted weapon and keep weapon-attached mods consistent: drop mods on
 // the removed weapon and shift the index of mods attached to later weapons.
-function removeUnitWeapon(u, wi) {
+function removeUnitWeapon(u, wi, table) {
   u.weapons.splice(wi, 1);
   u.mods = (u.mods || []).reduce((acc, m) => {
     const idx = modWeaponIdx(m);
@@ -4202,6 +4278,19 @@ function removeUnitWeapon(u, wi) {
     acc.push(idx != null && idx > wi ? { ...m, weapon: idx - 1 } : m);
     return acc;
   }, []);
+  // Firing state is keyed by weapon index too, so close the gap the same way --
+  // otherwise the removed gun's magazine and mode are inherited by whichever
+  // weapon shifts into its slot.
+  const slot = table && (CHAR.play.rigging.units || {})[unitStateKey(table, u)];
+  if (slot && slot.guns) {
+    const next = {};
+    for (const [k, v] of Object.entries(slot.guns)) {
+      const idx = +k;
+      if (idx === wi) continue;
+      next[idx > wi ? idx - 1 : idx] = v;
+    }
+    slot.guns = next;
+  }
   playChangedRecalc();
 }
 
@@ -4645,11 +4734,15 @@ function shRigging(body) {
           onAdd: name => { if (buyMod(name, wn)) u.mods.push({ name, weapon: wi }); },
           onRemove: () => {}, rerender: renderSheet, afterAdd: () => playChangedRecalc(),
         }) : null;
+        // Energy mounts run on Heat and carry no Modes/Ammo columns at all.
+        const isEnergy = wr["Heat Limit"] !== undefined || wr.Heat !== undefined;
+        const fireCtl = unitGunControls(cfg.table, u, wi, wn, wr, isEnergy);
         return el("div", { class: "sub", style: "margin:4px 0" },
           el("span", { class: "chip", style: "cursor:pointer", title: "Remove weapon",
-            onclick: () => removeUnitWeapon(u, wi) }, wn + " ✕"),
+            onclick: () => removeUnitWeapon(u, wi, cfg.table) }, wn + " ✕"),
           ` DMG ${wr.Damage || "—"} · Acc ${wr.Accuracy || 0}`
-          + (ammo ? ` · Ammo ${ammo}` : "") + (wr.Pen ? ` · Pen ${wr.Pen}` : ""),
+          + (ammo ? ` · Mag ${ammo}` : "") + (wr.Pen ? ` · Pen ${wr.Pen}` : ""),
+          fireCtl,
           effect ? el("div", { class: "sub", style: "margin:2px 0 0 4px;color:var(--manon)" }, effect) : null,
           modChips.length ? el("div", { style: "margin:2px 0 0 4px" }, ...modChips) : null,
           addWeaponMod ? el("div", { class: "sub", style: "margin:2px 0 0 4px" },

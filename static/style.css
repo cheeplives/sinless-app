@@ -763,6 +763,10 @@ label.opt input{margin-top:3px}
 .sh-fire-mag{font-family:var(--mono);font-size:11px;color:var(--text)}
 .sh-fire-mag.dry{color:var(--bad)}
 .sh-fire .btn.small{padding:1px 8px;font-size:11px}
+/* a stat the loaded ammo moved, and the leftover prose it couldn't express */
+.wpn-ammo-mod{color:var(--ok)}
+.wpn-ammo-note{color:var(--amber);font-style:italic;margin-top:2px}
+.wpn-mods{margin-top:2px}
 
 .sh-track{margin-top:10px}
 .sh-track-head{display:flex;justify-content:space-between;font-family:var(--disp);font-size:12px;

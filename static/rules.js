@@ -1737,6 +1737,56 @@ function weaponFiringModes(row) {
 }
 function firingMode(key) { return FIRING_MODES[key] || FIRING_MODES.SS; }
 
+/* ---- ammunition --------------------------------------------------------------
+ * Ammo effects are prose in the gear table ("Pen +1, Barrier +1", "+2 Acc, +3
+ * Dmg, Pen = 1 Range = S"), so the numbers a weapon line can actually show --
+ * Accuracy, Damage, Pen -- are parsed out and everything else is kept verbatim
+ * as a note. Both orderings appear in the data, and Pen is sometimes SET rather
+ * than adjusted ("Pen = 0" for Gel), which is not the same as an adjustment and
+ * has to win over the weapon's own value. */
+const AMMO_STAT_KEYS = {
+  acc: "acc", accuracy: "acc",
+  dmg: "damage", damage: "damage",
+  pen: "pen", penetration: "pen",
+};
+function ammoStatMods(effectText) {
+  const out = { acc: 0, damage: 0, pen: 0, set: {}, notes: [] };
+  const statOf = w => AMMO_STAT_KEYS[String(w || "").toLowerCase()];
+  for (const rawPart of String(effectText || "").split(",")) {
+    const part = rawPart.trim();
+    if (!part) continue;
+    let m;
+    // "Pen = 0" / "Pen = 1" -- an absolute value, not a delta. Trailing prose is
+    // kept as a note ("Pen = 1 Range = S" carries the Range half through).
+    if ((m = /^([A-Za-z]+)\s*=\s*(-?\d+)\s*(.*)$/.exec(part)) && statOf(m[1])) {
+      out.set[statOf(m[1])] = +m[2];
+      if (m[3].trim()) out.notes.push(m[3].trim());
+      continue;
+    }
+    // "Pen +1" or "+3 Dmg"
+    if (((m = /^([A-Za-z]+)\s*([+-]\d+)$/.exec(part)) && statOf(m[1]))) {
+      out[statOf(m[1])] += +m[2]; continue;
+    }
+    if (((m = /^([+-]\d+)\s*([A-Za-z]+)$/.exec(part)) && statOf(m[2]))) {
+      out[statOf(m[2])] += +m[1]; continue;
+    }
+    out.notes.push(part);
+  }
+  return out;
+}
+
+/** Apply an ammo's parsed mods to a weapon's numbers. Absolute values win. */
+function applyAmmoStats(base, mods) {
+  const num = v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+  const one = (key, raw) => {
+    if (mods.set[key] != null) return mods.set[key];
+    const n = num(raw);
+    return n == null ? raw : n + (mods[key] || 0);
+  };
+  return { acc: one("acc", base.acc), damage: one("damage", base.damage),
+           pen: one("pen", base.pen) };
+}
+
 /* ---- weapon specializations -------------------------------------------------
  * A specialization is +1 to the skill when it covers what you're using and -1
  * when it doesn't, so it needs to be resolved per WEAPON rather than shown as a
@@ -3371,6 +3421,7 @@ return {
   weaponSkillName,
   specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
   FIRING_MODES, weaponFiringModes, firingMode,
+  ammoStatMods, applyAmmoStats,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,

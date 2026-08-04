@@ -1103,6 +1103,46 @@ function equippedCyberguns() {
     - (typeof b.src.cgOrder === "number" ? b.src.cgOrder : 1e6 + b._ins));
 }
 
+/* Ammo the character actually owns, by name -- chargen kit plus anything bought
+   in play, merged, since you load from one stock. */
+function ownedAmmoRows() {
+  const seen = new Map();
+  for (const g of [...CHAR.gear, ...((CHAR.play.purchases || {}).gear || [])]) {
+    const row = DATA.tables.misc_gear.find(x => x.Item === g.name);
+    if (row && (row.Class || "").startsWith("Ammo") && !seen.has(row.Item)) seen.set(row.Item, row);
+  }
+  return [...seen.values()];
+}
+
+/* The ammo a weapon is loaded with, plus its parsed stat mods. Nothing loaded
+   (or the type no longer owned) reads as plain ammunition with no effect. */
+function loadedAmmoFor(w, r) {
+  const none = { row: null, name: "", mods: RULES.ammoStatMods(""), notes: [] };
+  if (!w.ammo) return none;
+  const row = ownedAmmoRows().find(x => x.Item === w.ammo);
+  if (!row) return none;
+  const mods = RULES.ammoStatMods(row.Effect);
+  const notes = [...mods.notes, row.Notes || ""].filter(Boolean);
+  return { row, name: row.Item, mods, notes };
+}
+
+/* Ammo selector for a weapon: the types the character owns. Melee and thrown
+   weapons take none, and neither do Energy weapons -- they run on Heat. */
+function ammoPicker(w, r) {
+  if (!r || ["Melee", "Thrown", "Energy"].includes(r.Type)) return "—";
+  const owned = ownedAmmoRows();
+  if (!owned.length)
+    return el("span", { class: "sub" }, "none owned");
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const cur = owned.some(x => x.Item === w.ammo) ? w.ammo : "";
+  if (ro) return el("span", { class: "sub" }, cur || "—");
+  return el("select", { class: "sh-fire-sel", title: "Loaded ammunition",
+    onchange: e => { w.ammo = e.target.value; playChanged(); } },
+    el("option", { value: "" }, "— none —"),
+    ...owned.map(x => el("option", { value: x.Item, ...(x.Item === cur ? { selected: 1 } : {}) },
+      x.Effect ? `${x.Item} — ${x.Effect}` : x.Item)));
+}
+
 /* Per-shot heat and its cap, read out of an Energy weapon's Notes
    ("Heat 3 / max 15"). Null when the row doesn't state it. */
 function heatSpec(row) {
@@ -1416,7 +1456,11 @@ function shOverview(body) {
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table");
-      wt.append(el("tr", {}, el("th", {}, "Equipped weapon"), el("th", {}, "Stats"), el("th", {}, "Mods & upgrades")));
+      // Mods are listed by name inside the stat line rather than getting a
+      // column of their own -- their full effect text is on the Gear tab -- so
+      // the freed columns can carry the firing mode and the loaded ammo.
+      wt.append(el("tr", {}, el("th", {}, "Equipped weapon"), el("th", {}, "Stats"),
+        el("th", {}, "Fire mode"), el("th", {}, "Ammo")));
       // Weapons and cyberguns share ONE ordered list so a cybergun can sit
       // anywhere among the weapons (order stored as `lo` on each backing object).
       const items = [];
@@ -1425,32 +1469,46 @@ function shOverview(body) {
         cells: () => {
           const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
           const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
-          const modLines = (w.mods || []).map(m => {
-            const mr = DATA.tables.weapon_mods.find(x => x.Modification === m);
-            return (mr && mr.Effect) ? `${m} — ${mr.Effect}` : m;
-          });
-          if (w.upgr1 && r.Upgr1_Eff) modLines.push(`Upgrade 1 — ${r.Upgr1_Eff}`);
-          if (w.upgr2 && r.Upgr2_Eff) modLines.push(`Upgrade 2 — ${r.Upgr2_Eff}`);
+          // Names only -- the full effect text lives on the Gear tab.
+          const modNames = [...(w.mods || [])];
+          if (w.upgr1 && r.Upgr1_Eff) modNames.push("Upgrade 1");
+          if (w.upgr2 && r.Upgr2_Eff) modNames.push("Upgrade 2");
           const modes = RULES.weaponFiringModes(r);
           const mode = modes.includes(w.mode) ? w.mode : (modes[0] || "");
           const md = mode ? RULES.firingMode(mode) : { dice: 0, ammo: 0, name: "" };
+          // Loaded ammo shifts the numbers the line reports, so resolve it
+          // before building the stats rather than annotating afterwards.
+          const ammo = loadedAmmoFor(w, r);
+          const baseAcc = calcRow.Accuracy ?? r.Accuracy ?? 0;
+          const shot = RULES.applyAmmoStats(
+            { acc: baseAcc, damage: calcRow.Damage ?? r.Damage ?? "—", pen: r.Pen || 0 },
+            ammo.mods);
+          const changed = k => ammo.row && String(shot[k]) !== String(
+            ({ acc: baseAcc, damage: calcRow.Damage ?? r.Damage ?? "—", pen: r.Pen || 0 })[k]);
+          const statBit = (label, key) => el("span",
+            changed(key) ? { class: "wpn-ammo-mod", title: `${ammo.name} ammo` } : {},
+            `${label} ${shot[key]}`);
           return {
             name: el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
             stats: el("td", { class: "sub" },
               // Mirror the full Gear-tab stat line (issue #15): rate of fire /
-              // Reach, Firing modes, ZR, Weight, Hardening, Rarity all included.
+              // Reach, ZR, Weight, Hardening, Rarity all included.
               `${r.Type || ""}`,
-              weaponSkillDice(w.name, r.Type, calcRow.Accuracy ?? r.Accuracy, md.dice, mode),
-              modes.length ? firingModeControls(w, r, calcRow, modes, mode) : null,
-              " · "
-              + (r.Type === "Melee" ? `Reach ${r.Reach || 0}` : `Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}`)
-              + ` · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"}`
-              + ` · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
-              + ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")
+              weaponSkillDice(w.name, r.Type, shot.acc, md.dice, mode),
+              " · ",
+              r.Type === "Melee" ? `Reach ${r.Reach || 0}` : statBit("Acc", "acc"),
+              " · ", statBit("DMG", "damage"), " · ", statBit("Pen", "pen"),
+              ` · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
+              + ((calcRow.Ammo ?? r.Ammo) ? ` · Mag ${calcRow.Ammo ?? r.Ammo}` : "")
               + (r.Hardening ? ` · Hardening ${r.Hardening}` : "")
-              + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : "")),
-            last: el("td", { class: "sub" }, modLines.length
-              ? el("div", {}, ...modLines.map(l => el("div", {}, l))) : "—"),
+              + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : ""),
+              modNames.length
+                ? el("div", { class: "sub wpn-mods" }, "Mods: " + modNames.join(" · ")) : null,
+              ammo.notes.length
+                ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
+            fire: el("td", { class: "sub" },
+              modes.length ? firingModeControls(w, r, calcRow, modes, mode) : "—"),
+            ammo: el("td", { class: "sub" }, ammoPicker(w, r)),
           };
         },
       }));
@@ -1462,8 +1520,12 @@ function shOverview(body) {
             name: el("b", {}, cg.name + " (smart)"),
             stats: el("td", { class: "sub" },
               "Cybergun", weaponSkillDice(cg.name, "Cybergun", g.Acc),
-              ` · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`),
-            last: el("td", { class: "sub" }, "Implanted (Augments tab)"),
+              ` · Acc ${g.Acc} · DMG ${g.Dmg} · Pen ${g.Pen} · Mag ${g.Ammo}`,
+              el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab")),
+            // Cyberguns are configured on the Augments tab, so their mode and
+            // ammo aren't editable here; show what the implant carries.
+            fire: el("td", { class: "sub" }, g.Modes || "—"),
+            ammo: el("td", { class: "sub" }, "—"),
           };
         },
       }));
@@ -1472,7 +1534,7 @@ function shOverview(body) {
         const c = it.cells();
         const handle = reorderHandle(() => loadoutMove(items, i, -1), () => loadoutMove(items, i, 1),
           i > 0, i < items.length - 1);
-        wt.append(el("tr", {}, el("td", {}, handle, c.name), c.stats, c.last));
+        wt.append(el("tr", {}, el("td", {}, handle, c.name), c.stats, c.fire, c.ammo));
       });
       loadout.append(wt);
       // A weapon you own but haven't equipped is absent from this table, which

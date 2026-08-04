@@ -316,6 +316,28 @@ function dossierNotes() {
   return notes;
 }
 
+/* Worn armor stacked in one slot. Only ONE Outer and one Under piece is meant to
+ * count, but every piece marked active adds to the Ballistic/Impact totals, so a
+ * character wearing two coats silently reads several points too tough. The Gear
+ * tab's Worn checkbox unticks the slot's other piece, and priceArmor already
+ * pushes a warning -- but nothing created before that checkbox existed was
+ * cleaned up, an import can arrive in any state, and CALC.warnings is only
+ * rendered during chargen (the rail alerts), never on the play sheet.
+ *
+ * Recomputed from CALC.armor instead of matching the engine's warning text, so
+ * the note can name the offending pieces. "Outer*" (Helmet) is deliberately not
+ * counted -- it's a separate piece, matching priceArmor. */
+function overArmoredSlots() {
+  const bySlot = {};
+  for (const a of CALC.armor || []) {
+    if (!a.active || (a.Slot !== "Outer" && a.Slot !== "Under")) continue;
+    (bySlot[a.Slot] ??= []).push(a.Armor);
+  }
+  return Object.entries(bySlot)
+    .filter(([, names]) => names.length > 1)
+    .map(([slot, names]) => ({ slot, names }));
+}
+
 /* Replicant remaining-lifespan tracker shown in the Overview warning area.
  * Rolled once as (1d6+1)×12 months, then ticked down by hand as play advances.
  * Returns null for non-Replicants. */
@@ -1461,6 +1483,14 @@ function shOverview(body) {
       });
       loadout.append(el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
         el("span", { class: "sub" }, `Total armor: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I`)), at);
+      // Sits directly under the total it inflates, so the number and the reason
+      // it's wrong are read together.
+      for (const { slot, names } of overArmoredSlots()) {
+        loadout.append(el("div", { class: "sh-callout warn" }, "⚠ ",
+          el("b", {}, `${names.length} ${slot} pieces worn — `),
+          `only one ${slot} piece should count, but all ${names.length} are adding to the `
+          + `totals above: ${names.join(" · ")}. Untick the extras under Worn on the Gear tab.`));
+      }
     }
     body.append(loadout);
   }

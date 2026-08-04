@@ -84,13 +84,26 @@ const WEAPON_SKILL_BY_TYPE = {
   Heavy: "Heavy Weapons",
   Energy: "Energy Weapons",
 };
-function weaponRoll(type) {
+/* The ±1 a skill's specialization contributes for one specific weapon. Thin
+   wrapper so the Overview dice chip and the Gear tab roll hint agree. */
+function specAdjustFor(skill, weaponName, weaponType) {
+  const entry = (CHAR.skill_specializations || {})[skill];
+  return RULES.weaponSpecAdjust(entry, skill, weaponName, weaponType, DATA.tables);
+}
+
+function weaponRoll(type, weaponName) {
   const skill = WEAPON_SKILL_BY_TYPE[type] || "Firearms";
   const s = CALC.skills[skill] || {};
   const pool = s.pool || "Finesse";
   // final already folds in group-fallback dice, so no "grp" notation needed
-  const rating = s.final > 0 ? s.final : "untrained";
-  return `Roll ${pool} ${CALC.pools[pool]}d · ${skill} ${rating}`;
+  const spec = specAdjustFor(skill, weaponName, type);
+  const rated = s.final > 0;
+  const rating = rated ? Math.max(0, s.final + spec.delta) : "untrained";
+  // Name the specialty rather than just moving the number, so a rating that
+  // differs from the Skills tab explains itself.
+  const note = (rated && spec.delta > 0) ? ` (+1 ${spec.term})`
+    : (rated && spec.delta < 0) ? ` (−1 outside ${spec.term})` : "";
+  return `Roll ${pool} ${CALC.pools[pool]}d · ${skill} ${rating}${note}`;
 }
 
 const LIFESTYLE_EFFECTS = {
@@ -1292,6 +1305,10 @@ function shOverview(body) {
       const s = skill && (CALC.skills || {})[skill];
       if (!s) return null;
       const acc = +accuracy || 0;
+      // A specialization is +1 on what it covers and -1 on everything else the
+      // skill rolls, so it resolves per weapon rather than as the flat -1/+1
+      // pair the Skills tab shows.
+      const spec = specAdjustFor(skill, name, type);
       // The bladed cyber implants roll Cybertech Combat, which is trained only —
       // with no dice in it the weapon can't be used at all, so say so rather than
       // showing an Accuracy-only dice count that implies you can swing it.
@@ -1300,9 +1317,12 @@ function shOverview(body) {
         return el("b", { class: "wpn-dice locked",
           title: `${skill} is trained only — needs at least 1 die in the skill or its group` },
           "(trained only)");
-      return el("b", { class: "wpn-dice",
+      const total = Math.max(0, s.final + acc + spec.delta);
+      return el("b", { class: "wpn-dice" + (spec.delta ? (spec.delta > 0 ? " spec-on" : " spec-off") : ""),
         title: `${skill} ${s.final}${acc ? ` + Accuracy ${acc}` : ""}`
-          + ` = ${s.final + acc} dice` }, `(${s.final + acc}d)`);
+          + (spec.delta > 0 ? ` + 1 specialized in ${spec.term}` : "")
+          + (spec.delta < 0 ? ` − 1 outside your specialty (${spec.term})` : "")
+          + ` = ${total} dice` }, `(${total}d)`);
     };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
@@ -1799,12 +1819,22 @@ function skillTableRow(name, dim = false, editable = false, bareName = false) {
   } else if (specOn && spec.text) {
     specText = el("span", { class: "sub skill-spec-note" }, ` — ${spec.text}`);
   }
+  // A specialty that matches no weapon this skill rolls contributes nothing --
+  // better than silently costing -1 on everything -- but say so, or a typo just
+  // looks like the feature not working.
+  const dead = specOn
+    ? RULES.classifySpecTerms(spec, name, DATA.tables).dead : [];
+  const deadNote = dead.length
+    ? el("div", { class: "sub skill-spec-dead" },
+        `⚠ no ${name} weapon matches ${dead.map(t => `"${t}"`).join(", ")}`
+        + " — not applied")
+    : null;
   nameCell = chips.length
     ? el("div", { class: "sh-spec-line" }, el("span", { class: "sh-skillname" }, name), ...chips)
     : name;
 
   return el("tr", dim ? { class: "dim" } : {},
-    el("td", {}, nameCell, specText,
+    el("td", {}, nameCell, specText, deadNote,
       (s.notes && s.notes.length) ? el("div", { class: "sub" }, "✦ " + s.notes.join(" · ")) : null),
     el("td", { class: "num sub" }, s.points ? String(s.points) : ""),
     el("td", { class: "num sub" }, s.bonus ? (s.bonus > 0 ? `+${s.bonus}` : String(s.bonus)) : ""),
@@ -2646,7 +2676,7 @@ function shGear(body) {
           reorderHandle(() => arrayMove(CHAR.weapons, wi, -1), () => arrayMove(CHAR.weapons, wi, 1),
             wi > 0, wi < CHAR.weapons.length - 1),
           el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
-          el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type)),
+          el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type, w.name)),
           shMountEditor(w, r, w.equipped !== false)),
         el("td", { class: "sub" },
           `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +

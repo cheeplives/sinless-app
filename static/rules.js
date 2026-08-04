@@ -1702,6 +1702,90 @@ function weaponSkillName(name, type) {
   return WEAPON_TYPE_SKILL[type] || null;
 }
 
+/* ---- weapon specializations -------------------------------------------------
+ * A specialization is +1 to the skill when it covers what you're using and -1
+ * when it doesn't, so it needs to be resolved per WEAPON rather than shown as a
+ * flat -1/+1 pair. The text is free-form and may list several, separated by
+ * commas, ampersands or slashes: "Pistols, Rifles".
+ *
+ * Matching is deliberately textual rather than a curated vocabulary. The Type
+ * strings already carry the category word -- PistolLt / PistolMed / PistolHvy
+ * all contain "Pistol" -- so normalising both sides and testing every word of
+ * the term against "<type> <name>" covers the categories, narrower phrases like
+ * "Heavy Pistols" (once Hvy/Lt/Med are spelled out), and a term naming one
+ * specific gun.
+ *
+ * A term that matches NO weapon the skill can use is treated as not applying at
+ * all, rather than quietly costing -1 on everything: a typo shouldn't silently
+ * halve your dice. The UI surfaces those as dead terms so they can be fixed. */
+const SPEC_ABBREV = { hvy: "heavy", lt: "light", med: "medium" };
+
+function normalizeSpecText(s) {
+  return String(s || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")   // PistolHvy -> Pistol Hvy
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .map(w => SPEC_ABBREV[w] || w)
+    .filter(Boolean)
+    .join(" ");
+}
+// Trailing plural is noise: "Pistols" and "Pistol" are the same specialty.
+const specStem = w => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w);
+
+/** Split a specialization field into its individual terms, original text kept
+ *  for display. "Pistols, Rifles" / "Pistols & Rifles" / "Pistols/Rifles". */
+function specTerms(text) {
+  return String(text || "")
+    .split(/[,&/]|\band\b/i)
+    .map(t => t.trim())
+    .filter(Boolean);
+}
+
+/** Does one term cover this weapon? Every word of the term must appear in the
+ *  weapon's normalised "<type> <name>", so "Pistols" takes the whole pistol
+ *  family while "Heavy Pistols" takes only PistolHvy. */
+function specTermMatchesWeapon(term, weaponName, weaponType) {
+  const words = normalizeSpecText(term).split(" ").map(specStem).filter(Boolean);
+  if (!words.length) return false;
+  const hay = normalizeSpecText(`${weaponType || ""} ${weaponName || ""}`)
+    .split(" ").map(specStem).join(" ");
+  return words.every(w => hay.includes(w));
+}
+
+/** Every weapon name/type pair the given skill is rolled for. */
+function weaponsForSkill(skillName, data) {
+  const out = [];
+  for (const row of (data && data.weapons) || []) {
+    if (weaponSkillName(row.Weapon, row.Type) === skillName) out.push(row);
+  }
+  return out;
+}
+
+/** Split a skill's specialization terms into the ones that actually cover
+ *  something that skill can use, and the ones that match nothing. */
+function classifySpecTerms(specEntry, skillName, data) {
+  const live = [], dead = [];
+  if (!specEntry || !specEntry.on) return { live, dead };
+  const pool = weaponsForSkill(skillName, data);
+  for (const term of specTerms(specEntry.text)) {
+    const hit = pool.some(w => specTermMatchesWeapon(term, w.Weapon, w.Type));
+    (hit ? live : dead).push(term);
+  }
+  return { live, dead };
+}
+
+/** The specialization adjustment for one weapon: +1 when a live term covers it,
+ *  -1 when the skill is specialized but none do, 0 when there's no usable
+ *  specialization at all. Returns { delta, term } -- `term` names the matching
+ *  specialty so the UI can say why. */
+function weaponSpecAdjust(specEntry, skillName, weaponName, weaponType, data) {
+  const { live } = classifySpecTerms(specEntry, skillName, data);
+  if (!live.length) return { delta: 0, term: "" };
+  const hit = live.find(t => specTermMatchesWeapon(t, weaponName, weaponType));
+  return hit ? { delta: 1, term: hit } : { delta: -1, term: live.join(", ") };
+}
+
 // Short forms used in gear/drone effect text -> canonical skill name.
 const SKILL_ALIASES = {
   "Reconnaissance": ["Reconnaissance", "Recon"],
@@ -3250,6 +3334,7 @@ return {
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage,
   weaponSkillName,
+  specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,

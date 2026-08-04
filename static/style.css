@@ -747,6 +747,11 @@ label.opt input{margin-top:3px}
 /* same red, for the loadout's per-weapon dice readout when the mapped skill is
    trained only and the character has none of it */
 .wpn-dice.locked{color:var(--bad);font-size:11px}
+/* specialization moved this weapon's dice: on-specialty reads as a gain, off as
+   a cost, so the number never changes without a visible reason */
+.wpn-dice.spec-on{color:var(--ok)}
+.wpn-dice.spec-off{color:var(--amber)}
+.skill-spec-dead{color:var(--amber);font-size:11px;margin-top:2px}
 
 .sh-track{margin-top:10px}
 .sh-track-head{display:flex;justify-content:space-between;font-family:var(--disp);font-size:12px;

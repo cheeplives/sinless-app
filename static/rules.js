@@ -1722,13 +1722,14 @@ const FIRING_MODE_ORDER = ["SS", "DT", "BF", "FA", "FA (40)"];
 const UNFIRED_WEAPON_TYPES = new Set(["Melee", "Thrown"]);
 
 /** The firing modes a weapon offers, in a stable order.
- *  Energy weapons are single-shot only: their "Firing modes" column carries a
- *  weapon class (Laser pistol, Railgun, ...) rather than modes, and they run on
- *  Heat rather than a magazine. Anything else with no recognised token falls
- *  back to SS so every fired weapon has at least its default. */
+ *  Most Energy weapons put a weapon class in the "Firing modes" column (Laser
+ *  pistol, Railgun, ...) rather than modes, and are single-shot; they fall back
+ *  to SS. But an Energy weapon that DOES name real modes keeps them -- the
+ *  Militech X-3 spins up to full auto -- so the exception is data-driven rather
+ *  than a hardcoded name. Anything else unrecognised also falls back to SS, so
+ *  every fired weapon has at least its default. */
 function weaponFiringModes(row) {
   if (!row || UNFIRED_WEAPON_TYPES.has(row.Type)) return [];
-  if (row.Type === "Energy") return ["SS"];
   const toks = String(row["Firing modes"] || "").split(",").map(t => t.trim());
   const found = toks.filter(t => FIRING_MODES[t]);
   const modes = FIRING_MODE_ORDER.filter(m => found.includes(m));

@@ -1124,10 +1124,25 @@ function firingModeControls(w, r, calcRow, modes, mode) {
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const wrap = el("div", { class: "sh-fire" });
 
+  const optLabelFor = m => {
+    const d = RULES.FIRING_MODES[m];
+    return `${m} — ${d.name}${d.dice ? ` (+${d.dice}b)` : ""}`;
+  };
+  const modeSelect = (labelWithAmmo) => modes.length > 1 && !ro
+    ? el("select", { class: "sh-fire-sel", title: "Firing mode",
+        onchange: e => { w.mode = e.target.value; playChanged(); } },
+        ...modes.map(m => el("option", { value: m, ...(m === mode ? { selected: 1 } : {}) },
+          labelWithAmmo(m))))
+    : el("span", { class: "sh-fire-mode", title: RULES.firingMode(mode).name }, mode);
+
+  // Energy weapons carry no magazine -- Heat is the resource they spend -- so
+  // they get a heat tracker rather than a round count. Most are single-shot,
+  // but one that names real modes (the X-3 spins up to full auto) still picks
+  // between them for the bonus dice.
   if (r.Type === "Energy") {
     const hs = heatSpec(r);
     const cur = () => (w.heat == null ? 1 : Math.max(0, Math.floor(+w.heat) || 0));
-    wrap.append(el("span", { class: "sh-fire-mode" }, "SS"));
+    wrap.append(modeSelect(optLabelFor));
     if (ro) wrap.append(el("span", { class: "sub" }, `Heat ${cur()}`));
     else wrap.append(miniCounter("Heat", cur, v => { w.heat = v; }, 0, hs ? hs.max : 99));
     wrap.append(el("span", { class: "sub" }, hs
@@ -1140,16 +1155,10 @@ function firingModeControls(w, r, calcRow, modes, mode) {
   const loaded = w.loaded == null ? maxAmmo
     : Math.max(0, Math.min(Math.floor(+w.loaded) || 0, maxAmmo));
   const md = RULES.firingMode(mode);
-  const optLabel = m => {
+  wrap.append(modeSelect(m => {
     const d = RULES.FIRING_MODES[m];
     return `${m} — ${d.name} (${d.dice ? `+${d.dice}b, ` : ""}${d.ammo} rd${d.ammo === 1 ? "" : "s"})`;
-  };
-  wrap.append(modes.length > 1 && !ro
-    ? el("select", { class: "sh-fire-sel", title: "Firing mode",
-        onchange: e => { w.mode = e.target.value; playChanged(); } },
-        ...modes.map(m => el("option", { value: m, ...(m === mode ? { selected: 1 } : {}) },
-          optLabel(m))))
-    : el("span", { class: "sh-fire-mode", title: md.name }, mode));
+  }));
 
   if (!maxAmmo) return wrap;
   const dry = loaded < md.ammo;

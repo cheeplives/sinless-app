@@ -2429,6 +2429,39 @@ function infusionAppliedLabel(spirit) {
   return applied ? "in stats" : "situational";
 }
 
+/* How many of an owned gear item are actually on the character. `carried` stays
+ * the boolean everything else reads -- the mounted-augment activity check in
+ * rules.js, shMountEditor, the chargen list -- and `carried_qty` narrows it to a
+ * subset so you can own six grenades and carry two. Entries without the field
+ * (everything predating it, and every chargen purchase) carry all they own, so
+ * no migration is needed. */
+function carriedQty(g) {
+  const owned = Math.max(0, Math.floor(+g.qty || (g.qty === 0 ? 0 : 1)));
+  if (g.carried === false) return 0;
+  if (g.carried_qty == null) return owned;
+  return Math.max(0, Math.min(Math.floor(+g.carried_qty || 0), owned));
+}
+
+/* Carried-count spinner for a gear row: 0 .. owned. Keeps `carried` in step so
+ * the boolean consumers above see "carrying none" as not carried. */
+function shCarriedStepper(entry, onChange) {
+  const owned = Math.max(0, Math.floor(+entry.qty || 1));
+  const val = el("span", { class: "sv" }, String(carriedQty(entry)));
+  const set = async n => {
+    const next = Math.max(0, Math.min(n, owned));
+    entry.carried_qty = next;
+    entry.carried = next > 0;
+    val.textContent = String(next);
+    await onChange();
+  };
+  const btn = (delta, label, title) => el("button", { class: "btn small", title,
+    onclick: () => set(carriedQty(entry) + delta) }, label);
+  return el("span", { class: "stepper", title: `Carrying out of ${owned} owned` },
+    btn(-1, "–", "Carry one fewer — the rest stays in your stash"),
+    val,
+    btn(1, "+", "Carry one more"));
+}
+
 function shUsesStepper(entry, onChange) {
   const val = el("span", { class: "sv" }, String(entry.qty || 0));
   const btn = (delta, label, title) => el("button", { class: "btn small", title,
@@ -2573,9 +2606,11 @@ function shGear(body) {
     const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
     load += wtNum(r.wt);
   });
-  [...CHAR.gear, ...play.purchases.gear].filter(g => g.carried !== false).forEach(g => {
+  // Only what's actually on you counts against Strength -- gear left in a stash
+  // carries no weight, which is the point of the per-item carried count.
+  [...CHAR.gear, ...play.purchases.gear].forEach(g => {
     const r = DATA.tables.misc_gear.find(x => x.Item === g.name) || {};
-    load += wtNum(r.Weight) * (g.qty || 1);
+    load += wtNum(r.Weight) * carriedQty(g);
   });
   load = Math.round(load * 10) / 10;
   const strength = CALC.attributes.Strength.final;
@@ -2759,7 +2794,9 @@ function shGear(body) {
     ...play.purchases.gear.map(g => ({ ref: g, inPlay: true, arr: play.purchases.gear }))];
   const gt = el("table");
   gt.append(el("tr", {}, el("th", {}, "Item"), el("th", { class: "num" }, "Qty"),
+    el("th", { class: "num" }, "Weight"),
     el("th", {}, "Effect"), el("th", {}, "Carried"), el("th", {}, "")));
+  let gearWeightCarried = 0, gearWeightOwned = 0;
   gearEntries.forEach(({ ref: g, inPlay, arr }) => {
     const r = DATA.tables.misc_gear.find(x => x.Item === g.name) || {};
     // Focus/Fetish/Spirit Bag links (chosen in chargen) now show — and stay
@@ -2768,6 +2805,15 @@ function shGear(body) {
     const linkSel = (!ro && typeof gearLinkSelect === "function")
       ? gearLinkSelect(g, playChangedRecalc) : null;
     const gi = arr.indexOf(g);
+    // Ammo counts in uses rather than pieces, so it keeps the plain carried
+    // toggle -- its qty stepper is already the round tracker.
+    const isAmmo = (r.Class || "").startsWith("Ammo");
+    const owned = Math.max(0, Math.floor(+g.qty || 1));
+    const unitWt = wtNum(r.Weight);
+    const carried = carriedQty(g);
+    gearWeightCarried += unitWt * carried;
+    gearWeightOwned += unitWt * owned;
+    const round1 = n => Math.round(n * 10) / 10;
     gt.append(el("tr", {},
       el("td", {},
         reorderHandle(() => arrayMove(arr, gi, -1), () => arrayMove(arr, gi, 1),
@@ -2780,14 +2826,26 @@ function shGear(body) {
       // Ammo is counted in uses, so it gets a live -/+ tracker for burning
       // rounds at the table (issue #21). It moves no cash -- buying more goes
       // through the Buy section below, which charges per use.
-      el("td", { class: "num" }, (!ro && (r.Class || "").startsWith("Ammo"))
+      el("td", { class: "num" }, (!ro && isAmmo)
         ? shUsesStepper(g, playChangedRecalc)
-        : String(g.qty || 1)),
+        : String(owned)),
+      // Unit weight always; the carried subtotal too once it can differ from it.
+      el("td", { class: "num sub" }, String(round1(unitWt)),
+        (owned > 1 && unitWt > 0)
+          ? el("div", { class: "sub" }, `${round1(unitWt * carried)} carried`) : null),
       el("td", { class: "sub" },
         [(+r.Dependence ? `Dependence ${r.Dependence}` : ""), r.Effect || "", r.Notes || ""]
           .filter(Boolean).join(" · ")),
-      el("td", {}, el("input", { type: "checkbox", ...(g.carried !== false ? { checked: 1 } : {}),
-        onchange: async e => { g.carried = e.target.checked; await playChangedRecalc(); } })),
+      // More than one owned means "how many are on me" is a real question, so it
+      // gets a spinner; a single item is still a plain yes/no.
+      el("td", {}, (!ro && !isAmmo && owned > 1)
+        ? shCarriedStepper(g, playChangedRecalc)
+        : el("input", { type: "checkbox", ...(g.carried !== false ? { checked: 1 } : {}),
+            onchange: async e => {
+              g.carried = e.target.checked;
+              g.carried_qty = e.target.checked ? owned : 0;
+              await playChangedRecalc();
+            } })),
       el("td", {}, el("button", { class: "row-del", title: "Remove item",
         onclick: async () => {
           if (!confirm(`Remove ${g.name}?`)) return;
@@ -2798,7 +2856,18 @@ function shGear(body) {
         } }, "✕"))));
   });
   if (!gearEntries.length)
-    gt.append(el("tr", {}, el("td", { class: "sub", colspan: "5" }, "No gear.")));
+    gt.append(el("tr", {}, el("td", { class: "sub", colspan: "6" }, "No gear.")));
+  else {
+    const r1 = n => Math.round(n * 10) / 10;
+    const stashed = r1(gearWeightOwned - gearWeightCarried);
+    gt.append(el("tr", { class: "sh-gear-total" },
+      el("td", { class: "sub" }, el("b", {}, "Gear weight")),
+      el("td", {}, ""),
+      el("td", { class: "num" }, el("b", {}, String(r1(gearWeightCarried)))),
+      el("td", { class: "sub", colspan: "3" },
+        `carried of ${r1(gearWeightOwned)} owned`
+        + (stashed > 0 ? ` · ${stashed} left behind` : ""))));
+  }
   body.append(el("div", { class: "card sh-card", id: "gear-gear" }, el("h3", {}, "Gear"), gt));
 
   // ===== Vehicles / rigs / decks owned (configured on their own tabs).

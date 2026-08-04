@@ -720,7 +720,12 @@ label.opt input{margin-top:3px}
 .sh-skilltable td.num{white-space:nowrap}
 .sh-skilltable tr.dim td{color:var(--dim)}
 /* editable specialization on the Skills tab: name + inline chip, input beneath */
-.sh-spec-line{display:flex;align-items:center;gap:6px}
+/* wraps because the Skills tab lays pools out 2x2, so a long name plus a chip
+   overruns a narrow card; the chip drops to its own line rather than crushing
+   the name. An inherited overflow-wrap:anywhere would otherwise let the name
+   break mid-word to make room, so the name opts back out of that. */
+.sh-spec-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sh-skillname{overflow-wrap:normal}
 .sh-spec-chip{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;line-height:1;
   letter-spacing:.04em;color:var(--dim);border:1px solid var(--line);border-radius:9px;
   padding:2px 6px;cursor:pointer;user-select:none;white-space:nowrap}
@@ -728,6 +733,20 @@ label.opt input{margin-top:3px}
 .sh-spec-chip.on{color:var(--manon);border-color:var(--manon)}
 .sh-spec-chip input{margin:0;width:11px;height:11px}
 .sh-spec-input{margin-top:4px;width:100%;max-width:170px;font-size:11px;padding:2px 6px}
+/* "Trained only" marker: Spec-chip geometry so it reads as part of the same row
+   vocabulary, but inert and a size smaller. Red outline throughout -- these are
+   the skills you cannot fall back on, and the tag is meant to catch the eye on
+   sight. `.unusable` (sheet only, where 0 dice means you genuinely cannot roll
+   it right now) adds a filled tint on top. Chargen never sets it; every skill
+   starts at 0 there, so it would light up the whole table on load. */
+.skill-to-chip{display:inline-flex;align-items:center;font-size:7.5px;line-height:1;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--bad);
+  border:1px solid var(--bad);border-radius:9px;
+  padding:2px 6px;cursor:default;user-select:none;white-space:nowrap}
+.skill-to-chip.unusable{background:rgba(255,93,108,.13)}
+/* same red, for the loadout's per-weapon dice readout when the mapped skill is
+   trained only and the character has none of it */
+.wpn-dice.locked{color:var(--bad);font-size:11px}
 
 .sh-track{margin-top:10px}
 .sh-track-head{display:flex;justify-content:space-between;font-family:var(--disp);font-size:12px;

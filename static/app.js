@@ -458,6 +458,15 @@ function chipValue(key) {
 }
 const chip = (key, magic) => el("span", Object.assign({ class: "chip", "data-chip": key }, magic ? { "data-magic": "1" } : {}), "\u2026");
 
+/* The "Trained only" marker, in its neutral state \u2014 for section headers (Martial
+ * Arts, Rituals) that cover a whole list rather than one skill, and for chargen,
+ * where every skill starts at 0 and an unusable-state chip would light up the
+ * entire table on load. Per-skill rows on the sheet build their own two-state
+ * chip in skillTableRow(); shared here because sheet.js renders headers too. */
+const trainedOnlyChip = () => el("span", { class: "skill-to-chip",
+  title: "Trained only \u2014 cannot be used without dice in the skill or its group" },
+  "Trained");
+
 /* Skill points remaining, pinned to the viewport while the Stats & Skills tab
  * is open. The skill list runs well past a screen, so the rail's budget row
  * scrolls out of reach exactly when you're spending. Built on the same
@@ -1134,7 +1143,8 @@ function tabStats(p) {
         : null;
       return el("tr", { class: grouped ? "skill-grouped" : null },
         el("td", {},
-          el("div", { class: "skill-name-line" }, name, specToggle),
+          el("div", { class: "skill-name-line" }, name,
+            s.trained_only ? trainedOnlyChip() : null, specToggle),
           specText,
           (s.notes && s.notes.length) ? el("div", { class: "sub" }, "\u2726 " + s.notes.join(" \u00b7 ")) : null),
         el("td", { class: "num" }, stepper(
@@ -1149,7 +1159,7 @@ function tabStats(p) {
     // apply), and there's no Spec toggle.
     const appendMartialArtRows = () => {
       tbl.append(el("tr", { class: "skill-group-row" },
-        el("td", { colspan: "4" }, "Martial Arts",
+        el("td", { colspan: "4" }, "Martial Arts", " ", trainedOnlyChip(),
           el("span", { class: "sub" }, "  — 2 pts/rank, ≤ Unarmed Combat"))));
       CHAR.martial_arts.forEach((ma, i) => {
         const styleOpts = allStyles.filter(s => s === ma.style || !usedStyles.has(s));
@@ -1200,7 +1210,7 @@ function tabStats(p) {
   p.append(grid);
 
   // rituals \u2014 each is its own skill bought from skill points
-  p.append(el("h2", {}, "Rituals ", chip("skill")));
+  p.append(el("h2", {}, "Rituals ", chip("skill"), " ", trainedOnlyChip()));
   p.append(el("p", { class: "hint" },
     "Each ritual is its own skill, bought 1-for-1 from your skill points (max 6)."));
   CHAR.ritual_skills ??= {};   // old saves predate this field

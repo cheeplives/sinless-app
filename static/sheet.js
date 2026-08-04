@@ -1270,6 +1270,14 @@ function shOverview(body) {
       const s = skill && (CALC.skills || {})[skill];
       if (!s) return null;
       const acc = +accuracy || 0;
+      // The bladed cyber implants roll Cybertech Combat, which is trained only —
+      // with no dice in it the weapon can't be used at all, so say so rather than
+      // showing an Accuracy-only dice count that implies you can swing it.
+      const locked = s.trained_only && !(s.final > 0 || s.dice_bonus);
+      if (locked)
+        return el("b", { class: "wpn-dice locked",
+          title: `${skill} is trained only — needs at least 1 die in the skill or its group` },
+          "(trained only)");
       return el("b", { class: "wpn-dice",
         title: `${skill} ${s.final}${acc ? ` + Accuracy ${acc}` : ""}`
           + ` = ${s.final + acc} dice` }, `(${s.final + acc}d)`);
@@ -1706,7 +1714,9 @@ function skillTableHeader() {
     el("th", { class: "num" }, "Final"));
 }
 
-function skillTableRow(name, dim = false, editable = false) {
+// `bareName` drops the Trained Only chip: the locked block below carries the
+// label on its section header, so repeating it on every row is pure noise.
+function skillTableRow(name, dim = false, editable = false, bareName = false) {
   const s = CALC.skills[name];
   CHAR.skill_specializations ??= {};
   const spec = CHAR.skill_specializations[name];
@@ -1718,28 +1728,41 @@ function skillTableRow(name, dim = false, editable = false) {
   // group-derived dice so Pts + Bonus + Group reads as Final.
   const groupDice = s.points === 0 && s.group_value != null ? s.group_value - s.bonus : 0;
 
-  // Editable specialization (Skills tab only): a "Spec" toggle plus a text field;
-  // a specialized skill splits its rating into −1 / +1. Only trained skills can
-  // carry one. Read-only views just show the note.
+  // Inline chips that sit beside the name. The Trained Only marker goes on every
+  // view (read-only and untrained rows included) -- it's needed most exactly when
+  // the skill is unusable -- and turns amber once the character genuinely can't
+  // roll it. Editable specialization (Skills tab only) is a "Spec" toggle plus a
+  // text field; a specialized skill splits its rating into −1 / +1, and only
+  // trained skills can carry one. Read-only views just show the note.
+  const chips = [];
+  if (s.trained_only && !bareName) {
+    const unusable = !(s.final > 0 || s.dice_bonus);
+    chips.push(el("span", { class: "skill-to-chip" + (unusable ? " unusable" : ""),
+      title: unusable
+        ? "Trained only — unusable: needs at least 1 die in this skill or its group"
+        : "Trained only — cannot be used without dice in the skill or its group" },
+      "Trained"));
+  }
   let nameCell, specText = null;
   if (editable && s.final > 0) {
-    const specToggle = el("label", { class: "sh-spec-chip" + (specOn ? " on" : ""), title: "Specialize this skill (−1 / +1)" },
+    chips.push(el("label", { class: "sh-spec-chip" + (specOn ? " on" : ""), title: "Specialize this skill (−1 / +1)" },
       el("input", { type: "checkbox", ...(specOn ? { checked: 1 } : {}),
         onchange: e => {
           const entry = CHAR.skill_specializations[name] ??= { on: false, text: "" };
           entry.on = e.target.checked;
           playChanged();
         } }),
-      el("span", {}, "Spec"));
-    nameCell = el("div", { class: "sh-spec-line" }, el("span", {}, name), specToggle);
+      el("span", {}, "Spec")));
     if (specOn)
       specText = el("input", { type: "text", class: "sh-spec-input",
         value: (spec && spec.text) || "", placeholder: "Specialization…",
         oninput: e => { (CHAR.skill_specializations[name] ??= { on: true, text: "" }).text = e.target.value; schedulePlaySave(); } });
-  } else {
-    nameCell = name;
-    if (specOn && spec.text) specText = el("span", { class: "sub skill-spec-note" }, ` — ${spec.text}`);
+  } else if (specOn && spec.text) {
+    specText = el("span", { class: "sub skill-spec-note" }, ` — ${spec.text}`);
   }
+  nameCell = chips.length
+    ? el("div", { class: "sh-spec-line" }, el("span", { class: "sh-skillname" }, name), ...chips)
+    : name;
 
   return el("tr", dim ? { class: "dim" } : {},
     el("td", {}, nameCell, specText,
@@ -1783,7 +1806,7 @@ function shSkills(body) {
 
   const appendMartialArtRows = t => {
     t.append(el("tr", { class: "skill-group-row" },
-      el("td", { colspan: "5" }, "Martial Arts",
+      el("td", { colspan: "5" }, "Martial Arts", " ", trainedOnlyChip(),
         el("span", { class: "sub" }, "  — ≤ Unarmed Combat"))));
     maList.forEach(ma => {
       const atCap = ma.rank >= SKILL_KISMET_CAP || ma.rank >= unarmedRank;
@@ -1841,16 +1864,32 @@ function shSkills(body) {
       .filter(([n, m]) => m.pool === pool && (CALC.skills[n].final > 0 || CALC.skills[n].dice_bonus
         || (CALC.skills[n].notes && CALC.skills[n].notes.length)))
       .sort((a, b) => CALC.skills[b[0]].final - CALC.skills[a[0]].final);
+    // This tab only lists skills you can actually roll, which would hide a
+    // Trained Only skill exactly when it matters -- you have no dice, so it's off
+    // the table entirely. List those separately instead of dropping them. The
+    // `shown` guard keeps a flagged skill that qualified above (via notes) from
+    // appearing twice.
+    const shown = new Set(trained.map(([n]) => n));
+    const locked = Object.keys(DATA.skills)
+      .filter(n => DATA.skills[n].pool === pool && CALC.skills[n].trained_only && !shown.has(n))
+      .sort();
     // Brawn always renders its table -- the Martial Arts section lives in it, so
     // it has to be reachable even with no trained Brawn skills.
     const isBrawn = pool === "Brawn";
-    if (!trained.length && !isBrawn) card.append(el("p", { class: "hint" }, "No trained skills."));
+    if (!trained.length && !locked.length && !isBrawn)
+      card.append(el("p", { class: "hint" }, "No trained skills."));
     else {
       const t = el("table", { class: "sh-skilltable" });
       t.append(skillTableHeader());
       for (const [name] of trained) t.append(skillTableRow(name, false, true));
       if (!trained.length)
         t.append(el("tr", {}, el("td", { colspan: "5", class: "hint" }, "No trained skills.")));
+      if (locked.length) {
+        t.append(el("tr", { class: "skill-group-row" },
+          el("td", { colspan: "5" }, "Trained only",
+            el("span", { class: "sub" }, "  — unavailable without dice"))));
+        for (const name of locked) t.append(skillTableRow(name, true, false, true));
+      }
       if (isBrawn) appendMartialArtRows(t);
       card.append(t);
     }
@@ -3557,7 +3596,8 @@ function shMagic(body) {
         el("td", { class: "sub" }, r.Effect,
           descriptionExpander(r.Description, `rituals:${r.Name}`))));
     }
-    body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Rituals"), t));
+    body.append(el("div", { class: "card sh-card" },
+      el("h3", {}, "Rituals ", trainedOnlyChip()), t));
   }
 }
 

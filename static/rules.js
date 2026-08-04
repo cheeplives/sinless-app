@@ -78,6 +78,31 @@ const SKILLS = {
 };
 const POOL_NAMES = ["Brawn", "Finesse", "Focus", "Resolve"];
 
+// Skills that cannot be attempted AT ALL without dice, where every other skill
+// can be tried untrained. "Has dice" is exactly scoreSkills' `final > 0` —
+// points, bonuses, or group fallback all count — so this set carries no math of
+// its own; it only tells the UI which skills to mark.
+//
+// Keyed by NAME rather than a column on SKILLS / BUNDLE.skills, because seven of
+// these exist only under a house rule and are injected at runtime: the six
+// Engineering splits and Computer: Electronic Warfare are never in data.js, and
+// plain "Engineering" exists only under the opposite rule (syncEngineeringSkills
+// / syncEWSkill). A name set covers every shape from one place.
+//
+// Martial Arts and Rituals belong to the same rule but are not entries in
+// SKILLS — they're their own per-style / per-ritual lists — so the UI marks
+// their section headers instead.
+const TRAINED_ONLY_SKILLS = new Set([
+  "Cybertech Combat",
+  "Drive", "Fly",
+  "Biotech", "Locksmithing",
+  "Computer: Hacking", "Computer: Electronic Warfare", "Computer: Programming",
+  "Engineering",
+  "Engineering: Aeronautics", "Engineering: Armory", "Engineering: Electronics",
+  "Engineering: Industrial", "Engineering: Mechanical", "Engineering: Nautical",
+  "Artificing", "Channeling", "Sorcery", "Survival", "Conjuring",
+]);
+
 const ETIQUETTES = ["Aristocratic", "Civic", "Corporate", "Criminal",
                     "Military", "Street", "Wasteland"];
 
@@ -1596,6 +1621,7 @@ function scoreSkills(character, heritage, amp, augments, warnings, errors) {
                       final: Math.max(points + bonus, softLevel, groupValue || 0),
                       soft: softLevel,
                       pool, group, group_value: groupValue,
+                      trained_only: TRAINED_ONLY_SKILLS.has(name),
                       notes: (augments.skill_notes || {})[name] || [] };
   }
 
@@ -3181,7 +3207,7 @@ return {
   mergeDefaults,
   // exposed for the UI and tests
   asNumber, loadData,
-  ATTRIBUTES, SKILLS, ETIQUETTES, POOL_NAMES,
+  ATTRIBUTES, SKILLS, TRAINED_ONLY_SKILLS, ETIQUETTES, POOL_NAMES,
   MAGIC_TYPE_BY_PRIORITY, MAGIC_TYPES_ALLOWED_BY_PRIORITY,
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,

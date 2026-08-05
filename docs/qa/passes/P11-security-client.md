@@ -133,12 +133,15 @@ share the fixture.
 - **Steps:** read `sw.js`.
 - **Check:**
 
-      (async () => { const src = await (await fetch("sw.js", { cache: "reload" })).text(); return { guardsApi: /url\.pathname\.includes\("\/api\/"\)/.test(src), bailsOnNonGet: /method\s*!==\s*"GET"/.test(src), version: (src.match(/CACHE_VERSION\s*=\s*"([^"]+)"/) || [])[1] }; })()
+      (async () => { const src = await (await fetch("sw.js", { cache: "reload" })).text(); const v = (src.match(/CACHE_VERSION\s*=\s*"([^"]+)"/) || [])[1]; console.log("CACHE_VERSION:", v); return { guardsApi: /url\.pathname\.includes\("\/api\/"\)/.test(src), bailsOnNonGet: /method\s*!==\s*"GET"/.test(src), versionFound: !!v }; })()
 
-- **Expected:** `{ "guardsApi": true, "bailsOnNonGet": true, "version": "sinless-v143" }`
-- **Note:** The version will differ as the app changes; record whatever you see.
-  Both booleans must be `true` — a cached `/api` response would serve one user's
-  data to the next on a shared machine.
+- **Expected:** `{ "guardsApi": true, "bailsOnNonGet": true, "versionFound": true }`
+- **Note:** Both booleans must be `true` — a cached `/api` response would serve
+  one user's data to the next on a shared machine. `versionFound` only asserts
+  that a `CACHE_VERSION` constant is still there to be parsed; the value moves
+  with every release, so **record the version you see in your findings** rather
+  than matching it. The Expected pinned `"sinless-v143"` until 2026-08-05, which
+  made this case fail on every cache bump for no reason.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P11-008: Sign-out clears the signed-in user's cache

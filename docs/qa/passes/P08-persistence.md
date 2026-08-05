@@ -22,11 +22,19 @@ run `localStorage.clear()`.
   1. Load `kitchen-sink-final.json` per P00 §4.
 - **Check:**
 
-      (() => { const before = JSON.stringify(CHAR); STORAGE.cacheCharacter(CHAR); const after = JSON.stringify(STORAGE.loadCharacter(CHAR.name)); return { identical: before === after, bytes: before.length }; })()
+      (() => { STORAGE.cacheCharacter(CHAR); const before = JSON.stringify(CHAR); const after = JSON.stringify(STORAGE.loadCharacter(CHAR.name)); return { identical: before === after, bytes: before.length }; })()
 
 - **Expected:** `{ "identical": true, "bytes": <any number> }`
 - **Note:** Record the byte count in your findings even on a PASS — a sudden
   change in size between runs is a useful signal.
+
+  The save comes **first**, then the comparison. A character loaded from a
+  fixture has never been in a storage slot, and its first save stamps it with
+  `saved_as` (the slot it now lives in, which is how JC-014 tells "overwriting
+  myself" from "overwriting someone else"). Comparing across that first save
+  would report a difference of exactly one bookkeeping field and nothing else —
+  true, but not what this case is asking. Ordering it this way tests the round
+  trip itself, and is stable on a repeat run.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P08-002: Keys the schema does not define survive the round trip

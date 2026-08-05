@@ -69,7 +69,8 @@ Bone Lacing: only one tier may be installed — remove all but one of Bone Lacin
 — which is what it is for: the fixture that proves the engine no longer takes
 the picker's word for it. Deliberately **not** repaired. It also shows Synthetic
 zeroing `zoetics.augment_zr` (0) while `zoetics.cyber_zr` still tracks the real
-4.75.
+**5.25** — its four augments summed, with nothing absorbed. (This said 4.75
+until 2026-08-05; that was a documentation error, not a behaviour change.)
 
 **`kitchen-sink-final.json`** — the default base for play-mode passes. Carries a
 kismet ledger entry with an `undo` descriptor of kind `attribute`, one attribute

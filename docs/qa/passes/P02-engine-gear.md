@@ -41,8 +41,7 @@ actually testing.
 
 ### P02-002b: A program counts when it is loaded on the deck
 - **Type:** correctness
-- **Check:** (no shipped program has a ZR, so this lends two of them one and
-  puts it back afterwards)
+- **Check:** (lends two programs a ZR and puts it back — none ship with one)
 
       (() => { const threaded = DATA.tables.programs.find(p => RULES.programNeedsThread(p)); const alwaysOn = DATA.tables.programs.find(p => !RULES.programNeedsThread(p)); const save = [threaded.ZR, alwaysOn.ZR]; threaded.ZR = "1"; alwaysOn.ZR = "2"; const base = () => { const c = RULES.defaultCharacter(); c.priorities={heritage:1,magic:2,attributes:3,skills:0,resources:4}; c.heritage.type="Human"; c.lifestyles=[{name:"Squatter",months:1}]; c.programs=[threaded.Name, alwaysOn.Name]; return c; }; const zr = c => RULES.calculate(c).zoetics.gear_zr; const noDeck = zr(base()); const a = base(); a.decks=[{name:"MasterDeck",mods:[],carried:true}]; const nothingLoaded = zr(a); const b = base(); b.decks=[{name:"MasterDeck",mods:[],carried:true}]; b.play.decking={active_deck:"MasterDeck",loaded:[threaded.Name]}; const loaded = zr(b); const c2 = base(); c2.decks=[{name:"MasterDeck",mods:[],carried:false}]; c2.play.decking={active_deck:"MasterDeck",loaded:[threaded.Name]}; const stashed = zr(c2); threaded.ZR = save[0]; alwaysOn.ZR = save[1]; return { threaded: threaded.Name, alwaysOn: alwaysOn.Name, noDeck, nothingLoaded, loaded, stashed }; })()
 

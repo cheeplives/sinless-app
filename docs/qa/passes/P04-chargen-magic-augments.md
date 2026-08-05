@@ -141,10 +141,17 @@ Load a fixture into chargen with this, substituting the filename:
 
       (async () => { await recalc(); return { heritage: CHAR.heritage.type, augmentZr: CALC.zoetics.augment_zr, cyberZr: CALC.zoetics.cyber_zr, zp: CALC.zoetics.zp }; })()
 
-- **Expected:** `{ "heritage": "Synthetic", "augmentZr": 0, "cyberZr": 4.75, "zp": 1 }`
+- **Expected:** `{ "heritage": "Synthetic", "augmentZr": 0, "cyberZr": 5.25, "zp": 1 }`
 - **Note:** Two different numbers describing the same augments. That is
   deliberate — Synthetics do not pay ZR for cyberware — but confirm the sheet
-  shows the one a player expects.
+  shows the one a player expects. `cyberZr` is the fixture's four augments
+  summed with no absorption: Bone Lacing-Plastic 0.5 + Bone Lacing-Titanium 2.25
+  + Wired Reflexes 1 2 + Smartlink 0.5. Nothing absorbs, because absorption
+  needs Cybertechtronic Eyes/Ears or a cyberlimb and the fixture has none.
+
+  This Expected read `4.75` until 2026-08-05, which was simply wrong — the
+  pre-rulings engine returns 5.25 for this fixture too, so it was a
+  documentation error rather than a regression.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P04-010: Synthetics cannot install bioware

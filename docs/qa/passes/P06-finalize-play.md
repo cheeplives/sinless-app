@@ -66,11 +66,20 @@ assuming a clean slate.
 
 - **Expected:**
 
-      { "errors": ["Choose a lifestyle with at least 1 prepaid month."],
+      { "errors": ["Firearms: a specialization needs at least 1 rank in the skill.",
+                   "Skill points overspent by 69.",
+                   "Choose a lifestyle with at least 1 prepaid month."],
         "warnings": ["Athletics: maximum 6 skill points at creation."] }
 
 - **Note:** The control for P06-001. If this one is also empty, blanking has
   leaked into chargen and that is a genuine FAIL.
+
+  All three errors come from the Check's own setup, which is blunter than it
+  looks: `c.skills = { Athletics: 99 }` **replaces** the whole skills map, so
+  every other skill drops to 0 ranks. That overspends the budget by 69, and it
+  strips the ranks out from under the fixture's Firearms specialization, which
+  JC-001 now errors on. The Expected listed only the lifestyle error until
+  2026-08-05 — the overspend was missing even before JC-001 existed.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P06-003: The loaded fixture is genuinely valid, not merely silent

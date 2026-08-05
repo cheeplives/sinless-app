@@ -69,7 +69,7 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
 - **Type:** correctness
 - **Check:**
 
-      (async () => { window.CHAR = RULES.defaultCharacter(); CHAR.priorities = { heritage: 2, magic: 2, attributes: 2, skills: 2, resources: 2 }; CHAR.house_rules.priorities = "classic"; RULES.setHouseRule("priorities", "classic"); const before = JSON.parse(JSON.stringify(CHAR.priorities)); window.confirm = () => false; seedClassicPriorities(true); const declined = JSON.parse(JSON.stringify(CHAR.priorities)); window.confirm = () => true; seedClassicPriorities(true); const accepted = JSON.parse(JSON.stringify(CHAR.priorities)); await recalc(); return { before, declined, accepted, errors: CALC.errors.length }; })()
+      (async () => { const restore = CHAR; window.CHAR = RULES.defaultCharacter(); CHAR.priorities = { heritage: 2, magic: 2, attributes: 2, skills: 2, resources: 2 }; CHAR.house_rules.priorities = "classic"; RULES.setHouseRule("priorities", "classic"); const before = JSON.parse(JSON.stringify(CHAR.priorities)); window.confirm = () => false; seedClassicPriorities(true); const declined = JSON.parse(JSON.stringify(CHAR.priorities)); window.confirm = () => true; seedClassicPriorities(true); const accepted = JSON.parse(JSON.stringify(CHAR.priorities)); await recalc(); const errors = CALC.errors.length; window.CHAR = restore; await recalc(); return { before, declined, accepted, errors }; })()
 
 - **Expected:** `declined` is identical to `before` (all `2`s — the player's
   allocation survives a cancel), `accepted` is
@@ -171,7 +171,7 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
   3. Step it up to 1 and confirm the toggle appears without a manual refresh.
 - **Check:**
 
-      (async () => { window.CHAR = RULES.defaultCharacter(); CHAR.priorities = { heritage: 1, magic: 0, attributes: 2, skills: 3, resources: 4 }; CHAR.heritage.type = "Human"; CHAR.lifestyles = [{ name: "Squatter", months: 1 }]; CHAR.skills = { Sorcery: 2 }; CHAR.skill_specializations = { Sorcery: { on: true, text: "Fire" }, Archery: { on: true, text: "Longbow" } }; await recalc(); return { spent: CALC.skill_points.spent, errors: CALC.errors, sorceryFinal: CALC.skills.Sorcery.final }; })()
+      (() => { const c = RULES.defaultCharacter(); c.priorities = { heritage: 1, magic: 0, attributes: 2, skills: 3, resources: 4 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.skills = { Sorcery: 2 }; c.skill_specializations = { Sorcery: { on: true, text: "Fire" }, Archery: { on: true, text: "Longbow" } }; const k = RULES.calculate(c); return { spent: k.skill_points.spent, errors: k.errors, sorceryFinal: k.skills.Sorcery.final }; })()
 
 - **Expected:**
 
@@ -183,6 +183,10 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
   counts only the two Sorcery ranks — but the one on Archery (0 ranks) is an
   error. The stored flag is deliberately not cleared, so a skill dropped to 0 and
   raised again keeps its specialization.
+
+  The Check builds its own character rather than touching the loaded one — a
+  dangling specialization on the shared `CHAR` would show up as a phantom error
+  in P03-012 and P03-013.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

@@ -501,6 +501,14 @@ function defaultCharacter() {
       cash_log: [],
       lifestyles: [],
       lifestyles_seeded: false,
+      // What the CHARGEN record said at the last sync, per lifestyle name.
+      // play.lifestyles[].months is months REMAINING and drifts as they are
+      // burned or prepaid; this is the yardstick that says whether a change
+      // came from play or from someone editing the chargen purchase itself.
+      lifestyles_baseline: {},
+      // Cleared once a character finalized before 2026-08-05 has had its play
+      // months reconciled with chargen. See reconcileLifestyles in sheet.js.
+      lifestyles_reconciled: false,
       kismet: 0,
       kismet_earned: 0,
       kismet_log: [],

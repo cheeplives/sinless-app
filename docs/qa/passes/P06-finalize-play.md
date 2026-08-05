@@ -313,6 +313,72 @@ assuming a clean slate.
 
 ---
 
+## Lifestyle months: chargen record vs play balance
+
+Chargen months are **bought** with creation cash (`priceMiscGearAndLifestyle`
+charges `MonthlyCost × months`, and at least one month is a hard chargen error).
+`play.lifestyles[].months` is months *remaining*, and drifts as they are burned
+or prepaid. `play.lifestyles_baseline` records what chargen said at the last
+sync, which is what lets the two be told apart.
+
+### P06-015: Correcting chargen months carries across; an unrelated re-finalize doesn't
+- **Type:** correctness
+- **Steps:** load any finalized fixture, or run straight from a fresh sheet.
+- **Check:**
+
+      (async () => { CHAR = RULES.defaultCharacter(); CHAR.name = "LS Case"; CHAR.lifestyles = [{ name: "Squatter", months: 6 }]; CHAR.finalized = true; ensurePlay(); seedLifestyles(); const m = () => CHAR.play.lifestyles[0].months; const seeded = m(); CHAR.play.lifestyles[0].months = 2; syncChargenLifestyles(); const burnKept = m(); CHAR.lifestyles[0].months = 3; syncChargenLifestyles(); const corrected = m(); return { seeded, burnKept, corrected, baseline: CHAR.play.lifestyles_baseline, log: CHAR.play.cash_log.map(e => e.label) }; })()
+
+- **Expected:**
+
+      { "seeded": 6, "burnKept": 2, "corrected": 3,
+        "baseline": { "Squatter": 3 },
+        "log": ["Squatter lifestyle corrected in chargen: 2 → 3 mo"] }
+
+- **Note:** `burnKept` is the important one. Re-finalizing after an edit that
+  didn't touch lifestyles must leave the play balance alone — otherwise fixing a
+  typo in the character's name hands back every month they had burned. If
+  `corrected` comes back `2`, the sync has gone back to being insert-only and
+  the mismatch this whole section exists for is live again.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-016: The Months counter is free but never silent
+- **Type:** leak
+- **Steps:** continue from P06-015 (or any finalized character with a lifestyle).
+- **Check:**
+
+      (async () => { await recalc(); sheetTab = "gear"; renderSheet(); const card = [...document.querySelectorAll(".sh-card")].find(c => /^Lifestyle$/.test(((c.querySelector("h3") || {}).textContent || "").trim())); const plus = [...card.querySelectorAll("button")].find(b => b.textContent.trim() === "+"); const cash = CHAR.play.cash, months = CHAR.play.lifestyles[0].months; plus.click(); const after = { months: CHAR.play.lifestyles[0].months, cash: CHAR.play.cash, top: CHAR.play.cash_log[0] }; const realConfirm = window.confirm; window.confirm = () => true; await undoCashSpend(CHAR.play.cash_log[0]); window.confirm = realConfirm; return { cash, months, after, undone: CHAR.play.lifestyles[0].months }; })()
+
+- **Expected:** `after.months` is one higher, `after.cash` is **unchanged**, and
+  `after.top` is `{ delta: 0, label: "Adjusted … lifestyle to N mo (unpaid)",
+  undo: { kind: "lifestyle_adjust", … } }`. `undone` returns to `months`.
+- **Note:** The counter sits beside a **+1 mo (cost)** button that charges for
+  the same thing, so a free up-tick has to be visible or the two are impossible
+  to tell apart after the fact. A zero-delta ledger row renders as an em dash,
+  not `+ㄓ0`. If `after.cash` dropped, the counter has started charging and the
+  paid button is now double-billing.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-017: A character saved before the fix is repaired once, on load
+- **Type:** correctness
+- **Steps:** none — builds the pre-fix shape directly.
+- **Check:**
+
+      (async () => { CHAR = RULES.defaultCharacter(); CHAR.name = "LS Legacy"; CHAR.lifestyles = [{ name: "Wealthy", months: 1 }]; CHAR.finalized = true; CHAR.play.cash_log = []; CHAR.play.lifestyles = [{ name: "Wealthy", months: 4, active: true }]; CHAR.play.lifestyles_seeded = true; delete CHAR.play.lifestyles_baseline; delete CHAR.play.lifestyles_reconciled; ensurePlay(); const first = { months: CHAR.play.lifestyles[0].months, log: CHAR.play.cash_log.length, baseline: CHAR.play.lifestyles_baseline }; ensurePlay(); ensurePlay(); return { first, afterRepeats: { months: CHAR.play.lifestyles[0].months, log: CHAR.play.cash_log.length } }; })()
+
+- **Expected:**
+
+      { "first": { "months": 1, "log": 1, "baseline": { "Wealthy": 1 } },
+        "afterRepeats": { "months": 1, "log": 1 } }
+
+- **Note:** The absence of `lifestyles_baseline` is what marks a character
+  finalized before 2026-08-05. The repair sets the play balance to the chargen
+  purchase, logs it undoably, and stamps the baseline so it can never run twice
+  — `afterRepeats.log` staying at 1 is the half that matters, since a repair
+  that re-fires on every `ensurePlay` would overwrite live play state forever.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
 ## Wrapping up
 
 Every case should PASS. P06-001, P06-005, P06-009, P06-010 and P06-011 were all
@@ -323,3 +389,11 @@ P06-001b.
 P06-011 is the load-bearing one. If `budget.remaining` moves when you buy
 something in play, the chargen/play split has broken and every "my cash is wrong
 after going back to chargen" report is live again.
+
+P06-015 to P06-017 are the lifestyle set, added 2026-08-05 after a real
+character (Jimmy Chan) turned up showing 4 prepaid months against a chargen
+record of 1. They cover the two independent causes: a sync that never
+reconciled a corrected chargen record, and a free `+` on the play counter
+sitting next to a button that charges for the same month. P06-016 is the one to
+watch — it is the only case that would notice the play sheet handing out paid
+goods for nothing.

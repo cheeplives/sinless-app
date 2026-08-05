@@ -148,6 +148,9 @@ function ensurePlay() {
       for (const [k2, v2] of Object.entries(v))
         if (CHAR.play[k][k2] == null) CHAR.play[k][k2] = v2;
   }
+  // The play shape is complete now, so the ledger exists and the one-time
+  // lifestyle repair can log what it changes. Guarded — it runs at most once.
+  reconcileLifestyles();
   return CHAR.play;
 }
 /* The hard line between chargen and play (JC-010, JC-024).
@@ -329,14 +332,26 @@ const CASH_UNDO = {
     ls.months -= 1;
     return true;
   },
+  // Unpaid month changes: the counter, a chargen correction, the one-time
+  // resync. No cash moved either way, so undo just puts the count back.
+  lifestyle_adjust: u => {
+    const ls = (CHAR.play.lifestyles || []).find(x => x.name === u.name);
+    if (!ls) return false;
+    ls.months = Math.max(0, +u.from || 0);
+    return true;
+  },
 };
 async function undoCashSpend(entry) {
   const log = CHAR.play.cash_log;
   const idx = log.indexOf(entry);
   const handler = entry && entry.undo && CASH_UNDO[entry.undo.kind];
   if (idx < 0 || !handler) return;
+  // A zero-delta entry moved no money (an unpaid lifestyle adjustment), so
+  // promising a refund would be nonsense.
   if (!confirm(`Undo "${entry.label}"?\n\n`
-    + `It is removed and ${fmt(-entry.delta)} refunded in full.`)) return;
+    + (entry.delta
+        ? `It is removed and ${fmt(-entry.delta)} refunded in full.`
+        : "It is removed and the previous value restored. No cash moved."))) return;
   if (!handler(entry.undo)) {
     alert(`"${entry.label}" isn't there any more — it was already removed.\n\n`
       + "The ledger entry stays. Use Adjust if the refund is still owed.");
@@ -353,28 +368,80 @@ function chargenLifestyles() {
     : (CHAR.lifestyle && CHAR.lifestyle.name ? [CHAR.lifestyle] : []);
 }
 
+/* Snapshot the chargen months so a later sync can tell "the player burned a
+ * month" from "someone corrected the purchase in chargen". */
+function stampLifestyleBaseline(play) {
+  const baseline = play.lifestyles_baseline = play.lifestyles_baseline || {};
+  for (const ls of chargenLifestyles()) baseline[ls.name] = Math.max(0, +ls.months || 0);
+  play.lifestyles_reconciled = true;
+  return baseline;
+}
+
 function seedLifestyles() {
   const play = CHAR.play;
   if (play.lifestyles_seeded) return;
   chargenLifestyles().forEach((ls, i) =>
     play.lifestyles.push({ name: ls.name, months: ls.months || 0, active: i === 0 }));
   play.lifestyles_seeded = true;
+  stampLifestyleBaseline(play);
 }
 
-/* Merge chargen (prepaid) lifestyles into play at finalize: add any not already
- * present by name, so a lifestyle picked or changed in chargen carries over even
- * on a RE-finalize. Runs only at an explicit finalize (not on every sheet view),
- * so it never resurrects a lifestyle the player removed during play. */
+/* Merge chargen (prepaid) lifestyles into play at finalize. Adds any not present
+ * by name, and — because chargen months are BOUGHT with creation cash — carries
+ * a corrected month count across to the play balance too. Runs only at an
+ * explicit finalize (not on every sheet view), so it never resurrects a
+ * lifestyle the player removed during play.
+ *
+ * Months are only overwritten when the chargen record itself changed since the
+ * last sync. A re-finalize that didn't touch lifestyles leaves the play balance
+ * alone, so months burned in play aren't handed back for an unrelated edit. */
 function syncChargenLifestyles() {
   const play = CHAR.play;
   play.lifestyles = play.lifestyles || [];
+  const baseline = play.lifestyles_baseline = play.lifestyles_baseline || {};
   for (const ls of chargenLifestyles()) {
-    if (!play.lifestyles.some(p => p.name === ls.name)) {
-      play.lifestyles.push({ name: ls.name, months: ls.months || 0,
-        active: play.lifestyles.length === 0 });
+    const months = Math.max(0, +ls.months || 0);
+    const existing = play.lifestyles.find(p => p.name === ls.name);
+    if (!existing) {
+      play.lifestyles.push({ name: ls.name, months, active: play.lifestyles.length === 0 });
+    } else if (baseline[ls.name] !== months && existing.months !== months) {
+      logCash(`${ls.name} lifestyle corrected in chargen: `
+        + `${existing.months} → ${months} mo`, 0,
+        { kind: "lifestyle_adjust", name: ls.name, from: existing.months });
+      existing.months = months;
     }
   }
   play.lifestyles_seeded = true;
+  stampLifestyleBaseline(play);
+}
+
+/* One-time repair for characters finalized before 2026-08-05.
+ *
+ * play.lifestyles was seeded from chargen once and then never reconciled: both
+ * copiers above were insert-only by name, so correcting the months in chargen
+ * left the play balance stranded at its old value with no way to fix it short
+ * of a full Revert. Those characters carry no baseline, which is how we spot
+ * them. Chargen months are paid for out of creation cash, so the chargen record
+ * wins and the play balance is reset to it.
+ *
+ * This can hand back months already burned, because burning one was never
+ * recorded anywhere — there is no evidence to tell the two apart. Every change
+ * is written to the Activity ledger so it is visible and undoable, and it
+ * happens once: from here on the baseline exists and month changes are logged
+ * as they happen. */
+function reconcileLifestyles() {
+  const play = CHAR.play;
+  if (!play.lifestyles_seeded || play.lifestyles_reconciled) return;
+  for (const ls of chargenLifestyles()) {
+    const months = Math.max(0, +ls.months || 0);
+    const existing = (play.lifestyles || []).find(p => p.name === ls.name);
+    if (!existing || existing.months === months) continue;
+    logCash(`${ls.name} lifestyle resynced to the chargen purchase: `
+      + `${existing.months} → ${months} mo`, 0,
+      { kind: "lifestyle_adjust", name: ls.name, from: existing.months });
+    existing.months = months;
+  }
+  stampLifestyleBaseline(play);
 }
 
 function enterSheet() {
@@ -3514,13 +3581,17 @@ function shGear(body) {
     play.cash_log.slice(0, 20).forEach(entry =>
       t.append(el("tr", {},
         el("td", {}, entry.label),
-        el("td", { class: "num", style: entry.delta >= 0 ? "color:var(--ok)" : "color:var(--bad)" },
-          (entry.delta >= 0 ? "+" : "") + fmt(entry.delta).replace("ㄓ-", "−ㄓ")),
+        // A zero-delta row is a record of something that changed without money
+        // moving (an unpaid lifestyle adjustment) — show a dash, not "+ㄓ0".
+        el("td", { class: "num", style: !entry.delta ? "color:var(--dim)"
+                     : entry.delta > 0 ? "color:var(--ok)" : "color:var(--bad)" },
+          entry.delta ? (entry.delta > 0 ? "+" : "") + fmt(entry.delta).replace("ㄓ-", "−ㄓ") : "—"),
         // Undo is only offered where there is something to take back: a
         // purchase this ledger knows how to reverse.
         el("td", {}, (entry.undo && CASH_UNDO[entry.undo.kind])
           ? el("button", { class: "btn small",
-              title: `Undo this purchase and refund ${fmt(-entry.delta)}`,
+              title: entry.delta ? `Undo this purchase and refund ${fmt(-entry.delta)}`
+                                 : "Undo this change and restore the previous value",
               onclick: () => undoCashSpend(entry) }, "Undo")
           : null))));
     body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Activity"),
@@ -3830,7 +3901,18 @@ function lifestyleCard() {
         " ", el("b", {}, ls.name),
         el("span", { class: "sub" }, ` ${fmt(monthly)}/month`)),
       el("span", { class: "sh-unit-ctr" },
-        miniCounter("Months", () => ls.months || 0, v => { ls.months = v; }),
+        // Free to tick — burning a month per sector turn costs nothing, and a
+        // GM correction shouldn't have to route through a purchase. But it
+        // moves prepaid months that WERE paid for, so every change lands in the
+        // ledger at zero cash: visible, undoable, and impossible to confuse
+        // with the "+1 mo" button beside it, which charges.
+        miniCounter("Months", () => ls.months || 0, v => {
+          const from = ls.months || 0;
+          if (v === from) return;
+          ls.months = v;
+          logCash(`Adjusted ${ls.name} lifestyle to ${v} mo (unpaid)`, 0,
+            { kind: "lifestyle_adjust", name: ls.name, from });
+        }),
         counterBtn(`+1 mo (${fmt(monthly)})`, () => {
           if (play.cash < monthly
               && !confirm(`A month of ${ls.name} costs ${fmt(monthly)} but you have ${fmt(play.cash)}. Overdraw?`))

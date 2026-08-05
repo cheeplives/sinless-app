@@ -3179,7 +3179,7 @@ function derivePoolNotes(heritage, augments, amp, martialArt) {
 /**
  * Parse the cumulative unlocked levels of a martial art for the effects that map
  * to a tracked numeric stat, so they can be applied (not just shown as text):
- *   - Dodge dice  (Weirding Way +1d, +1d)  — tiers ADD
+ *   - Dodge dice  (Weirding Way +1d→+2d)  — escalating tiers *replace*, take best
  *   - Soak dice   (Shibumi +1d→+6d)       — escalating tiers *replace*, take best
  *   - Movement    (Weirding Way +2m base)  — additive metres
  *   - Recoil      (Gun-Kata "Ignore Recoil") — flag
@@ -3200,13 +3200,8 @@ function martialArtStatMods(levels) {
       mods.cover.push({ ...coverGrant,
         source: `${lvl.Style || "Martial art"} L${lvl.Level}` });
     }
-    // Dodge tiers ADD. Weirding Way reads +1d at L1 and another +1d at L4, for
-    // +2d total. It used to say "+2d to Dodge (replace level 1)" and be taken as
-    // a max — same answer, but the data had to be written as a running total,
-    // which stops working the moment a third tier or a second dodge-granting
-    // style appears. Conditional dodge ("+4d vs 1 Tgt") stays flavour text.
     let m = eff.match(/([+-]?\d+)\s*d\b[^.]*?\bdodge\b/i);
-    if (m && !/\b(vs|if)\b/i.test(eff)) mods.dodge_bonus += toInt(m[1]);
+    if (m && !/\b(vs|if)\b/i.test(eff)) mods.dodge_bonus = Math.max(mods.dodge_bonus, toInt(m[1]));
     m = eff.match(/([+-]?\d+)\s*d\b[^.]*?\bsoak\b/i);
     if (m) mods.soak_bonus = Math.max(mods.soak_bonus, toInt(m[1]));
     m = eff.match(/([+-]?\d+)\s*m\b[^.]*?mov/i);

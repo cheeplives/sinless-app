@@ -102,19 +102,15 @@ grep -rn "FAIL$" docs/qa/findings/
 undecided. Testers append; only the owner fills in a ruling. It is the one file
 here that is live state rather than a point-in-time record.
 
-**JC-001 … JC-023 have been ruled on and implemented.** Around a third of this
+**JC-001 … JC-025 are all ruled on and implemented.** Around a third of this
 suite's cases were judgement-probes for them and are now correctness cases for
 the ruled behaviour — a run that still finds the *old* behaviour is a regression,
-not a rediscovery. Three entries are still live:
+not a rediscovery.
 
-- **JC-006** — the owner asked for a per-stat decision on how a gear-mounted
-  augment combines with a body one; the entry now asks stat by stat.
-- **JC-018** — ruled *no change* (rely on the CSP for imported image URLs), held
-  open for a second look.
-- **JC-024** and **JC-025** — raised while implementing the first round. JC-024
-  is the JC-010 leak still live for decks, programs, rigs, drones and vehicles;
-  JC-025 is that no host in the shipped data will mount a Smartlink, which makes
-  case (3) of JC-009's ruling unreachable.
+Four are ruled *no change*, and the entries record why so a run doesn't
+re-litigate them: JC-008's picker half, JC-015, JC-018 and JC-025. **JC-018** is
+the one to keep in view: the owner accepted relying on the CSP for imported
+image URLs but asked for a second look, so keep recording what P11-004 shows.
 
 ## Keeping the suite honest
 

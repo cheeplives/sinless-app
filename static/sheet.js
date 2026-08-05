@@ -149,25 +149,39 @@ function ensurePlay() {
   }
   return CHAR.play;
 }
-/* Weapons and armor the character actually has, chargen buys first and play
- * buys after — the same order applyPlayAdvances concatenates them in, so index
- * N of this list is index N of CALC.weapons / CALC.armor. Each entry carries
- * the array it lives in, so removing or reordering hits the right one and a
- * play purchase never leaks back into the creation budget (JC-010). */
+/* The hard line between chargen and play (JC-010, JC-024).
+ *
+ * Nothing bought after Finalize is written to the chargen arrays. Each category
+ * lives in two places — `CHAR.<kind>` for what the character was built with,
+ * `CHAR.play.purchases.<kind>` for what they've picked up since — and the sheet
+ * shows the two joined, chargen first. That is the same order
+ * `applyPlayAdvances` concatenates them in, so index N of this list is index N
+ * of the matching CALC array and everything downstream can index straight
+ * across.
+ *
+ * `ownedSplit` tags each entry with the array it lives in, so removing and
+ * reordering hit the right one. Read-only consumers want the flat `all*`
+ * versions. */
 function ownedSplit(chargen, bought) {
   return [...chargen.map((ref, i) => ({ ref, arr: chargen, i, inPlay: false })),
           ...bought.map((ref, i) => ({ ref, arr: bought, i, inPlay: true }))];
 }
-function ownedWeapons() {
-  return ownedSplit(CHAR.weapons, CHAR.play.purchases.weapons);
-}
-function ownedArmor() {
-  return ownedSplit(CHAR.armor, CHAR.play.purchases.armor);
-}
-/* Same lists, flattened, for the many read-only consumers that just want the
- * items in CALC order and don't care where they were bought. */
-function allWeapons() { return [...CHAR.weapons, ...CHAR.play.purchases.weapons]; }
-function allArmor() { return [...CHAR.armor, ...CHAR.play.purchases.armor]; }
+function ownedWeapons()  { return ownedSplit(CHAR.weapons, CHAR.play.purchases.weapons); }
+function ownedArmor()    { return ownedSplit(CHAR.armor, CHAR.play.purchases.armor); }
+function ownedDecks()    { return ownedSplit(CHAR.decks, CHAR.play.purchases.decks); }
+function ownedRigs()     { return ownedSplit(CHAR.rigs, CHAR.play.purchases.rigs); }
+function ownedDrones()   { return ownedSplit(CHAR.drones, CHAR.play.purchases.drones); }
+function ownedVehicles() { return ownedSplit(CHAR.vehicles, CHAR.play.purchases.vehicles); }
+function ownedPrograms() { return ownedSplit(CHAR.programs, CHAR.play.purchases.programs); }
+
+function allWeapons()  { return [...CHAR.weapons, ...CHAR.play.purchases.weapons]; }
+function allArmor()    { return [...CHAR.armor, ...CHAR.play.purchases.armor]; }
+function allDecks()    { return [...CHAR.decks, ...CHAR.play.purchases.decks]; }
+function allPrograms() { return [...CHAR.programs, ...CHAR.play.purchases.programs]; }
+function allRigs()     { return [...CHAR.rigs, ...CHAR.play.purchases.rigs]; }
+function allDrones()   { return [...CHAR.drones, ...CHAR.play.purchases.drones]; }
+function allVehicles() { return [...CHAR.vehicles, ...CHAR.play.purchases.vehicles]; }
+function allUnits(table) { return table === "drones" ? allDrones() : allVehicles(); }
 
 function schedulePlaySave() {
   // Read-only shared views never persist (also server-rejected as non-owner).
@@ -280,8 +294,21 @@ const CASH_UNDO = {
   armor:     u => removeNamedEntry(CHAR.play.purchases.armor, u.name),
   // Amp powers cost ZP rather than cash, so they never reach this ledger.
   spell:     u => removeNamedEntry(CHAR.play.purchases.spells, u.name),
+  deck:      u => removeNamedEntry(CHAR.play.purchases.decks, u.name),
+  rig:       u => removeNamedEntry(CHAR.play.purchases.rigs, u.name),
+  drone:     u => removeNamedEntry(CHAR.play.purchases.drones, u.name),
+  vehicle:   u => removeNamedEntry(CHAR.play.purchases.vehicles, u.name),
   gear:      u => removeCountedEntry(CHAR.play.purchases.gear, u.name, "qty"),
   augment:   u => removeCountedEntry(CHAR.play.purchases.augments, u.name, "count"),
+  // Programs are bare names, not entries.
+  program: u => {
+    const list = CHAR.play.purchases.programs;
+    const i = list.lastIndexOf(u.name);
+    if (i < 0) return false;
+    list.splice(i, 1);
+    CHAR.play.decking.loaded = (CHAR.play.decking.loaded || []).filter(n => n !== u.name);
+    return true;
+  },
   hacking_level: () => {
     const p = CHAR.play.purchases;
     if (!(p.hacking_levels > 0)) return false;
@@ -290,6 +317,8 @@ const CASH_UNDO = {
   },
   weapon_mod:  u => removeFromSublist(allWeapons(), u.host, "mods", u.name),
   armor_extra: u => removeFromSublist(allArmor(), u.host, "extras", u.name),
+  deck_mod:    u => removeFromSublist(allDecks(), u.host, "mods", u.name),
+  rig_mod:     u => removeFromSublist(allRigs(), u.host, "mods", u.name),
   mount: u => removeFromSublist(
     [...allWeapons(), ...allArmor(), ...CHAR.gear, ...CHAR.play.purchases.gear],
     u.host, "mounted", u.name),
@@ -3375,16 +3404,18 @@ function shGear(body) {
   // ===== Vehicles / rigs / decks owned (configured on their own tabs).
   // Drones and vehicles get their full Rigging-tab stat + attachment lines here
   // too, so the Gear tab is a complete inventory (issue #20).
-  if (CHAR.rigs.length || CHAR.decks.length || CHAR.drones.length || CHAR.vehicles.length) {
+  const gearRigs = allRigs(), gearDecks = allDecks();
+  const gearDrones = allDrones(), gearVehicles = allVehicles();
+  if (gearRigs.length || gearDecks.length || gearDrones.length || gearVehicles.length) {
     const vcard = el("div", { class: "card sh-card", id: "gear-vehicles" },
       el("h3", {}, "Vehicles, Rigs & Decks"),
       el("p", { class: "hint" }, "Bought, modified and removed on the Rigging and Decking tabs."));
     const unitEntries = [
-      ...CHAR.drones.map(u => ({ table: "drones", u })),
-      ...CHAR.vehicles.map(u => ({ table: "vehicles", u })),
+      ...gearDrones.map(u => ({ table: "drones", u })),
+      ...gearVehicles.map(u => ({ table: "vehicles", u })),
     ];
     if (unitEntries.length) vcard.append(unitLoadoutTable(unitEntries));
-    if (CHAR.rigs.length || CHAR.decks.length) {
+    if (gearRigs.length || gearDecks.length) {
       const vt = el("table");
       vt.append(el("tr", {}, el("th", {}, "Item"), el("th", {}, "Type")));
       // Rigs are gated by which one is active (Rigging tab), not by carrying, so
@@ -3395,8 +3426,8 @@ function shGear(body) {
             (u.label && u.name) ? el("span", { class: "sub" }, ` (${u.name})`) : null,
             carriable ? shCarriedToggle(u) : null),
           el("td", { class: "sub" }, label))));
-      addRows(CHAR.rigs, "VCR", false);
-      addRows(CHAR.decks, "Cyberdeck", true);
+      addRows(gearRigs, "VCR", false);
+      addRows(gearDecks, "Cyberdeck", true);
       vcard.append(vt);
     }
     body.append(vcard);
@@ -4230,7 +4261,8 @@ function shMagic(body) {
 /* ------------------------------------------------ decking tab */
 function shDecking(body) {
   const dk = CHAR.play.decking;
-  const decks = CHAR.decks;
+  const deckEntries = ownedDecks();
+  const decks = deckEntries.map(e => e.ref);
   if (decks.length && !decks.some(d => d.name === dk.active_deck))
     dk.active_deck = decks[0].name;
   const active = DATA.tables.decks.find(x => x.Name === dk.active_deck);
@@ -4242,7 +4274,7 @@ function shDecking(body) {
   const deckBuySection = el("div", { class: "card sh-card", id: "deck-buy" },
     el("h3", {}, "Buy decks & programs"));
   const deckCard = el("div", { class: "card sh-card" }, el("h3", {}, "Cyberdecks"));
-  decks.forEach((d, di) => {
+  deckEntries.forEach(({ ref: d, arr: deckArr, i: deckIndex }, di) => {
     const r = DATA.tables.decks.find(x => x.Name === d.name) || {};
     const isActive = d.name === dk.active_deck;
     d.mods = d.mods || [];
@@ -4256,7 +4288,8 @@ function shDecking(body) {
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
         d.mods.push(name);
-        logCash(`Fitted ${name} to ${d.name}`, -cost);
+        logCash(`Fitted ${name} to ${d.name}`, -cost,
+          { kind: "deck_mod", host: d.name, name });
       },
       onRemove: index => { d.mods.splice(index, 1); },
       effectOf: name => (DATA.tables.deck_mods.find(m => m["Deck Mod"] === name) || {}).Effect || "",
@@ -4276,7 +4309,7 @@ function shDecking(body) {
       el("button", { class: "row-del", title: "Sell / remove deck",
         onclick: () => {
           if (!confirm(`Remove ${d.name}? Fitted mods are lost.`)) return;
-          decks.splice(di, 1);
+          deckArr.splice(deckIndex, 1);
           if (dk.active_deck === d.name) { dk.active_deck = ""; dk.loaded = []; }
           playChangedRecalc();
         } }, "✕")));
@@ -4295,8 +4328,8 @@ function shDecking(body) {
         const cost = Math.round((+row.Cost || 0) * mult);
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-        CHAR.decks.push({ name, mods: [] });
-        logCash(`Bought ${name}`, -cost);
+        CHAR.play.purchases.decks.push({ name, mods: [] });
+        logCash(`Bought ${name}`, -cost, { kind: "deck", name });
       } })));
   body.append(deckCard);
 
@@ -4340,11 +4373,14 @@ function shDecking(body) {
         `Loaded ${dk.loaded.length} / ${threads}`)),
     hackBox);   // the Hacking program lives at the top of the Programs section
   // Programs whose I/O is N/A or No are never loaded onto threads — they run
-  // without occupying a thread slot, so no Load button is shown for them.
-  const loadable = io => io !== "N/A" && io !== "No";
-  CHAR.programs.forEach((name, pi) => {
+  // without occupying a thread slot, so no Load button is shown for them. The
+  // gear-ZR rule reads the same predicate, so the two can't disagree about what
+  // being loaded means.
+  const programEntries = ownedPrograms();
+  programEntries.forEach(({ ref: name, arr: progArr, i: progIndex }) => {
     const r = DATA.tables.programs.find(x => x.Name === name) || {};
     const io = r["I/O"] || "—";
+    const loadable = RULES.programNeedsThread(r);
     const loaded = dk.loaded.includes(name);
     const nodeCtrl = ` · Node Control ${r["Node Control"] || "N"}`;
     const pSkill = RULES.programSkill(name);   // EW programs: EW skill (Classic) or Hacking
@@ -4355,7 +4391,7 @@ function shDecking(body) {
         r.Effect ? el("div", { class: "sub" }, r.Effect) : null,
         descriptionExpander(r.Description, `programs:${name}`)),
       el("span", { style: "display:flex;gap:6px;align-items:center" },
-        loadable(io)
+        loadable
           ? counterBtn(loaded ? "Unload" : "Load", () => {
               if (loaded) dk.loaded = dk.loaded.filter(n => n !== name);
               else if (dk.loaded.length >= threads) { alert("All threads are in use — unload something first."); return; }
@@ -4366,15 +4402,15 @@ function shDecking(body) {
         el("button", { class: "row-del", title: "Remove program",
           onclick: () => {
             if (!confirm(`Remove program ${name}?`)) return;
-            CHAR.programs.splice(pi, 1);
+            progArr.splice(progIndex, 1);
             dk.loaded = dk.loaded.filter(n => n !== name);
             playChangedRecalc();
           } }, "✕"))));
   });
-  if (!CHAR.programs.length) progCard.append(el("p", { class: "hint" }, "No programs owned."));
+  if (!programEntries.length) progCard.append(el("p", { class: "hint" }, "No programs owned."));
 
   // buy new programs in play (grouped by Attack class, owned ones drop out)
-  const ownedProg = new Set(CHAR.programs);
+  const ownedProg = new Set(allPrograms());
   const progByType = {};
   DATA.tables.programs.forEach(pr =>
     (progByType[pr.Attack || "Program"] ??= []).push(pr));
@@ -4397,8 +4433,8 @@ function shDecking(body) {
         const cost = Math.round((+pr.Cost || 0) * mult);
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-        CHAR.programs.push(name);
-        logCash(`Bought program ${name}`, -cost);
+        CHAR.play.purchases.programs.push(name);
+        logCash(`Bought program ${name}`, -cost, { kind: "program", name });
       } })));
   body.append(progCard);
   body.append(deckBuySection);
@@ -4575,9 +4611,11 @@ function shiftUnitStateDown(table, removedAt, newLength) {
 
 /* Play-state key for a unit's slot in CHAR.play.rigging.units. Keyed by list
    position, matching the `${cfg.table}:${i}` convention the Rigging tab uses. */
+/* Damage/state for one drone or vehicle, keyed by its position in the joined
+ * chargen-then-play list — the same index CALC uses. Play purchases append, so
+ * a chargen unit's key never moves and existing saves keep their state. */
 function unitStateKey(table, unit) {
-  const list = table === "drones" ? CHAR.drones : CHAR.vehicles;
-  return `${table}:${(list || []).indexOf(unit)}`;
+  return `${table}:${allUnits(table).indexOf(unit)}`;
 }
 
 /* Effective Body after any weapon/mod deltas — the box count for both condition
@@ -4753,10 +4791,12 @@ function shRigging(body) {
   // not to VCRs/rigs or drones — those pay face value.
   const base = CALC.budget.gear_cost_multiplier || 1;
   const rigMult = RULES.surchargeFor("rig", base);
-  if (CHAR.rigs.length && !CHAR.rigs.some(r => r.name === rg.active_rig))
-    rg.active_rig = CHAR.rigs[0].name;
+  const rigEntries = ownedRigs();
+  const rigs = rigEntries.map(e => e.ref);
+  if (rigs.length && !rigs.some(r => r.name === rg.active_rig))
+    rg.active_rig = rigs[0].name;
 
-  const activeRig = CHAR.rigs.find(r => r.name === rg.active_rig);
+  const activeRig = rigs.find(r => r.name === rg.active_rig);
   const linkLimit = activeRig ? RULES.rigStats(activeRig, DATA.tables).links : 0;
   const linkedCount = () => Object.values(rg.linked).filter(Boolean).length;
   // All "buy new unit" browsers collect here and render at the bottom.
@@ -4766,7 +4806,7 @@ function shRigging(body) {
 
   // --- VCRs
   const rigCard = el("div", { class: "card sh-card" }, el("h3", {}, "Vehicle Control Rigs"));
-  CHAR.rigs.forEach((r, ri) => {
+  rigEntries.forEach(({ ref: r, arr: rigArr, i: rigIndex }, ri) => {
     const st = RULES.rigStats(r, DATA.tables);
     const isActive = r.name === rg.active_rig;
     r.mods = r.mods || [];
@@ -4780,7 +4820,8 @@ function shRigging(body) {
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
         r.mods.push(name);
-        logCash(`Fitted ${name} to ${r.name}`, -cost);
+        logCash(`Fitted ${name} to ${r.name}`, -cost,
+          { kind: "rig_mod", host: r.name, name });
       },
       onRemove: index => { r.mods.splice(index, 1); },
       effectOf: name => (DATA.tables.rig_mods.find(m => m["Rig Mod"] === name) || {}).Effect || "",
@@ -4798,12 +4839,12 @@ function shRigging(body) {
       el("button", { class: "row-del", title: "Sell / remove VCR",
         onclick: () => {
           if (!confirm(`Remove ${r.name}? Fitted mods are lost.`)) return;
-          CHAR.rigs.splice(ri, 1);
+          rigArr.splice(rigIndex, 1);
           if (rg.active_rig === r.name) rg.active_rig = "";
           playChangedRecalc();
         } }, "✕")));
   });
-  if (CHAR.rigs.length)
+  if (rigs.length)
     rigCard.append(el("p", { class: "hint" },
       `Active VCR links ${linkedCount()} / ${linkLimit} units.`));
   else
@@ -4820,29 +4861,35 @@ function shRigging(body) {
         const cost = Math.round((+row.Cost || 0) * rigMult);
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-        CHAR.rigs.push({ name, mods: [] });
-        logCash(`Bought ${name}`, -cost);
+        CHAR.play.purchases.rigs.push({ name, mods: [] });
+        logCash(`Bought ${name}`, -cost, { kind: "rig", name });
       } })));
   body.append(rigCard);
 
   // Active (VCR-linked) drones & vehicles summary — mirrors the Overview loadout.
+  // Link keys index the joined list, the same one unitStateKey uses.
   const activeUnits = [];
-  [["drones", CHAR.drones], ["vehicles", CHAR.vehicles]].forEach(([table, list]) => {
-    (list || []).forEach((u, i) => { if (rg.linked[`${table}:${i}`]) activeUnits.push({ table, u }); });
+  [["drones", allDrones()], ["vehicles", allVehicles()]].forEach(([table, list]) => {
+    list.forEach((u, i) => { if (rg.linked[`${table}:${i}`]) activeUnits.push({ table, u }); });
   });
   if (activeUnits.length) {
     body.append(el("div", { class: "card sh-card" },
       el("h3", {}, "Active drones & vehicles"), unitLoadoutTable(activeUnits)));
   }
 
-  const unitBlock = (cfg, list, calcArr) => {
+  /* `entries` is the joined chargen-then-play list from ownedSplit, so `i` is
+     the combined index every play-state key uses and `arr`/`localIndex` is
+     where the unit actually lives. New units are always bought into
+     play.purchases — the chargen record is closed once Finalize is pressed. */
+  const unitBlock = (cfg, entries, calcArr) => {
+    const list = entries.map(e => e.ref);
     // Only a vehicle's base chassis carries the small-heritage surcharge; fitted
     // weapons/mods (and everything on a drone) pay face value.
     const baseMult = cfg.table === "vehicles" ? RULES.surchargeFor("vehicle", base) : 1;
     const mult = 1;   // fitted weapons & mods — never surcharged
     const unitReadonly = !!(activeTabObj() && activeTabObj().readonly);
     const card = el("div", { class: "card sh-card" }, el("h3", {}, cfg.title));
-    list.forEach((u, i) => {
+    entries.forEach(({ ref: u, arr: unitArr, i: localIndex }, i) => {
       const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === u.name) || {};
       const summary = (calcArr || [])[i] || {};
       const key = `${cfg.table}:${i}`;
@@ -5002,11 +5049,12 @@ function shRigging(body) {
       const removeBtn = el("button", { class: "row-del", title: "Sell / remove unit",
         onclick: () => {
           if (!confirm(`Remove ${u.label || u.name}?`)) return;
-          list.splice(i, 1);
-          // Per-unit play state is keyed by list position, so removing a unit
-          // has to shift every later unit's slot down — otherwise its damage
-          // tracks (and the linked flag) land on the wrong vehicle.
-          shiftUnitStateDown(cfg.table, i, list.length);
+          unitArr.splice(localIndex, 1);
+          // Per-unit play state is keyed by position in the JOINED list, so
+          // removing a unit has to shift every later unit's slot down —
+          // otherwise its damage tracks (and the linked flag) land on the wrong
+          // vehicle. `entries.length - 1` is that list's length after the splice.
+          shiftUnitStateDown(cfg.table, i, entries.length - 1);
           playChangedRecalc();
         } }, "✕");
 
@@ -5057,7 +5105,7 @@ function shRigging(body) {
           activeRig ? linkToggle : null),
         attachments));
     });
-    if (!list.length) card.append(el("p", { class: "hint" }, `No ${cfg.title.toLowerCase()} owned.`));
+    if (!entries.length) card.append(el("p", { class: "hint" }, `No ${cfg.title.toLowerCase()} owned.`));
     body.append(card);
 
     // buy a new unit — rendered in the bottom Buy section
@@ -5072,12 +5120,12 @@ function shRigging(body) {
           const cost = Math.round((+row.Cost || 0) * baseMult);
           if (CHAR.play.cash < cost
               && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-          list.push({ name, weapons: [], mods: [] });
-          logCash(`Bought ${name}`, -cost);
+          CHAR.play.purchases[cfg.table].push({ name, weapons: [], mods: [] });
+          logCash(`Bought ${name}`, -cost, { kind: cfg.table.replace(/s$/, ""), name });
         } })));
   };
-  unitBlock(RIG_UNIT_CFG.drones, CHAR.drones, CALC.drones);
-  unitBlock(RIG_UNIT_CFG.vehicles, CHAR.vehicles, CALC.vehicles);
+  unitBlock(RIG_UNIT_CFG.drones, ownedDrones(), CALC.drones);
+  unitBlock(RIG_UNIT_CFG.vehicles, ownedVehicles(), CALC.vehicles);
   body.append(rigBuySection);
 }
 
@@ -5390,21 +5438,23 @@ function buildMarkdown() {
     });
     L.push("");
   }
-  if (CHAR.decks.length || CHAR.programs.length) {
+  const mdDecks = allDecks(), mdPrograms = allPrograms();
+  const mdRigs = allRigs(), mdDrones = allDrones(), mdVehicles = allVehicles();
+  if (mdDecks.length || mdPrograms.length) {
     L.push("## Decking");
     L.push("");
-    CHAR.decks.forEach(d => L.push(`- Deck: **${d.name}**${(d.mods || []).length ? ` (${d.mods.join(", ")})` : ""}`));
-    if (CHAR.programs.length) L.push("- Programs: " + CHAR.programs.join(" · "));
+    mdDecks.forEach(d => L.push(`- Deck: **${d.name}**${(d.mods || []).length ? ` (${d.mods.join(", ")})` : ""}`));
+    if (mdPrograms.length) L.push("- Programs: " + mdPrograms.join(" · "));
     const hackingRating = (CHAR.hacking_rating || 0) + (play.purchases.hacking_levels || 0);
     if (hackingRating) L.push(`- Hacking program rating: ${hackingRating}`);
     L.push("");
   }
-  if (CHAR.rigs.length || CHAR.drones.length || CHAR.vehicles.length) {
+  if (mdRigs.length || mdDrones.length || mdVehicles.length) {
     L.push("## Rigging");
     L.push("");
-    CHAR.rigs.forEach(r => L.push(`- Rig: **${r.name}**`));
-    CHAR.drones.forEach(d => L.push(`- Drone: **${d.name}**${(d.weapons || []).length ? ` (${d.weapons.join(", ")})` : ""}`));
-    CHAR.vehicles.forEach(v => L.push(`- Vehicle: **${v.name}**${(v.weapons || []).length ? ` (${v.weapons.join(", ")})` : ""}`));
+    mdRigs.forEach(r => L.push(`- Rig: **${r.name}**`));
+    mdDrones.forEach(d => L.push(`- Drone: **${d.name}**${(d.weapons || []).length ? ` (${d.weapons.join(", ")})` : ""}`));
+    mdVehicles.forEach(v => L.push(`- Vehicle: **${v.name}**${(v.weapons || []).length ? ` (${v.weapons.join(", ")})` : ""}`));
     L.push("");
   }
 

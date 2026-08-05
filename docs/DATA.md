@@ -108,8 +108,38 @@ Not declared anywhere in code, but consistent across tables:
 | `Weight` | 8 tables | carried-weight contribution |
 | `Damage` / `Pen` / `Accuracy` / `Ammo` | 5–6 tables | weapon stats (personal, drone, vehicle) |
 | `ModeEffect` | 6 tables | fire-mode rider on the 4 unit-weapon tables + 2 mod tables |
-| `Mount Types` / `Mount ZP` | armor, misc_gear, weapons | mount compatibility (added by `tools/add_mount_columns.py`) |
+| `Mount Types` / `Mount ZP` | armor, misc_gear, weapons | mount compatibility (added by `tools/add_mount_columns.py`) — see below |
 | `Description` | 5 tables | long-form flavour/rules text |
+
+### Gear mounts
+
+A row with a non-empty `Mount Types` can host augments (`Power Armor`, `Arwin
+Goggles`, `Helmet`, homebrew). Mounted augments live on the character's gear
+entry, never in `character.augments`; their ZR must fit `Mount ZP` and never
+counts against the character's own ZP; and their effects apply only while the
+host is worn, carried or equipped.
+
+**`Mount Types` grammar.** A comma-separated list of tokens, read by
+`RULES.mountCapability`:
+
+| Token | Means |
+|---|---|
+| `Any` | any non-Bioware augment |
+| an augment **Type** (`Eyeware`) | the whole category |
+| an augment **Name** (`Commlink`) | that one item, even if its category isn't listed |
+| `!` prefix (`!Eye Laser`) | excluded — beats any inclusion, so cell order doesn't matter |
+
+Bioware is never mountable, and Skillsofts never are either (they run from a
+Chipjack wired into your head, not from a gear device) — both are enforced in
+code rather than per row. The Helmet is the worked example: it takes Eyeware and
+Earware wholesale, adds two Headware items by name, and excludes five.
+
+**When a mounted augment duplicates a body one, the two ADD.** A second piece of
+hardware does a second piece of work — attributes, armor, move, recoil, dodge,
+melee exploit actions, damage reduction and skill bonuses all sum. The single
+exception is `ballistic_armor_max`, which isn't a quantity but the best *single*
+ballistic source (ballistic armor doesn't stack), so it takes the larger of the
+two. See `mergeMountedAugments` in `rules.js`.
 
 ## Table catalogue
 

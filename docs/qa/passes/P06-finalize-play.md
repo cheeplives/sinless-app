@@ -227,6 +227,32 @@ assuming a clean slate.
   can only be right if that one is.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-011b: The line holds for every purchasable category
+- **Type:** correctness
+- **Steps:** reload the fixture first — this buys one of everything.
+- **Check:**
+
+      (async () => { window.confirm = () => true; CHAR.play.cash = 5000000; const p = CHAR.play.purchases; p.decks.push({ name: "MasterDeck", mods: [] }); logCash("Bought MasterDeck", -1000, { kind: "deck", name: "MasterDeck" }); p.programs.push("Acid Burn 1"); logCash("Bought program Acid Burn 1", -500, { kind: "program", name: "Acid Burn 1" }); p.rigs.push({ name: "Basic VCR", mods: [] }); logCash("Bought Basic VCR", -2000, { kind: "rig", name: "Basic VCR" }); p.drones.push({ name: "Bug-Spy", weapons: [], mods: [] }); logCash("Bought Bug-Spy", -300, { kind: "drone", name: "Bug-Spy" }); await playChangedRecalc(); const chargen = { decks: CHAR.decks.length, programs: CHAR.programs.length, rigs: CHAR.rigs.length, drones: CHAR.drones.length }; const joined = { decks: allDecks().length, programs: allPrograms().length, rigs: allRigs().length, drones: allDrones().length }; const probe = JSON.parse(JSON.stringify(CHAR)); probe.finalized = false; const remaining = RULES.calculate(probe).budget.remaining; const before = CHAR.play.cash; for (let n = 0; n < 4; n++) await undoCashSpend(CHAR.play.cash_log[0]); return { chargen, joined, remaining, refunded: CHAR.play.cash - before, leftOver: p.decks.length + p.programs.length + p.rigs.length + p.drones.length }; })()
+
+- **Expected:**
+
+      { "chargen": { "decks": 0, "programs": 0, "rigs": 0, "drones": 0 },
+        "joined":  { "decks": 1, "programs": 1, "rigs": 1, "drones": 1 },
+        "remaining": 33902, "refunded": 3800, "leftOver": 0 }
+
+- **Note:** JC-024, ruled **A**: there is a hard and fast line between the
+  chargen record and anything after Finalize, and `play.purchases` now holds
+  every purchasable category. `chargen` all-zero with `joined` all-one is the
+  line; `remaining` unmoved is what it buys; `leftOver` zero is Undo reaching all
+  four. Vehicles behave identically and are left out only to keep the expression
+  readable.
+
+  The subtle one underneath this is `unitStateKey`, which keys a drone's damage
+  tracks by position in the **joined** list. Buy a drone in play, damage it, then
+  buy another and check the damage stayed on the first — if it jumps, the keying
+  has broken.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Grenade launchers in play

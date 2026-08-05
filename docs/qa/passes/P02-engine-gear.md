@@ -39,18 +39,48 @@ actually testing.
   needed migrating.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P02-002b: Programs count only when there is a carried deck to run them on
+### P02-002b: A program counts when it is loaded on the deck
+- **Type:** correctness
+- **Check:** (no shipped program has a ZR, so this lends two of them one and
+  puts it back afterwards)
+
+      (() => { const threaded = DATA.tables.programs.find(p => RULES.programNeedsThread(p)); const alwaysOn = DATA.tables.programs.find(p => !RULES.programNeedsThread(p)); const save = [threaded.ZR, alwaysOn.ZR]; threaded.ZR = "1"; alwaysOn.ZR = "2"; const base = () => { const c = RULES.defaultCharacter(); c.priorities={heritage:1,magic:2,attributes:3,skills:0,resources:4}; c.heritage.type="Human"; c.lifestyles=[{name:"Squatter",months:1}]; c.programs=[threaded.Name, alwaysOn.Name]; return c; }; const zr = c => RULES.calculate(c).zoetics.gear_zr; const noDeck = zr(base()); const a = base(); a.decks=[{name:"MasterDeck",mods:[],carried:true}]; const nothingLoaded = zr(a); const b = base(); b.decks=[{name:"MasterDeck",mods:[],carried:true}]; b.play.decking={active_deck:"MasterDeck",loaded:[threaded.Name]}; const loaded = zr(b); const c2 = base(); c2.decks=[{name:"MasterDeck",mods:[],carried:false}]; c2.play.decking={active_deck:"MasterDeck",loaded:[threaded.Name]}; const stashed = zr(c2); threaded.ZR = save[0]; alwaysOn.ZR = save[1]; return { threaded: threaded.Name, alwaysOn: alwaysOn.Name, noDeck, nothingLoaded, loaded, stashed }; })()
+
+- **Expected:** `{ "noDeck": 0, "nothingLoaded": 3, "loaded": 4, "stashed": 0 }`
+  with `threaded` `"De-rez 1"` and `alwaysOn` `"Acid Burn 1"`.
+- **Note:** JC-004's program half, ruled separately: a program isn't carried, it
+  is **part of the deck** — loaded on it or not. `nothingLoaded` is 3 because the
+  deck's own ZR is 1 and the always-on program's 2 counts with it: a program
+  whose `I/O` is `N/A` or `No` never occupies a thread, so it runs whenever the
+  deck does. Loading the threaded one adds its 1. Stash the deck and nothing on
+  it counts, loaded or not. Nothing is loaded during creation, so only the
+  always-on programs contribute there.
+
+  `RULES.programNeedsThread` is the same predicate the Decking tab's Load button
+  uses, so the two can't disagree about what loaded means. In the shipped data
+  this is all academic — **no program has a non-zero ZR** — which is why the
+  check lends them one.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P02-002c: A mounted augment duplicating a body one adds
 - **Type:** correctness
 - **Check:**
 
-      (() => { const base = () => { const c = RULES.defaultCharacter(); c.priorities={heritage:1,magic:2,attributes:3,skills:0,resources:4}; c.heritage.type="Human"; c.lifestyles=[{name:"Squatter",months:1}]; c.programs=["Acid Burn 1"]; return c; }; const noDeck = RULES.calculate(base()).zoetics.gear_zr; const d = base(); d.decks=[{name:"MasterDeck",mods:[],carried:true}]; return { noDeck, withDeck: RULES.calculate(d).zoetics.gear_zr }; })()
+      (() => { const mk = (body, mounted) => { const c = RULES.defaultCharacter(); c.priorities={heritage:1,magic:2,attributes:3,skills:0,resources:4}; c.heritage.type="Human"; c.lifestyles=[{name:"Squatter",months:1}]; c.augments = body.map(n => ({ name: n, count: 1 })); c.armor = [{ name: "Power Armor", active: true, extras: [], mounted: mounted.map(n => ({ name: n })) }]; const k = RULES.calculate(c); return { ball: k.combat.ballistic_armor, maxBall: k.combat.max_ballistic, dodge: k.combat.dodge_bonus }; }; const A = "Dermal Plating 3", D = "Covert Synthskin"; return { bodyOnly: mk([A, D], []), mountOnly: mk([], [A, D]), both: mk([A, D], [A, D]) }; })()
 
-- **Expected:** `{ "noDeck": 0, "withDeck": 1 }`
-- **Note:** Programs have no carried flag of their own — they are software, and
-  the character owns them, not carries them — so JC-004 was applied by tying them
-  to the deck. `withDeck` is 1 because `Acid Burn 1` has a blank ZR; the whole
-  value is the deck's. Flagged in the JC-004 entry as the one place the ruling
-  needed interpretation.
+- **Expected:**
+
+      { "bodyOnly":  { "ball": 6, "maxBall": 5, "dodge": 1 },
+        "mountOnly": { "ball": 6, "maxBall": 5, "dodge": 1 },
+        "both":      { "ball": 7, "maxBall": 5, "dodge": 2 } }
+
+- **Note:** JC-006, ruled **everything adds except `ballistic_armor_max`**.
+  `dodge` going 1 → 1 → **2** is the ruling: two pieces of hardware do twice the
+  work. `maxBall` staying **5** in all three is the exception — it isn't a
+  quantity but the best *single* ballistic source, and ballistic armor doesn't
+  stack. Dodge, melee exploit actions, damage reduction and skill bonuses all
+  used to cap the way `maxBall` still does. Power Armor is the host because its
+  `Mount Types` is `Any`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P02-003: An owned rig contributes gear ZR during creation

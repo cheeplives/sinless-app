@@ -350,6 +350,15 @@ const EW_PROGRAM_BASES = new Set([
 function isEWProgram(name) {
   return EW_PROGRAM_BASES.has(String(name || "").replace(/\s+\d+$/, "").trim());
 }
+/* Programs with these I/O values run WITHOUT occupying one of the deck's
+ * threads, so they are never "loaded" in the play sheet's sense — they are
+ * simply on whenever the deck is. The Decking tab's Load button and the gear-ZR
+ * rule both key off this, so they can't disagree about what "loaded" means. */
+const PROGRAM_NO_THREAD_IO = new Set(["N/A", "No"]);
+function programNeedsThread(row) {
+  return !PROGRAM_NO_THREAD_IO.has(String((row || {})["I/O"] || "").trim());
+}
+
 // The skill an EW program rolls, per the EW house rule; null for non-EW programs.
 function programSkill(name) {
   if (!isEWProgram(name)) return null;
@@ -502,9 +511,12 @@ function defaultCharacter() {
       ritual_advances: {},
       zp_advances: 0,
       spell_force_advances: {},
-      // Everything bought after Finalize, kept apart from the chargen record so
-      // Back to Chargen doesn't charge play purchases against the creation
-      // budget and Revert can drop them wholesale.
+      // Everything bought after Finalize. There is a hard line between the
+      // chargen record and anything that happens once Finalize is pressed:
+      // nothing bought in play ever touches the arrays above. That is what lets
+      // Back to Chargen reopen the creation budget untouched and Revert drop a
+      // character's whole play history in one go. Every purchasable category
+      // has a home here — if you add one, add it here too.
       purchases: {
         gear: [],
         augments: [],
@@ -512,6 +524,11 @@ function defaultCharacter() {
         spells: [],
         weapons: [],
         armor: [],
+        decks: [],
+        programs: [],
+        rigs: [],
+        drones: [],
+        vehicles: [],
         hacking_levels: 0,
       },
       decking: { active_deck: "", loaded: [] },
@@ -1510,10 +1527,20 @@ function tallyMountedAugments(character, data, warnings, errors) {
            mounted_zr: round2(totalZr), mount_errors: mountErrors };
 }
 
-// Fold gear-mounted augments' cost and active effects into the body-augment
-// tally so every downstream consumer (attributes, combat, initiative notes,
-// wound-penalty scan) sees them without special-casing. The ZR fields are
-// deliberately untouched: mounted ZR never counts against the character.
+/* Fold gear-mounted augments' cost and active effects into the body-augment
+ * tally so every downstream consumer (attributes, combat, initiative notes,
+ * wound-penalty scan) sees them without special-casing. The ZR fields are
+ * deliberately untouched: mounted ZR never counts against the character.
+ *
+ * **Everything adds.** A gear-mounted augment that duplicates a body one is a
+ * second piece of hardware, and two of a thing does twice the work. The single
+ * exception is `ballistic_armor_max`, which is not a quantity but a cap — the
+ * highest single ballistic source, because ballistic armor doesn't stack — so
+ * it takes the larger of the two rather than their sum.
+ *
+ * This used to be a per-stat split, with dodge, melee exploits, damage
+ * reduction and skill bonuses all capping. That was never written down anywhere
+ * a player could find it, which is what JC-006 was raised about. */
 function mergeMountedAugments(augments, mounted) {
   augments.cost += mounted.cost;
   for (const name of ATTRIBUTES) {
@@ -1521,28 +1548,27 @@ function mergeMountedAugments(augments, mounted) {
     augments.attribute_max_adjustment[name] += mounted.attribute_max_adjustment[name];
   }
   for (const [skill, bonus] of Object.entries(mounted.skill_bonus)) {
-    augments.skill_bonus[skill] = Math.max(augments.skill_bonus[skill] || 0, bonus);
+    augments.skill_bonus[skill] = (augments.skill_bonus[skill] || 0) + bonus;
   }
   for (const [skill, notes] of Object.entries(mounted.skill_notes || {})) {
     (augments.skill_notes[skill] = augments.skill_notes[skill] || []).push(...notes);
   }
   augments.move_bonus += mounted.move_bonus;
   augments.recoil_capacity_bonus += mounted.recoil_capacity_bonus || 0;
-  augments.dodge_bonus = Math.max(augments.dodge_bonus, mounted.dodge_bonus);
+  augments.dodge_bonus += mounted.dodge_bonus;
   augments.impact_armor += mounted.impact_armor;
   augments.ballistic_armor += mounted.ballistic_armor;
   augments.impact_armor_min += mounted.impact_armor_min;
+  // The one cap, not a quantity: the best single ballistic source.
   augments.ballistic_armor_max = Math.max(augments.ballistic_armor_max,
                                           mounted.ballistic_armor_max);
-  augments.melee_exploit_bonus = Math.max(augments.melee_exploit_bonus,
-                                          mounted.melee_exploit_bonus);
+  augments.melee_exploit_bonus += mounted.melee_exploit_bonus;
   augments.internal_armor_slot_items.push(...mounted.internal_armor_slot_items);
   augments.mobility_move_notes.push(...mounted.mobility_move_notes);
   augments.combat_notes.push(...(mounted.combat_notes || []));
   augments.sense_notes.push(...(mounted.sense_notes || []));
   augments.move_modes.push(...(mounted.move_modes || []));
-  augments.physical_damage_reduction = Math.max(augments.physical_damage_reduction,
-                                                 mounted.physical_damage_reduction || 0);
+  augments.physical_damage_reduction += mounted.physical_damage_reduction || 0;
   augments.has_move_exploit = augments.has_move_exploit || mounted.has_move_exploit;
   augments.move_exploit_sources.push(...(mounted.move_exploit_sources || []));
   augments.rows.push(...mounted.rows);
@@ -2796,11 +2822,20 @@ function gearZoeticRating(character, data) {
   // ZR comes from what you are carrying, not from everything you own, so decks,
   // drones and vehicles take the same permissive `carried !== false` flag misc
   // gear uses.
-  const carriedDecks = character.decks.filter(d => d.carried !== false);
-  add("decks", "Name", carriedDecks.map(d => d.name));
-  // Programs have no carried flag of their own — they are software that runs on
-  // a deck, so they count exactly when there is a carried deck to run them on.
-  if (carriedDecks.length) add("programs", "Name", character.programs);
+  add("decks", "Name", character.decks
+    .filter(d => d.carried !== false).map(d => d.name));
+  // A program isn't carried — it's part of the deck. It counts when it is
+  // loaded onto the deck you're running, and one whose I/O never occupies a
+  // thread runs whenever the deck does, so it counts with it. Nothing is loaded
+  // during creation, so only the always-on ones count then.
+  const decking = (character.play || {}).decking || {};
+  const activeDeck = character.decks.find(d => d.name === decking.active_deck)
+    || character.decks[0] || null;
+  if (activeDeck && activeDeck.carried !== false) {
+    const loaded = new Set(decking.loaded || []);
+    add("programs", "Name", character.programs.filter(name =>
+      loaded.has(name) || !programNeedsThread(findRow(data.programs, "Name", name))));
+  }
   // A rig contributes when it is the active one. Nothing is ever flagged active
   // during creation, so the first owned rig stands in — the same fallback
   // deriveExploitActions and the play tab use.
@@ -3341,12 +3376,19 @@ function applyPlayAdvances(character) {
       toInt(asNumber(character.ritual_skills[name] || 0)) + advance(plus));
   }
   // Play purchases append AFTER the chargen entries, so index N of the
-  // character's array is index N of the matching CALC array either way.
+  // character's array is index N of the matching CALC array either way. This is
+  // the only place the two halves are ever joined; everything upstream keeps
+  // them apart.
   const purchases = play.purchases || {};
   character.gear.push(...(purchases.gear || []));
   character.augments.push(...(purchases.augments || []));
   character.weapons.push(...(purchases.weapons || []));
   character.armor.push(...(purchases.armor || []));
+  character.decks.push(...(purchases.decks || []));
+  character.programs.push(...(purchases.programs || []));
+  character.rigs.push(...(purchases.rigs || []));
+  character.drones.push(...(purchases.drones || []));
+  character.vehicles.push(...(purchases.vehicles || []));
   character.magic.amp_powers.push(...(purchases.amp_powers || []));
   character.magic.spells.push(...(purchases.spells || []));
   character.hacking_rating = Math.min(HACKING_RATING_MAX,
@@ -3808,7 +3850,7 @@ return {
   ammoFitsUnitWeapon,
   ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_FITS,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
-  programSkill, isEWProgram, hackActionSkill,
+  programSkill, isEWProgram, hackActionSkill, programNeedsThread,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,
   surchargeFor,
 };

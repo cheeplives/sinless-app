@@ -40,16 +40,21 @@ of why the decision was needed — and gains an **Applied** line saying what the
 code does now. Don't delete resolved entries; a re-run that finds the old
 behaviour back is a regression, and this is what it's measured against.
 
-## Status of the first round
+## Where things stand
 
-JC-001 … JC-023 were ruled on in
-[issue #27](https://github.com/cheeplives/sinless-app-beta/issues/27) and are
-implemented, except:
+**Every JC-001 … JC-025 is ruled on and implemented.** The rulings came from
+[issue #27](https://github.com/cheeplives/sinless-app-beta/issues/27) and the
+follow-up round.
 
-- **JC-006** stays OPEN — the owner asked for more specific information, and the
-  entry has been rewritten to ask stat by stat.
-- **JC-015** and **JC-018** are ruled as *no change*: the current behaviour is
-  accepted. JC-018 is held open for a second look once the rest has settled.
+Four are ruled *no change* — the current behaviour is accepted, and the entries
+record why so a later run doesn't re-litigate them: **JC-015** (unlimited reads
+on a members-only instance), **JC-018** (imported image URLs rely on the CSP),
+**JC-025** (no host mounts a Smartlink, so JC-009's third case is unreachable),
+and the picker half of **JC-008**.
+
+**JC-018 is the one to come back to.** It is marked RESOLVED but the owner asked
+to keep it in view for a second look once the rest settled; the entry says what
+to weigh.
 
 ---
 
@@ -124,13 +129,24 @@ implemented, except:
   weapons and armor are filtered. B) Owned — remove the equipped/active filters
   so everything counts. C) Intentional as-is: some gear is always "on you".
 - **Raised by:** P02
-- **RULING (owner only):** **A — carried.**
+- **RULING (owner only):** **A — carried.** Programs are the exception: they are
+  part of the deck and shouldn't need to be "carried" at all — they are either
+  loaded on it or they aren't.
 - **Applied:** Decks, drones and vehicles take the same permissive `carried !==
   false` flag misc gear uses, with a Carried toggle on their rows in both chargen
-  and the play sheet. Programs have no carried flag of their own — they are
-  software that runs on a deck — so they count exactly when at least one carried
-  deck exists. That last part is the one place the ruling needed
-  interpretation; say so if it should be otherwise.
+  and the play sheet.
+
+  Programs have no carried flag and don't get one. A program counts when it is
+  **loaded** onto the deck you're running, read from `play.decking.loaded` — the
+  same list the Decking tab's Load button writes. A program whose `I/O` never
+  occupies a thread (`N/A` or `No`) is never "loaded" in that sense; it runs
+  whenever the deck does, so it counts with it. `RULES.programNeedsThread` is
+  that predicate and both the Load button and the ZR rule call it, so they can't
+  drift. Stash the deck and nothing on it counts, loaded or not.
+
+  Nothing is loaded during creation, so only the always-on programs contribute
+  there. In the shipped data this is all academic — **no program has a non-zero
+  ZR** — but it decides the answer for homebrew ones.
 
 ## JC-005: No rig ever contributes gear ZR during chargen
 - **Status:** RESOLVED
@@ -151,7 +167,7 @@ implemented, except:
   writing the same `play.rigging.active_rig` the play sheet uses.
 
 ## JC-006: Mounted augments combine with mixed add-vs-max semantics
-- **Status:** OPEN — needs a per-stat decision
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` `mergeMountedAugments` (~L1382)
 - **Observed:** When a gear-mounted augment duplicates a body one, the two are
   combined differently depending on the stat:
@@ -170,22 +186,25 @@ implemented, except:
   | Physical damage reduction | **max** | |
   | Skill bonuses | **max** | but their *notes* concatenate, so the sheet lists both sources for one bonus |
 
-- **Question:** The owner asked for more specific information rather than a
-  blanket ruling, so this is now: **for each row above, is add or max correct?**
-  Two sharper sub-questions fall out of it:
-  1. Is the split meant to be *"quantities add, ratings cap"* — i.e. a thing you
-     have more of stacks, a thing you are better at doesn't? That rule explains
-     every row except skill bonuses.
-  2. Should a skill bonus that takes the max still list both sources in its
-     note? Today a character with Smartlink implanted *and* mounted reads as one
-     bonus with two explanations.
+  (That table is the state **before** the ruling — it's what the question was
+  about. Everything in the max column except `ballistic_armor_max` now adds.)
+
+- **Question:** For each row above, is add or max correct?
 - **Options:** A) Intentional — document the rule behind it. B) Uniform max.
   C) Uniform add. D) Per-stat, as ruled row by row above.
 - **Raised by:** P02
-- **RULING (owner only):** _
-- **Follow-up on ruling:** Whatever is decided needs a line in `docs/DATA.md`
-  under the mount conventions, since a player buying a second copy of an augment
-  for a helmet has no way to find this out today.
+- **RULING (owner only):** **C, with one exception — everything adds except
+  `ballistic_armor_max`.** That one is the only case where the max is forced.
+- **Applied:** `mergeMountedAugments` adds every field. The four that used to
+  cap — dodge, melee exploit actions, physical damage reduction and skill
+  bonuses — now sum, so a second copy of an augment does a second copy of the
+  work. `ballistic_armor_max` still takes the larger of the two, because it
+  isn't a quantity: it's the best *single* ballistic source, and ballistic armor
+  doesn't stack.
+
+  Skill-bonus notes already concatenated, and now that the bonus itself adds
+  they no longer read as two explanations for one number. Documented under the
+  mount conventions in `docs/DATA.md`.
 
 ## JC-007: Duplicate items are never deduplicated
 - **Status:** RESOLVED
@@ -434,7 +453,7 @@ implemented, except:
   measurement wouldn't have had this block active either way.
 
 ## JC-018: Imported image URLs are not restricted to data:
-- **Status:** OPEN — ruled *no change*, held for a second look
+- **Status:** RESOLVED — no change, but held for a second look
 - **Where:** `static/sheet.js` — the images card sets `src` from `play.images[].url`
 - **Observed:** Images added locally are re-encoded through a canvas and are
   always `data:` URLs. An **imported or shared** character's URLs are never
@@ -571,10 +590,10 @@ implemented, except:
 
 # Round two
 
-Raised while implementing the rulings above. Both are OPEN.
+Raised while implementing the rulings above, and ruled on in the same round.
 
 ## JC-024: Decks, programs, rigs, drones and vehicles bought in play still land in the chargen arrays
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/sheet.js` — `shDecking` (deck and program buys), `shRigging`
   (rig, drone and vehicle buys)
 - **Observed:** JC-010 moved play purchases of weapons and armor into
@@ -591,15 +610,32 @@ Raised while implementing the rulings above. Both are OPEN.
   decks/programs (personal kit) but not rigs/drones/vehicles (assets, arguably
   the group's).
 - **Raised by:** noticed while applying JC-010
-- **RULING (owner only):** _
-- **Follow-up on ruling:** (A) is the same shape of change as JC-010 — add the
-  arrays to `defaultCharacter().play.purchases`, append them in
-  `applyPlayAdvances`, and read the union in the Decking and Rigging tabs. The
-  deck and rig **active** selectors key on name, so they need no change. Mods
-  fitted to a play-bought deck or rig already live on the entry itself.
+- **RULING (owner only):** **A — finish the job.** There is a hard and fast line
+  between a character in the chargen process and anything that happens after
+  Finalize is pressed; nothing bought in play lands in a chargen array.
+- **Applied:** `play.purchases` gained `decks`, `programs`, `rigs`, `drones` and
+  `vehicles`, and `applyPlayAdvances` appends all five. That is now the complete
+  set — every purchasable category has a home there, and the comment on
+  `defaultCharacter().play.purchases` says to add to it when a new one appears.
+
+  The Decking and Rigging tabs read the joined list through `ownedDecks()`,
+  `ownedRigs()`, `ownedDrones()`, `ownedVehicles()` and `ownedPrograms()`, each
+  tagging entries with the array they live in so removal hits the right one. Two
+  things needed care beyond the pattern JC-010 established:
+
+  - **`unitStateKey`** keys a drone's or vehicle's damage tracks and link flag
+    by list position. It now indexes the *joined* list, which is also the order
+    CALC uses. Purchases append, so a chargen unit's key never moves and
+    existing saves keep their state.
+  - **Active deck / active rig** key on name rather than index, so they needed
+    no change — but the fallback that picks the first owned one now walks the
+    joined list, so a character whose only deck was bought in play still has an
+    active one.
+
+  Undo covers all five, plus deck mods and rig mods.
 
 ## JC-025: No host in the shipped data can mount a Smartlink
-- **Status:** OPEN
+- **Status:** RESOLVED — no change
 - **Where:** `static/data.js` `augments` (Smartlink is `Type: "Headware"`);
   `armor` / `misc_gear` `Mount Types`
 - **Observed:** JC-009's ruling describes a Smartlink "installed as an augment
@@ -617,9 +653,15 @@ Raised while implementing the rulings above. Both are OPEN.
   C) JC-009 case (3) was hypothetical — leave the data alone and note that only
   Power Armor mounts one.
 - **Raised by:** noticed while applying issue #28 alongside JC-009
-- **RULING (owner only):** _
-- **Follow-up on ruling:** (A) is a one-cell data edit per host and needs a
-  `CACHE_VERSION` bump. (B) changes what an existing character's Smartlink
-  interacts with — `"More than 1 Eyeware augment requires Cybertechtronic Eyes"`
-  would start counting it — so it needs a P02 re-run. The engine side of JC-009
-  is already correct under any of the three.
+- **RULING (owner only):** **C — leave the data alone.** A Smartlink is not
+  available to helmets or Arwin Goggles, so JC-009's case (3) is simply
+  unreachable.
+- **Applied:** Nothing. The engine side of JC-009 stands and is correct: a
+  mounted Smartlink would follow its host if one could ever hold it, and today
+  only Power Armor (`Mount Types: Any`) can. P02-008 covers the implanted half
+  and says the mounted half isn't testable against the shipped data.
+- **If this is ever revisited:** adding `Smartlink` to a host's mount list is a
+  one-cell data edit — the grammar already takes augment names — plus a
+  `CACHE_VERSION` bump. Re-typing Smartlink as Eyeware would be the bigger
+  change: it would start counting toward "More than 1 Eyeware augment requires
+  Cybertechtronic Eyes" on every existing character, so it needs a P02 re-run.

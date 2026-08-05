@@ -1621,7 +1621,7 @@ function tabAugments(p) {
       // Cyber melee implants show their computed ½ STR + bonus damage number.
       const implantDmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
       const effectText = gun
-        ? [r.Effect || "", `${gun.Type}: Acc ${gun.Acc} · DMG ${gun.Dmg} · Ammo ${gun.Ammo} · ${gun.Modes} · Pen ${gun.Pen} · Rarity ${gun.Rarity}`].filter(Boolean).join(" · ")
+        ? [r.Effect || "", `${gun.Type}: Acc ${gun.Acc} · DMG ${gun.Dmg} · Ammo ${gun.Ammo} · ${gun.Modes} · Pen ${gun.Pen}${barrierBit(gun, gun.Bar)} · Rarity ${gun.Rarity}`].filter(Boolean).join(" · ")
         : [r.Effect || "", implantDmg !== "" ? `DMG ${implantDmg}` : ""].filter(Boolean).join(" · ");
       // Alpha grade: only augments that carry ZR can go bleeding-edge.
       const hasZr = !!(+r.ZR);

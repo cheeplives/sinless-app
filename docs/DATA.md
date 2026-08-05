@@ -127,7 +127,7 @@ call graphs.
 | `attribute_costs` | 29 | `Level` | Attribute point cost per level | rules |
 | `augments` | 154 | `Name` | Cyberware/bioware/Fashionware; attribute deltas, armor, `Type`, `Rarity`, `Quality` | rules, app, sheet, homebrew |
 | `fashionware_qualities` | 4 | `Quality` | Fashionware quality tiers, cost `Multiplier` | rules, app, sheet |
-| `cyberguns` | 4 | `Type` | Implanted gun frames | rules, app, sheet |
+| `cyberguns` | 4 | `Type` | Implanted gun frames; `Pen`, `Bar` | rules, app, sheet |
 | `deck_mods` | 4 | `Deck Mod` | Cyberdeck mods, `Slots` | rules, app, sheet |
 | `decks` | 8 | `Name` | Cyberdecks; `MCP`, `Threads`, `Core` | rules, app, sheet |
 | `drone_ballistic_weapons` | 9 | `Drone Ballistic Weapon` | Drone hardpoint ballistics | rules, app, sheet |
@@ -197,6 +197,11 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
   *Barrier* (`AP` is `"Pen +1, Barrier +1"`) while the column says `Bar`, and
   `AMMO_STAT_KEYS` in `rules.js` maps both spellings to the same key. Formatting
   for every stat line goes through `barrierBit()` in `app.js`.
+- **`cyberguns`** — carries the same `Bar` column, set to the mean Barrier of the
+  weapons-table `Type` each frame corresponds to (Palm Pistol → `PistolLt`,
+  Forearm SMG → `SMG`, Heavy Pistol → `PistolHvy`, Shotgun → `Shotgun`), rounding
+  a half down. `Pen` is deliberately *not* averaged — those values predate the
+  Barrier work and stand on their own.
 - **`weapon_mods`** — `Laser Sight` and `Flashlight` each appear **twice**, once
   per `Slot` (Overbarrel / Underbarrel). Identity is really `Slot`+`Modification`,
   but `findRow(data.weapon_mods, "Modification", …)` (`rules.js:1659`) returns the

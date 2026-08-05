@@ -1705,7 +1705,7 @@ function shOverview(body) {
           // the source augment entry, since the gun row itself is shared data.
           const cgRow = { Type: "Cybergun", Weapon: cg.name, Damage: g.Dmg };
           const ammo = loadedAmmoFor(cg.src, cgRow);
-          const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen };
+          const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen, bar: g.Bar ?? "" };
           const shot = RULES.applyAmmoStats(base, ammo.mods);
           const bit = (label, key) => el("span",
             (ammo.row && String(shot[key]) !== String(base[key]))
@@ -1716,6 +1716,7 @@ function shOverview(body) {
             stats: el("td", { class: "sub" },
               "Cybergun", weaponSkillDice(cg.name, "Cybergun", shot.acc, []),
               " · ", bit("Acc", "acc"), " · ", bit("DMG", "damage"), " · ", bit("Pen", "pen"),
+              base.bar ? " · " : null, base.bar ? bit("Barrier", "bar") : null,
               ` · Mag ${g.Ammo}`,
               el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab"),
               ammo.notes.length
@@ -3057,7 +3058,7 @@ function shGear(body) {
         el("td", {}, el("b", {}, cg.name + " (smart)"),
           el("div", { class: "sub" }, "Implanted cyberarm gun — configured on the Augments tab")),
         el("td", { class: "sub" },
-          `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · ${g.Modes} · Pen ${g.Pen} · Ammo ${g.Ammo}`),
+          `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · ${g.Modes} · Pen ${g.Pen}${barrierBit(g, g.Bar)} · Ammo ${g.Ammo}`),
         el("td", { class: "sub" }, "—"),
         el("td", {}, "")));
     });
@@ -5198,7 +5199,7 @@ function buildMarkdown() {
     });
     cyberguns.forEach(cg => {
       const g = cg.gun;
-      L.push(`- **${cg.name}** (smart) — DMG ${g.Dmg} · Acc ${g.Acc} · Pen ${g.Pen} · Ammo ${g.Ammo} · ${g.Modes}`);
+      L.push(`- **${cg.name}** (smart) — DMG ${g.Dmg} · Acc ${g.Acc} · Pen ${g.Pen}${barrierBit(g, g.Bar)} · Ammo ${g.Ammo} · ${g.Modes}`);
     });
     grantedWeapons.forEach(gw => {
       const line = gw.stats

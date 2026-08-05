@@ -91,8 +91,8 @@ Load a fixture into chargen with this, substituting the filename:
   overspend message.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P04-007: Reducing the bond count destroys the extra slot's data
-- **Type:** leak
+### P04-007: Reducing the bond count hides the extra slot, it doesn't destroy it
+- **Type:** correctness
 - **Steps:**
   1. Reload `speaker-spirits.json`.
   2. Enter play mode (P00 §5) and click the **Magic** tab.
@@ -101,16 +101,36 @@ Load a fixture into chargen with this, substituting the filename:
   5. Raise it back to 2.
 - **Check:**
 
-      (async () => { CHAR.finalized = true; ensurePlay(); CHAR.speaker.bonds = 2; CHAR.play.bond_slots = [{ spirit: "Terra Factorem", force: 5, favors: 3 }, { spirit: "Pacha Mama", force: 4, favors: 2 }]; await recalc(); sheetTab = "magic"; renderSheet(); const before = JSON.parse(JSON.stringify(CHAR.play.bond_slots)); CHAR.speaker.bonds = 1; await recalc(); renderSheet(); const shrunk = JSON.parse(JSON.stringify(CHAR.play.bond_slots)); CHAR.speaker.bonds = 2; await recalc(); renderSheet(); return { before, shrunk, restored: CHAR.play.bond_slots }; })()
+      (async () => { CHAR.finalized = true; ensurePlay(); CHAR.speaker.bonds = 2; CHAR.play.bond_slots = [{ spirit: "Terra Factorem", force: 5, favors: 3 }, { spirit: "Pacha Mama", force: 4, favors: 2 }]; await recalc(); sheetTab = "magic"; renderSheet(); const before = JSON.parse(JSON.stringify(CHAR.play.bond_slots)); CHAR.speaker.bonds = 1; await recalc(); renderSheet(); const shrunk = JSON.parse(JSON.stringify(CHAR.play.bond_slots)); const tiles = document.querySelectorAll(".sh-bond-tile").length; const held = [...document.querySelectorAll(".hint")].some(n => /Held for 1 bond slot/.test(n.textContent)); CHAR.speaker.bonds = 2; await recalc(); renderSheet(); return { before, shrunk, tiles, held, restored: CHAR.play.bond_slots }; })()
 
-- **Expected:** `before` has two populated slots; `shrunk` has one; `restored`
-  has two but the **second is empty** — the Pacha Mama bond, its Force and its
-  Favors are gone permanently.
-- **Note:** The slot array is truncated to `speaker.bonds` on every render, so
-  the data is destroyed rather than hidden. Losing a bond temporarily — through
-  a rules change, a mis-click, or an undo — silently deletes play state. This is
-  a data-loss bug, not a judgement call: record it as **FAIL** and file a JC only
-  if you believe truncation is intended.
+- **Expected:** `before`, `shrunk` and `restored` are all the **same two
+  populated slots** — Pacha Mama keeps Force 4 and 2 favors throughout. While
+  the count is 1, `tiles` is `1` and `held` is `true`: the dormant slot is
+  hidden behind a "Held for 1 bond slot(s) you no longer have" hint, not
+  deleted.
+- **Note:** The slot array is play state and only ever grows. `speaker.bonds`
+  decides how much of it is live; every consumer bounds itself with
+  `RULES.speakerBondCount()`. Until 2026-08-05 the Magic render truncated the
+  array instead, which destroyed the bond permanently — see P04-011 for the
+  rules bug that hid behind that truncation.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P04-011: Bond Control exploits track the bonds bought, not the array length
+- **Type:** correctness
+- **Steps:** none — pure engine, no render.
+- **Check:**
+
+      (async () => { const ctl = c => (((c.combat || {}).exploit_actions) || []).filter(a => a.kind === "Control").reduce((n, a) => n + a.count, 0); const base = JSON.parse(JSON.stringify(CHAR)); const build = bonds => { const c = JSON.parse(JSON.stringify(base)); c.finalized = true; c.speaker.bonds = bonds; c.play = c.play || {}; c.play.bond_slots = [{ spirit: "Terra Factorem", force: 5, favors: 3 }, { spirit: "Pacha Mama", force: 4, favors: 2 }]; return c; }; return { at0: ctl(RULES.calculate(RULES.mergeDefaults(build(0)))), at1: ctl(RULES.calculate(RULES.mergeDefaults(build(1)))), at2: ctl(RULES.calculate(RULES.mergeDefaults(build(2)))), at9: ctl(RULES.calculate(RULES.mergeDefaults(build(9)))) }; })()
+
+- **Expected:** `{ "at0": 0, "at1": 2, "at2": 4, "at9": 4 }` — two Control
+  exploit actions per **live** bond, and a hand-edited count above 4 clamps to
+  the four bonds the cost table actually sells.
+- **Note:** Load `speaker-spirits.json` in chargen first; the case clones
+  whatever `CHAR` holds and only overrides the bond fields. Nothing renders, on
+  purpose: before 2026-08-05 `deriveExploitActions` counted `bond_slots`
+  entries directly, so a character who dropped 2→1 kept all four exploits until
+  some view happened to repaint and trim the array. A derived number that
+  depends on which tab you last opened is the bug, not the count itself.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
@@ -172,6 +192,7 @@ Load a fixture into chargen with this, substituting the filename:
 ## Wrapping up
 
 Expected JUDGEMENT: **P04-008**. P04-004 was ruled on (JC-020) and is now a
-correctness case. Expected **FAIL: P04-007** —
-that one is a genuine data-loss bug and should be reported as soon as you see it
-rather than held until the end of the session.
+correctness case. P04-007 was a genuine data-loss bug and is fixed as of
+2026-08-05 — it and its companion P04-011 are both plain correctness cases now,
+and either one failing means bond slots have gone back to being trimmed in
+place.

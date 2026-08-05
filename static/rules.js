@@ -177,6 +177,16 @@ const CORE_EXPLOIT_COUNT = { Single: 1, Double: 2, Triple: 3, Quad: 4 };
 const SUMMON_CONTROL_SPELLS = ["Create Darkenbeast", "Summon Elemental", "Bound Servant"];
 // A Speaker gets two control exploit actions per spirit slotted in a bond slot.
 const SPEAKER_BOND_CONTROL_EXPLOITS = 2;
+// Bonds are bought in chargen, 0-4, and that count is the ONLY authority on how
+// many bond slots a character has. play.bond_slots may legitimately hold more
+// entries than that — dropping the count in chargen and raising it again has to
+// give the spirit back, so the extras are kept dormant rather than deleted.
+// Every consumer bounds itself with speakerBondCount(); nothing trims the array.
+const SPEAKER_BOND_MAX = 4;
+function speakerBondCount(character) {
+  return Math.max(0, Math.min(SPEAKER_BOND_MAX,
+    toInt(asNumber(((character || {}).speaker || {}).bonds))));
+}
 const COVERT_SYNTHSKIN_DODGE_BONUS = 1;
 const PERFECT_SITUATIONAL_AWARENESS_BONUS = 3;   // +3d dodge AND soak (amp power)
 const GYROMOUNT_RECOIL_BONUS = 2;
@@ -2271,7 +2281,7 @@ function budgetMagic(character, data, magicType, warnings, errors) {
     for (const row of data.speaker_bond_costs) {
       bondCostByIndex[toInt(Number(row.Bond))] = toInt(asNumber(row.Cost));
     }
-    const bondCount = Math.max(0, Math.min(4, toInt(asNumber(character.speaker.bonds))));
+    const bondCount = speakerBondCount(character);
     for (let i = 1; i <= bondCount; i++) bondSpent += bondCostByIndex[i] || 0;
   }
 
@@ -2968,8 +2978,12 @@ function deriveExploitActions(character, data, magicType, augments, amp) {
     }
   }
   // … and two per spirit slotted in a Speaker/Archmage bond slot (play state).
+  // Bounded by the bonds actually bought: a slot beyond that count is dormant
+  // state kept for a restore, not a bond the character can call on.
   if (magicType === "Speaker" || magicType === "Archmage") {
-    for (const bond of (character.play || {}).bond_slots || []) {
+    const slots = ((character.play || {}).bond_slots || [])
+      .slice(0, speakerBondCount(character));
+    for (const bond of slots) {
       if (bond && bond.spirit) actions.push({ kind: "Control",
         count: SPEAKER_BOND_CONTROL_EXPLOITS, source: bond.spirit });
     }
@@ -3910,6 +3924,7 @@ return {
   ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_FITS,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
+  SPEAKER_BOND_MAX, speakerBondCount,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,
   surchargeFor,
 };

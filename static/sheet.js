@@ -4232,13 +4232,17 @@ function shMagic(body) {
     }
 
     // --- Bonds (#27): place spirits in bond slots and track favors
-    const bondCount = s.bonds || 0;
+    const bondCount = RULES.speakerBondCount(CHAR);
     card.append(el("h4", { class: "sh-h4" }, `Bonds — ${bondCount} slot(s), track favors owed`));
     if (!bondCount) card.append(el("p", { class: "hint" }, "No spirit bonds purchased in chargen."));
+    // Grow to the bought count, never shrink. Dropping Bonds in chargen and
+    // raising it again must hand the spirit back, so slots past the count are
+    // kept dormant and simply not rendered — the array is play state, and the
+    // count alone decides how much of it is live (see speakerBondCount).
     while (play.bond_slots.length < bondCount) play.bond_slots.push({ spirit: "", force: 0, favors: 0 });
-    if (play.bond_slots.length > bondCount) play.bond_slots.length = bondCount;
+    const dormant = play.bond_slots.slice(bondCount).filter(b => b && b.spirit);
     const bondTiles = el("div", { class: "sh-bond-tiles" });
-    play.bond_slots.forEach((bond, bi) => {
+    play.bond_slots.slice(0, bondCount).forEach((bond, bi) => {
       const sel = el("select", { onchange: e => { bond.spirit = e.target.value; playChanged(); } },
         el("option", { value: "" }, "— empty —"),
         ...s.relationships.map(n => el("option", { value: n }, n)));
@@ -4263,6 +4267,11 @@ function shMagic(body) {
       bondTiles.append(tile);
     });
     if (bondCount) card.append(bondTiles);
+    // Say so out loud, otherwise a dropped bond looks like lost data.
+    if (dormant.length) card.append(el("p", { class: "hint" },
+      `Held for ${dormant.length} bond slot(s) you no longer have: `
+      + dormant.map(b => b.spirit).join(" · ")
+      + ". Raise Bonds in chargen to get them back — nothing has been deleted."));
 
     if (CHAR.magic.archmage_bind) card.append(statLine("Bound spirit (chargen)", "yes (15 Force)"));
     body.append(card);
@@ -5380,7 +5389,10 @@ function buildMarkdown() {
       L.push("**Infusions:** " + CHAR.speaker.infusions.join(" · "));
     // Bound spirits carry their Force and the services they're currently owed
     // for; the full writeup stays in the app rather than bloating the export.
-    for (const [bi, bond] of (play.bond_slots || []).entries()) {
+    // Only the bonds actually bought — dormant slots past the count are held
+    // for a restore, not bonds this character has.
+    const liveBonds = (play.bond_slots || []).slice(0, RULES.speakerBondCount(CHAR));
+    for (const [bi, bond] of liveBonds.entries()) {
       if (!bond.spirit) continue;
       const row = DATA.tables.speaker_spirits.find(x => x.Spirit === bond.spirit) || {};
       const names = parseSpiritServices(row["Bound Services"])

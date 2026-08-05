@@ -1,0 +1,200 @@
+# P13 — Readability and usability at tablet and desktop sizes
+
+**Preconditions for every case:** P00 complete.
+**Effort:** 45–60 min. **Fixture:** `kitchen-sink-final.json` — it is the
+densest character in the set, which is what makes layout problems visible.
+
+The app is used on tablets. This pass measures whether it is comfortable there,
+at five viewports covering 11-inch and 13-inch devices in both orientations plus
+a desktop baseline.
+
+**Measure, do not eyeball.** Screenshots time out intermittently on this app and
+"looks fine" is not a finding anyone can act on. Every case below returns numbers.
+Where a case genuinely is a matter of taste, it says so and routes to JUDGEMENT.
+
+## The viewports
+
+| Label | Size | Device |
+|---|---|---|
+| `11-portrait` | 834 × 1194 | 11″ iPad Pro, portrait |
+| `11-landscape` | 1194 × 834 | 11″ iPad Pro, landscape |
+| `13-portrait` | 1024 × 1366 | 12.9/13″ iPad Pro, portrait |
+| `13-landscape` | 1366 × 1024 | 12.9/13″ iPad Pro, landscape |
+| `desktop` | 1280 × 800 | baseline for comparison |
+
+Set each with the `resize_window` tool, passing `width` and `height` explicitly.
+Re-run the measurement block after every resize.
+
+## Setup
+
+Load the fixture and install the measurement helper once:
+
+```js
+(async () => { window.confirm = () => true; window.alert = () => {}; const raw = await (await fetch("docs/qa/fixtures/kitchen-sink-final.json", { cache: "reload" })).json(); await openCharacter(RULES.mergeDefaults(raw)); window.__qaMeasure = async (scope) => { const sel = scope === "chargen" ? "#app" : "#sheet"; const tabs = scope === "chargen" ? ["stats","weapons","gear"] : ["overview","gear","kismet"]; const out = { viewport: window.innerWidth + "x" + window.innerHeight }; for (const t of tabs) { if (scope === "chargen") { activeTab = t; await recalc(); renderTabs(); renderPanel(); } else { sheetTab = t; renderSheet(); } await new Promise(r => setTimeout(r, 80)); const b = [...document.querySelectorAll(sel + " button")].map(x => x.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0); out[t] = { buttons: b.length, minH: b.length ? Math.min(...b.map(r => Math.round(r.height))) : null, under32h: b.filter(r => r.height < 32).length, under44h: b.filter(r => r.height < 44).length, overflow: document.documentElement.scrollWidth > window.innerWidth + 1, scrollW: document.documentElement.scrollWidth }; } return out; }; return "ready"; })()
+```
+
+---
+
+## Horizontal overflow
+
+### P13-001: No viewport scrolls the page sideways
+- **Type:** usability
+- **Steps:** for each of the five viewports, resize and run the Check.
+- **Check:**
+
+      window.__qaMeasure("play")
+
+- **Expected:** `overflow` is `false` on every tab at every viewport, and
+  `scrollW` never exceeds the viewport width.
+- **Note:** Observed at 834 × 1194: `scrollW` 819 against a viewport of 834, no
+  overflow on Overview, Gear or Kismet. The page body must never scroll
+  sideways; wide tables are expected to scroll **inside their own container**
+  instead, which P13-003 checks.
+- **Result (record per viewport):**
+  - `11-portrait` [ ] PASS [ ] FAIL — `overflow`: ______
+  - `11-landscape` [ ] PASS [ ] FAIL — `overflow`: ______
+  - `13-portrait` [ ] PASS [ ] FAIL — `overflow`: ______
+  - `13-landscape` [ ] PASS [ ] FAIL — `overflow`: ______
+  - `desktop` [ ] PASS [ ] FAIL — `overflow`: ______
+
+### P13-002: The chargen side is also clean
+- **Type:** usability
+- **Check:**
+
+      (async () => { CHAR.finalized = false; await recalc(); showActiveTab(); return await window.__qaMeasure("chargen"); })()
+
+- **Expected:** `overflow` is `false` on Stats, Weapons and Gear at every
+  viewport. The Stats tab is the densest screen in the app — if anything
+  overflows, it will be that one.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P13-003: Wide tables scroll inside their own container
+- **Type:** usability
+- **Check:**
+
+      (() => { const wraps = [...document.querySelectorAll("#sheet .scroll-x, #sheet [style*='overflow']")]; const tables = [...document.querySelectorAll("#sheet table")]; return { wrappedTables: tables.filter(t => t.closest(".scroll-x") || (t.parentElement && /auto|scroll/.test(getComputedStyle(t.parentElement).overflowX))).length, totalTables: tables.length, wrappers: wraps.length }; })()
+
+- **Expected:** every table that is wider than its parent sits inside a
+  horizontally scrollable wrapper (`wrapScrollableTables()` in `sheet.js` does
+  this). `wrappedTables` should equal the number of wide tables, not necessarily
+  `totalTables` — narrow tables need no wrapper.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
+## Touch targets
+
+### P13-004: Controls are large enough to tap
+- **Type:** usability
+- **Check:**
+
+      window.__qaMeasure("play")
+
+- **Expected (guideline):** interactive controls should be at least **44 px**
+  tall for comfortable touch, and no smaller than **32 px**.
+- **Observed today at every tested viewport** (834 × 1194, 1194 × 834,
+  1024 × 1366 — the numbers are identical because the controls are sized in
+  fixed pixels and do not respond to viewport):
+
+  | Tab | Visible buttons | Smallest height | Under 32 px | Under 44 px |
+  |---|---|---|---|---|
+  | Overview | 65 | **11 px** | 47 | 64 |
+  | Gear | 63 | **11 px** | 48 | 62 |
+  | Kismet | 64 | **14 px** | 48 | 63 |
+
+  On the chargen side the Stats tab shows **107 of 108** buttons under 32 px,
+  with a minimum height of 22 px.
+
+- **Note:** This is the headline usability finding of the pass, and it is a
+  **design judgement, not a bug** — the app is dense by intention and the small
+  controls are mostly stepper `–`/`+` pairs. Mark **JUDGEMENT** and file a JC
+  covering: should stepper hit areas be enlarged on touch pointers (e.g. via
+  `@media (pointer: coarse)`) without changing the desktop layout?
+
+  Record the numbers you observe rather than copying the table above — if they
+  have changed, that is the interesting part.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P13-005: Controls do not overlap
+- **Type:** usability
+- **Check:**
+
+      (() => { const b = [...document.querySelectorAll("#sheet button")].map(x => ({ r: x.getBoundingClientRect(), t: x.textContent.trim().slice(0, 8) })).filter(x => x.r.width > 0); const hits = []; for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) { const a = b[i].r, c = b[j].r; if (a.left < c.right - 1 && c.left < a.right - 1 && a.top < c.bottom - 1 && c.top < a.bottom - 1) hits.push([b[i].t, b[j].t]); } return { overlaps: hits.length, sample: hits.slice(0, 5) }; })()
+
+- **Expected:** `{ "overlaps": 0, "sample": [] }`
+- **Note:** Overlapping tap targets mean a mis-tap fires the wrong action —
+  that is a real FAIL at any viewport, not a taste question.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
+## Legibility
+
+### P13-006: No text is rendered below a readable size
+- **Type:** usability
+- **Check:**
+
+      (() => { const nodes = [...document.querySelectorAll("#sheet *, #app *")].filter(e => e.childElementCount === 0 && e.textContent.trim() && e.getBoundingClientRect().width > 0); const sizes = nodes.map(e => parseFloat(getComputedStyle(e).fontSize)); return { min: Math.min(...sizes), max: Math.max(...sizes), under12: sizes.filter(s => s < 12).length, under11: sizes.filter(s => s < 11).length, sampled: sizes.length }; })()
+
+- **Expected:** `under11` is `0`. Anything below 11 px is hard to read on a
+  tablet held at arm's length.
+- **Note:** Observed on the chargen side: minimum 11.5 px, with 5 elements under
+  12 px, out of 65 sampled. That is borderline rather than broken — record the
+  numbers and mark **JUDGEMENT** if `under12` is non-zero but `under11` is zero.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P13-007: Both themes are legible
+- **Type:** usability
+- **Steps:**
+  1. Switch the app between light and dark using its own theme control.
+  2. Re-run P13-006 in each.
+- **Check:**
+
+      (() => ({ theme: document.documentElement.getAttribute("data-theme"), scheme: document.documentElement.getAttribute("data-scheme"), bodyBg: getComputedStyle(document.body).backgroundColor, bodyFg: getComputedStyle(document.body).color }))()
+
+- **Expected:** the attribute flips, and text remains readable against the
+  background in both. This one is a genuine visual judgement — if you cannot
+  assess contrast reliably, mark **BLOCKED** rather than guessing.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
+## Navigation reachability
+
+### P13-008: Every tab is reachable at every viewport
+- **Type:** usability
+- **Check:**
+
+      (() => { const strip = document.querySelector("#sheet .sheet-tabs") || document.querySelector("#sheet nav") || document.querySelector("#workspace-tabs"); if (!strip) return "no tab strip found"; const r = strip.getBoundingClientRect(); const tabs = [...strip.querySelectorAll("button, a")].map(t => t.getBoundingClientRect()); return { stripWidth: Math.round(r.width), viewport: window.innerWidth, tabs: tabs.length, offscreen: tabs.filter(t => t.right > window.innerWidth + 1 || t.left < -1).length, scrollable: /auto|scroll/.test(getComputedStyle(strip).overflowX) }; })()
+
+- **Expected:** `offscreen` is `0`, **or** `scrollable` is `true` so the
+  overflowing tabs can be reached by swiping.
+- **Note:** A tab that is both offscreen and in a non-scrollable strip is
+  unreachable — a hard FAIL. Check this at `11-portrait` especially, the
+  narrowest viewport.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P13-009: The sticky header does not consume the screen in landscape
+- **Type:** usability
+- **Check:**
+
+      (() => { const h = document.querySelector("#sheet .sheet-head, #sheet header, #sheet .sticky"); if (!h) return "no sticky header found"; const r = h.getBoundingClientRect(); return { headerHeight: Math.round(r.height), viewportHeight: window.innerHeight, percent: Math.round((r.height / window.innerHeight) * 100) }; })()
+
+- **Expected:** `percent` is under 25 at the landscape viewports (834 px tall),
+  where vertical space is scarcest.
+- **Note:** Run this specifically at `11-landscape` and `13-landscape`. A header
+  eating a third of a short viewport is the classic tablet-landscape complaint.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
+## Wrapping up
+
+Report a table of the five viewports against P13-001, P13-004 and P13-008 — those
+three answer "can this be used on a tablet at all". The rest add detail.
+
+**P13-004 is expected JUDGEMENT** with substantial numbers behind it: most
+controls in the app are well under any touch guideline, uniformly across every
+viewport, because they are sized in fixed pixels. That is a deliberate density
+choice and the owner should rule on whether touch deserves a coarse-pointer
+override. Everything else should PASS on a healthy build.

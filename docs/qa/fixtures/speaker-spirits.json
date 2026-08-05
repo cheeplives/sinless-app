@@ -1,0 +1,131 @@
+{
+  "name": "QA Speaker",
+  "player": "",
+  "description": "",
+  "notes": "",
+  "house_rules": {
+    "zr": "classic",
+    "priorities": "classic",
+    "currency": "zuzus",
+    "ew": "classic",
+    "engineering": "classic"
+  },
+  "priorities": {
+    "heritage": 1,
+    "magic": 4,
+    "attributes": 3,
+    "skills": 2,
+    "resources": 0
+  },
+  "heritage": {
+    "type": "Human",
+    "uplift_type": "",
+    "features": [],
+    "blessing_plus3": "",
+    "blessing_plus1": "",
+    "specialization_pool": "",
+    "heavy_torso_mounts": [
+      "",
+      ""
+    ],
+    "no_head_mount": "",
+    "snake_attack": "bite"
+  },
+  "attributes": {
+    "Strength": 1,
+    "Body": 1,
+    "Reaction": 1,
+    "Intelligence": 1,
+    "Willpower": 1,
+    "Charisma": 1
+  },
+  "cha_pool_choice": "Brawn",
+  "skills": {
+    "Conjuring": 5,
+    "Athletics": 2
+  },
+  "skill_specializations": {},
+  "ritual_skills": {},
+  "knowledge_skills": [],
+  "etiquettes": {},
+  "martial_arts": [],
+  "magic": {
+    "chosen_type": "Speaker",
+    "school": "",
+    "spells": [],
+    "amp_powers": [],
+    "archmage_bind": false
+  },
+  "speaker": {
+    "relationships": [
+      "Terra Factorem",
+      "Pacha Mama"
+    ],
+    "bonds": 2,
+    "infusions": []
+  },
+  "augments": [],
+  "weapons": [],
+  "armor": [],
+  "decks": [],
+  "programs": [],
+  "hacking_rating": 0,
+  "rigs": [],
+  "drones": [],
+  "vehicles": [],
+  "gear": [],
+  "lifestyle": {
+    "name": "",
+    "months": 0
+  },
+  "lifestyles": [
+    {
+      "name": "Low",
+      "months": 1
+    }
+  ],
+  "finalized": false,
+  "play": {
+    "cash": 0,
+    "cash_rolled": false,
+    "starting_cash": 0,
+    "cash_log": [],
+    "lifestyles": [],
+    "lifestyles_seeded": false,
+    "kismet": 0,
+    "kismet_earned": 0,
+    "kismet_log": [],
+    "boons_spent": 0,
+    "major_boons_spent": 0,
+    "physical_damage": 0,
+    "stun_damage": 0,
+    "initiative": 0,
+    "dodge_dice": 0,
+    "replicant_lifespan_months": null,
+    "pool_used": {},
+    "effects": [],
+    "modifiers": [],
+    "notes": "",
+    "attribute_advances": {},
+    "skill_advances": {},
+    "martial_art_advances": {},
+    "ritual_advances": {},
+    "zp_advances": 0,
+    "spell_force_advances": {},
+    "purchases": {
+      "gear": [],
+      "augments": [],
+      "amp_powers": [],
+      "spells": [],
+      "hacking_levels": 0
+    },
+    "decking": {
+      "active_deck": "",
+      "loaded": []
+    },
+    "rigging": {
+      "active_rig": "",
+      "units": {}
+    }
+  }
+}

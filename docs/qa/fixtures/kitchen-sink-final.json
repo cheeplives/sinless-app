@@ -1,0 +1,196 @@
+{
+  "name": "QA Kitchen Sink",
+  "player": "QA",
+  "description": "",
+  "notes": "",
+  "house_rules": {
+    "zr": "classic",
+    "priorities": "classic",
+    "currency": "zuzus",
+    "ew": "classic",
+    "engineering": "classic"
+  },
+  "priorities": {
+    "heritage": 0,
+    "magic": 3,
+    "attributes": 4,
+    "skills": 2,
+    "resources": 1
+  },
+  "heritage": {
+    "type": "Human",
+    "uplift_type": "",
+    "features": [],
+    "blessing_plus3": "",
+    "blessing_plus1": "",
+    "specialization_pool": "",
+    "heavy_torso_mounts": [
+      "",
+      ""
+    ],
+    "no_head_mount": "",
+    "snake_attack": "bite"
+  },
+  "attributes": {
+    "Strength": 5,
+    "Body": 5,
+    "Reaction": 1,
+    "Intelligence": 4,
+    "Willpower": 4,
+    "Charisma": 3
+  },
+  "cha_pool_choice": "Brawn",
+  "skills": {
+    "Firearms": 5,
+    "Athletics": 3,
+    "Sorcery": 4,
+    "Melee Weapons": 2
+  },
+  "skill_specializations": {
+    "Firearms": {
+      "on": true,
+      "text": "Rifles"
+    }
+  },
+  "ritual_skills": {},
+  "knowledge_skills": [
+    {
+      "name": "Street Rumours",
+      "points": 3
+    }
+  ],
+  "etiquettes": {
+    "Street": 2
+  },
+  "martial_arts": [],
+  "magic": {
+    "chosen_type": "Mage",
+    "school": "Incantor",
+    "spells": [
+      {
+        "name": "Create Barrier",
+        "force": 4
+      }
+    ],
+    "amp_powers": [],
+    "archmage_bind": false
+  },
+  "speaker": {
+    "relationships": [],
+    "bonds": 0,
+    "infusions": []
+  },
+  "augments": [
+    {
+      "name": "Smartlink",
+      "count": 1,
+      "target": "",
+      "slotted": false,
+      "alpha": false
+    }
+  ],
+  "weapons": [
+    {
+      "name": "Kalishnikov A-80",
+      "smart": true,
+      "mods": [],
+      "equipped": true,
+      "qty": 1,
+      "ammo": "AP"
+    },
+    {
+      "name": "Katana",
+      "smart": false,
+      "mods": [],
+      "equipped": true,
+      "qty": 1
+    }
+  ],
+  "armor": [],
+  "decks": [],
+  "programs": [],
+  "hacking_rating": 0,
+  "rigs": [],
+  "drones": [],
+  "vehicles": [],
+  "gear": [
+    {
+      "name": "AP",
+      "qty": 20,
+      "carried": true,
+      "carried_qty": 20
+    }
+  ],
+  "lifestyle": {
+    "name": "",
+    "months": 0
+  },
+  "lifestyles": [
+    {
+      "name": "Low",
+      "months": 2
+    }
+  ],
+  "finalized": true,
+  "play": {
+    "cash": 1500,
+    "cash_rolled": true,
+    "starting_cash": 1500,
+    "cash_log": [
+      {
+        "label": "Starting cash",
+        "delta": 1500
+      }
+    ],
+    "lifestyles": [],
+    "lifestyles_seeded": false,
+    "kismet": 12,
+    "kismet_earned": 30,
+    "kismet_log": [
+      {
+        "label": "Strength 5 -> 6",
+        "delta": -6,
+        "undo": {
+          "kind": "attribute",
+          "name": "Strength"
+        }
+      }
+    ],
+    "boons_spent": 0,
+    "major_boons_spent": 0,
+    "physical_damage": 4,
+    "stun_damage": 2,
+    "initiative": 0,
+    "dodge_dice": 0,
+    "replicant_lifespan_months": null,
+    "pool_used": {},
+    "effects": [],
+    "modifiers": [],
+    "notes": "",
+    "attribute_advances": {
+      "Strength": 1
+    },
+    "skill_advances": {
+      "Firearms": 1
+    },
+    "martial_art_advances": {},
+    "ritual_advances": {},
+    "zp_advances": 0,
+    "spell_force_advances": {},
+    "purchases": {
+      "gear": [],
+      "augments": [],
+      "amp_powers": [],
+      "spells": [],
+      "hacking_levels": 0
+    },
+    "decking": {
+      "active_deck": "",
+      "loaded": []
+    },
+    "rigging": {
+      "active_rig": "",
+      "units": {}
+    }
+  }
+}

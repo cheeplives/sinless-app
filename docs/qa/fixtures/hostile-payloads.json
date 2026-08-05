@@ -1,0 +1,155 @@
+{
+  "name": "QA Hostile \"><img src=x onerror=window.__xss=1>",
+  "player": "\"><img src=x onerror=window.__xss=1>",
+  "description": "\"><img src=x onerror=window.__xss=1>",
+  "notes": "\"><img src=x onerror=window.__xss=1>",
+  "house_rules": {
+    "zr": "classic",
+    "priorities": "classic",
+    "currency": "zuzus",
+    "ew": "classic",
+    "engineering": "classic"
+  },
+  "priorities": {
+    "heritage": 1,
+    "magic": 0,
+    "attributes": 4,
+    "skills": 3,
+    "resources": 2
+  },
+  "heritage": {
+    "type": "Human",
+    "uplift_type": "",
+    "features": [],
+    "blessing_plus3": "",
+    "blessing_plus1": "",
+    "specialization_pool": "",
+    "heavy_torso_mounts": [
+      "",
+      ""
+    ],
+    "no_head_mount": "",
+    "snake_attack": "bite"
+  },
+  "attributes": {
+    "Strength": 1,
+    "Body": 1,
+    "Reaction": 1,
+    "Intelligence": 1,
+    "Willpower": 1,
+    "Charisma": 1
+  },
+  "cha_pool_choice": "Brawn",
+  "skills": {},
+  "skill_specializations": {},
+  "ritual_skills": {},
+  "knowledge_skills": [
+    {
+      "name": "\"><img src=x onerror=window.__xss=1>",
+      "points": 1
+    }
+  ],
+  "etiquettes": {},
+  "martial_arts": [],
+  "magic": {
+    "chosen_type": "Amp",
+    "school": "",
+    "spells": [],
+    "amp_powers": [],
+    "archmage_bind": false
+  },
+  "speaker": {
+    "relationships": [],
+    "bonds": 0,
+    "infusions": []
+  },
+  "augments": [],
+  "weapons": [],
+  "armor": [],
+  "decks": [],
+  "programs": [],
+  "hacking_rating": 0,
+  "rigs": [],
+  "drones": [],
+  "vehicles": [],
+  "gear": [],
+  "lifestyle": {
+    "name": "",
+    "months": 0
+  },
+  "lifestyles": [
+    {
+      "name": "Low",
+      "months": 1
+    }
+  ],
+  "finalized": true,
+  "play": {
+    "cash": 0,
+    "cash_rolled": false,
+    "starting_cash": 0,
+    "cash_log": [],
+    "lifestyles": [],
+    "lifestyles_seeded": false,
+    "kismet": 0,
+    "kismet_earned": 0,
+    "kismet_log": [],
+    "boons_spent": 0,
+    "major_boons_spent": 0,
+    "physical_damage": 0,
+    "stun_damage": 0,
+    "initiative": 0,
+    "dodge_dice": 0,
+    "replicant_lifespan_months": null,
+    "pool_used": {},
+    "effects": [
+      {
+        "name": "\"><img src=x onerror=window.__xss=1>"
+      }
+    ],
+    "modifiers": [
+      {
+        "name": "\"><img src=x onerror=window.__xss=1>",
+        "value": 1
+      }
+    ],
+    "notes": "\"><img src=x onerror=window.__xss=1>",
+    "attribute_advances": {},
+    "skill_advances": {},
+    "martial_art_advances": {},
+    "ritual_advances": {},
+    "zp_advances": 0,
+    "spell_force_advances": {},
+    "purchases": {
+      "gear": [],
+      "augments": [],
+      "amp_powers": [],
+      "spells": [],
+      "hacking_levels": 0
+    },
+    "decking": {
+      "active_deck": "",
+      "loaded": []
+    },
+    "rigging": {
+      "active_rig": "",
+      "units": {}
+    },
+    "images": [
+      {
+        "url": "javascript:window.__xss=1",
+        "caption": "\"><img src=x onerror=window.__xss=1>",
+        "big": false
+      },
+      {
+        "url": "https://example.invalid/beacon.png",
+        "caption": "beacon",
+        "big": false
+      }
+    ]
+  },
+  "unknownField": "\"><img src=x onerror=window.__xss=1>",
+  "alsoUnknown": {
+    "nested": "\"><img src=x onerror=window.__xss=1>"
+  }
+}

@@ -536,6 +536,25 @@ function defaultCharacter() {
       // creation, Back to Chargen shows the character as built, and Revert —
       // which drops the whole play layer — hands everything back.
       disposed: {},
+      // The same line one level down, for things fitted INTO a chargen item —
+      // weapon mods, armor extras, deck/rig/unit mods, mounted augments, a
+      // drone's weapons. Those live inside the chargen object, so play used to
+      // write straight into the creation record: pulling a chargen mod handed
+      // its cost back to the creation budget, and fitting one in play billed
+      // the creation budget for something play cash had already paid for.
+      //   [{ category, host, list, name, entry? }]
+      // `host` indexes the chargen array, `list` is the sublist key, and
+      // `entry` carries the whole object for lists that hold objects.
+      fitted_mods: [],
+      disposed_mods: [],
+      // Drones and vehicles get copy-on-write instead of per-mod records: a
+      // unit's mods reference its weapons BY INDEX, so removing one weapon
+      // renumbers the mods attached to the others. Tracking that as individual
+      // records would be a reindexing minefield. Instead the first play edit
+      // snapshots that unit's weapons+mods here and everything afterwards works
+      // on the copy, leaving the chargen unit untouched.
+      //   { "drones:0": { weapons: [...], mods: [...] } }
+      unit_overrides: {},
       // Everything bought after Finalize. There is a hard line between the
       // chargen record and anything that happens once Finalize is pressed:
       // nothing bought in play ever touches the arrays above. That is what lets
@@ -3463,6 +3482,38 @@ function applyPlayAdvances(character) {
     character.ritual_skills[name] = Math.min(PLAY_SKILL_RANK_CAP,
       toInt(asNumber(character.ritual_skills[name] || 0)) + advance(plus));
   }
+  // Sublist edits first: they address a chargen host by index, so they have to
+  // run before the item filter below reindexes anything. Removals before
+  // additions, so pulling a mod and fitting the same one again in play reads
+  // in the order it happened.
+  const modName = m => (m && typeof m === "object") ? m.name : m;
+  const hostSublist = record => {
+    const list = Array.isArray(character[(record || {}).category])
+      ? character[record.category][toInt(asNumber(record.host, -1))] : null;
+    if (!list || !record.list) return null;
+    return Array.isArray(list[record.list]) ? list[record.list]
+      : (list[record.list] = []);
+  };
+  for (const record of play.disposed_mods || []) {
+    const sub = hostSublist(record);
+    if (!sub) continue;
+    const i = sub.findIndex(m => modName(m) === record.name);
+    if (i >= 0) sub.splice(i, 1);
+  }
+  for (const record of play.fitted_mods || []) {
+    const sub = hostSublist(record);
+    if (sub) sub.push(record.entry !== undefined ? deepCopy(record.entry) : record.name);
+  }
+  // Whole-sublist overrides for drones and vehicles (see unit_overrides).
+  for (const [key, override] of Object.entries(play.unit_overrides || {})) {
+    const [category, at] = String(key).split(":");
+    const unit = Array.isArray(character[category])
+      ? character[category][toInt(asNumber(at, -1))] : null;
+    if (!unit || !override) continue;
+    if (Array.isArray(override.weapons)) unit.weapons = deepCopy(override.weapons);
+    if (Array.isArray(override.mods)) unit.mods = deepCopy(override.mods);
+  }
+
   // Chargen kit sold or lost in play drops out HERE, before the purchases are
   // appended, so the recorded indices still line up with the chargen arrays.
   // Only the finalized sheet loses it: `calculate` runs this on a copy and only

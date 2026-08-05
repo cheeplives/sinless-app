@@ -185,6 +185,7 @@ function ownedRigs()     { return ownedSplit("rigs", CHAR.rigs, CHAR.play.purcha
 function ownedDrones()   { return ownedSplit("drones", CHAR.drones, CHAR.play.purchases.drones); }
 function ownedVehicles() { return ownedSplit("vehicles", CHAR.vehicles, CHAR.play.purchases.vehicles); }
 function ownedPrograms() { return ownedSplit("programs", CHAR.programs, CHAR.play.purchases.programs); }
+function ownedGear()     { return ownedSplit("gear", CHAR.gear, CHAR.play.purchases.gear); }
 
 /* Flat views for read-only consumers. Same filtering — anything that reads
  * these is looking at what the character HAS, and a sold weapon isn't it. */
@@ -299,13 +300,28 @@ function removeCountedEntry(list, name, countKey) {
   else list.splice(i, 1);
   return true;
 }
-function removeFromSublist(hosts, hostName, key, name) {
-  const host = hosts.find(h => h.name === hostName
-    && ((h[key] || []).some(x => (x && x.name) === name || x === name)));
-  if (!host) return false;
-  const i = host[key].findIndex(x => (x && x.name) === name || x === name);
-  host[key].splice(i, 1);
-  return true;
+/* Undoing a FITTING (the ledger's "Fitted X to Y" / "Mounted X on Y" rows).
+ *
+ * Hosts are found by name, because object identity doesn't survive a save/load
+ * round trip. On a chargen host the fitting is a play.fitted_mods record, so
+ * undoing it drops that record rather than touching the chargen item — which
+ * is the whole point, and what the old direct splice got wrong. */
+function removeFromSublist(entries, hostName, key, name) {
+  const play = CHAR.play;
+  play.fitted_mods = play.fitted_mods || [];
+  for (const entry of entries) {
+    if (entry.ref.name !== hostName) continue;
+    if (!entry.inPlay) {
+      const i = play.fitted_mods.findIndex(r => r.category === entry.category
+        && r.host === entry.i && r.list === key && r.name === name);
+      if (i >= 0) { play.fitted_mods.splice(i, 1); return true; }
+      continue;
+    }
+    const arr = entry.ref[key] || [];
+    const i = arr.findIndex(x => sublistName(x) === name);
+    if (i >= 0) { arr.splice(i, 1); return true; }
+  }
+  return false;
 }
 const CASH_UNDO = {
   weapon:    u => removeNamedEntry(CHAR.play.purchases.weapons, u.name),
@@ -333,13 +349,12 @@ const CASH_UNDO = {
     p.hacking_levels -= 1;
     return true;
   },
-  weapon_mod:  u => removeFromSublist(allWeapons(), u.host, "mods", u.name),
-  armor_extra: u => removeFromSublist(allArmor(), u.host, "extras", u.name),
-  deck_mod:    u => removeFromSublist(allDecks(), u.host, "mods", u.name),
-  rig_mod:     u => removeFromSublist(allRigs(), u.host, "mods", u.name),
+  weapon_mod:  u => removeFromSublist(ownedWeapons(), u.host, "mods", u.name),
+  armor_extra: u => removeFromSublist(ownedArmor(), u.host, "extras", u.name),
+  deck_mod:    u => removeFromSublist(ownedDecks(), u.host, "mods", u.name),
+  rig_mod:     u => removeFromSublist(ownedRigs(), u.host, "mods", u.name),
   mount: u => removeFromSublist(
-    [...allWeapons(), ...allArmor(), ...CHAR.gear, ...CHAR.play.purchases.gear],
-    u.host, "mounted", u.name),
+    [...ownedWeapons(), ...ownedArmor(), ...ownedGear()], u.host, "mounted", u.name),
   lifestyle_month: u => {
     const ls = (CHAR.play.lifestyles || []).find(x => x.name === u.name);
     if (!ls || !(ls.months > 0)) return false;
@@ -354,6 +369,31 @@ const CASH_UNDO = {
     const i = list.indexOf(u.at);
     if (i < 0) return false;
     list.splice(i, 1);
+    return true;
+  },
+  // A pulled chargen mod: drop the disposal record and it is back on the item.
+  undispose_mod: u => {
+    const list = CHAR.play.disposed_mods || [];
+    const i = list.findIndex(r => r.category === u.category && r.host === u.host
+      && r.list === u.list && r.name === u.name);
+    if (i < 0) return false;
+    list.splice(i, 1);
+    return true;
+  },
+  // A mod that was fitted in play, or one on a play-bought host: put it back
+  // where it was.
+  refit_mod: u => {
+    if (u.inPlay) {
+      const owner = ((CHAR.play.purchases || {})[u.category] || [])[u.host];
+      if (!owner) return false;
+      const arr = owner[u.list] = owner[u.list] || [];
+      arr.splice(Math.max(0, Math.min(arr.length, u.at)), 0, deepCopyEntry(u.entry));
+      return true;
+    }
+    (CHAR.play.fitted_mods = CHAR.play.fitted_mods || []).push({
+      category: u.category, host: u.host, list: u.list,
+      name: sublistName(u.entry),
+      ...(u.entry && typeof u.entry === "object" ? { entry: deepCopyEntry(u.entry) } : {}) });
     return true;
   },
   dispose_play: u => {
@@ -499,6 +539,131 @@ async function disposeOfItem({ category, arr, index, inPlay, name, value }) {
 }
 function deepCopyEntry(entry) {
   return (entry && typeof entry === "object") ? JSON.parse(JSON.stringify(entry)) : entry;
+}
+
+/* ------------------------------------------- sublists inside an owned item
+ *
+ * Weapon mods, armor extras, deck/rig/unit mods, mounted augments, a drone's
+ * weapons. These live INSIDE the item, so on a chargen host every fit and pull
+ * used to write straight into the creation record — pulling a chargen mod
+ * handed its cost back to the creation budget, and fitting one in play billed
+ * the creation budget for something play cash had already paid for.
+ *
+ * `sublistOf` hands back the list a row should DISPLAY plus the two writers,
+ * and picks where they write:
+ *   - play-owned host → straight into the item, which play owns outright
+ *   - chargen host    → a record in play.fitted_mods / play.disposed_mods,
+ *                       leaving the chargen object untouched
+ *
+ * The displayed list is base − disposed + fitted, in that order, matching what
+ * `applyPlayAdvances` builds. So an index into `items` maps cleanly: anything
+ * below `baseCount` is chargen kit (pulling it records a disposal), anything
+ * above is a play fitting (pulling it just drops the record). */
+const sublistName = m => (m && typeof m === "object") ? m.name : m;
+
+function sublistOf(entry, list) {
+  const host = entry.ref;
+  if (entry.inPlay) {
+    const arr = host[list] = host[list] || [];
+    return { items: arr, baseCount: arr.length, onChargenHost: false,
+             add: v => arr.push(v),
+             removeAt: i => { arr.splice(i, 1); } };
+  }
+  const play = CHAR.play;
+  play.fitted_mods = play.fitted_mods || [];
+  play.disposed_mods = play.disposed_mods || [];
+  const mine = recs => recs.filter(r => r.category === entry.category
+    && r.host === entry.i && r.list === list);
+  const base = Array.isArray(host[list]) ? host[list] : [];
+  // Drop one occurrence per disposal record, by name — two identical mods on
+  // one weapon are interchangeable, and removing "the first match" is what the
+  // engine does too.
+  const kept = base.slice();
+  for (const rec of mine(play.disposed_mods)) {
+    const i = kept.findIndex(m => sublistName(m) === rec.name);
+    if (i >= 0) kept.splice(i, 1);
+  }
+  const fitted = mine(play.fitted_mods);
+  return {
+    items: [...kept, ...fitted.map(f => f.entry !== undefined ? f.entry : f.name)],
+    baseCount: kept.length,
+    onChargenHost: true,
+    add: v => play.fitted_mods.push({
+      category: entry.category, host: entry.i, list, name: sublistName(v),
+      ...(v && typeof v === "object" ? { entry: deepCopyEntry(v) } : {}) }),
+    removeAt: i => {
+      if (i < kept.length) {
+        play.disposed_mods.push({ category: entry.category, host: entry.i, list,
+                                  name: sublistName(kept[i]) });
+        return;
+      }
+      const rec = fitted[i - kept.length];
+      const at = play.fitted_mods.indexOf(rec);
+      if (at >= 0) play.fitted_mods.splice(at, 1);
+    },
+  };
+}
+
+/* Drones and vehicles: copy-on-write rather than per-mod records.
+ *
+ * A unit's mods point at its weapons by index (`mod.weapon`), so pulling one
+ * weapon renumbers the mods on the others — see removeUnitWeapon. Recording
+ * that as individual add/remove entries would mean replaying a reindexing on
+ * every recalc. Instead, the first play edit to a CHARGEN unit snapshots its
+ * weapons and mods into play.unit_overrides and everything afterwards mutates
+ * the copy, so the chargen unit is never touched and all the existing index
+ * bookkeeping keeps working unchanged. Revert drops the overrides with the rest
+ * of the play layer. Units bought in play are already play-owned and edit
+ * directly. */
+function unitEditTarget(entry) {
+  if (entry.inPlay) return entry.ref;
+  const key = `${entry.category}:${entry.i}`;
+  const overrides = CHAR.play.unit_overrides = CHAR.play.unit_overrides || {};
+  if (!overrides[key]) {
+    overrides[key] = { weapons: deepCopyEntry(entry.ref.weapons || []),
+                       mods: deepCopyEntry(entry.ref.mods || []) };
+  }
+  return overrides[key];
+}
+/* What a unit row should DISPLAY: the override once one exists, else the
+ * chargen unit as built. Never creates an override — only an edit does. */
+function unitView(entry) {
+  if (entry.inPlay) return entry.ref;
+  const override = (CHAR.play.unit_overrides || {})[`${entry.category}:${entry.i}`];
+  return override ? { ...entry.ref, ...override } : entry.ref;
+}
+
+/* Pulling a mod off a drone or vehicle. Goes through the override rather than
+ * the record model, for the index reasons above; no Undo button, because
+ * restoring one mod out of a rewritten index set isn't a safe single step. */
+async function disposeOfUnitMod(entry, modIndex, name, hostName, value) {
+  const result = await promptDisposal(name, value);
+  if (!result) return false;
+  const target = unitEditTarget(entry);
+  target.mods.splice(modIndex, 1);
+  logCash(`${result.sold ? "Sold" : "Lost"} ${name} (off ${hostName})`,
+    result.sold ? result.amount : 0);
+  await playChangedRecalc();
+  return true;
+}
+
+/* Pulling something off an item: same dialog, same ledger, same undo as
+ * parting with the item itself. Returns true when it went ahead. */
+async function disposeOfMod({ entry, list, index, name, value, hostName }) {
+  const result = await promptDisposal(name, value);
+  if (!result) return false;
+  const sub = sublistOf(entry, list);
+  const fromChargen = sub.onChargenHost && index < sub.baseCount;
+  const removed = sub.items[index];
+  sub.removeAt(index);
+  const undo = fromChargen
+    ? { kind: "undispose_mod", category: entry.category, host: entry.i, list, name }
+    : { kind: "refit_mod", category: entry.category, host: entry.i, list,
+        inPlay: entry.inPlay, at: index, entry: deepCopyEntry(removed) };
+  logCash(`${result.sold ? "Sold" : "Lost"} ${name} (off ${hostName})`,
+    result.sold ? result.amount : 0, undo);
+  await playChangedRecalc();
+  return true;
 }
 
 /* Which chargen armor was being worn at Finalize, for Revert to put back.
@@ -1449,11 +1614,21 @@ function arrayMove(arr, i, dir, after = playChanged) {
   // Identity, not name: only the character's own chargen array for that
   // category carries disposal records against it.
   const category = DISPOSABLE_CATEGORIES.find(c => CHAR[c] === arr);
-  const list = category && (CHAR.play.disposed || {})[category];
-  if (Array.isArray(list)) {
-    for (let k = 0; k < list.length; k++) {
-      if (list[k] === i) list[k] = j;
-      else if (list[k] === j) list[k] = i;
+  if (category) {
+    const list = (CHAR.play.disposed || {})[category];
+    if (Array.isArray(list)) {
+      for (let k = 0; k < list.length; k++) {
+        if (list[k] === i) list[k] = j;
+        else if (list[k] === j) list[k] = i;
+      }
+    }
+    // Sublist records address their host the same way, so they move too.
+    for (const recs of [CHAR.play.fitted_mods, CHAR.play.disposed_mods]) {
+      for (const r of recs || []) {
+        if (r.category !== category) continue;
+        if (r.host === i) r.host = j;
+        else if (r.host === j) r.host = i;
+      }
     }
   }
   after();
@@ -3082,10 +3257,11 @@ function shKismet(body) {
  * fitted mod's name above its chip (or "—" when empty), with an inline picker
  * to fit a new mod once a box is empty. Dual-slot mods (e.g. Laser Sight, fits
  * either barrel slot) land in whichever of their candidate slots is free. */
-function weaponModSlots(w, mult, weaponName) {
+function weaponModSlots(entry, mult, weaponName) {
   const table = DATA.tables.weapon_mods;
   const order = ["Overbarrel", "Underbarrel", "Chassis"];
-  const boxes = RULES.assignWeaponModSlots(w.mods || [], table).assigned;
+  const sub = sublistOf(entry, "mods");
+  const boxes = RULES.assignWeaponModSlots(sub.items, table).assigned;
   const grid = el("div", { class: "sh-modslots" });
   for (const slot of order) {
     const modName = boxes[slot];
@@ -3097,11 +3273,13 @@ function weaponModSlots(w, mult, weaponName) {
     if (modName) {
       box.append(el("span", {
         class: `chip ${cls}`, style: "cursor:pointer",
-        title: "Click to remove",
+        title: "Click to sell or remove",
         onclick: () => {
-          const idx = w.mods.indexOf(modName);
-          if (idx >= 0) w.mods.splice(idx, 1);
-          playChangedRecalc();
+          const idx = sub.items.findIndex(m => sublistName(m) === modName);
+          if (idx < 0) return;
+          disposeOfMod({ entry, list: "mods", index: idx, name: modName,
+            hostName: weaponName,
+            value: Math.round((+(modRow && modRow.Cost) || 0) * mult) });
         },
       }, modName + " ✕"));
       if (modRow && modRow.Effect)
@@ -3118,7 +3296,7 @@ function weaponModSlots(w, mult, weaponName) {
               && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) {
             e.target.value = ""; return;
           }
-          (w.mods = w.mods || []).push(name);
+          sub.add(name);
           logCash(`Fitted ${name} to ${weaponName}`, -cost,
             { kind: "weapon_mod", host: weaponName, name });
           playChangedRecalc();
@@ -3270,16 +3448,17 @@ function shUsesStepper(entry, onChange) {
    with a "Mount Types" column). Mounted augments are managed with the gear —
    they never appear on the Augments tab, their ZR is exempt from ZP, and
    their effects only apply while the host is worn / carried / equipped. */
-function shMountEditor(host, hostRow, hostActive) {
+function shMountEditor(entry, hostRow, hostActive) {
+  const host = entry.ref;
   const cap = RULES.mountCapability(hostRow || {});
   if (!cap) return null;
-  host.mounted ??= [];
+  const sub = sublistOf(entry, "mounted");
   const mult = CALC.budget.gear_cost_multiplier || 1;
   const r2 = x => Math.round(x * 100) / 100;
   const copies = Math.max(1, +(host.qty || 1));   // armor entries have no qty
   const capacity = r2(cap.capacity * copies);
   const augRow = name => DATA.tables.augments.find(a => a.Name === name);
-  const used = r2(host.mounted.reduce((sum, m) => {
+  const used = r2(sub.items.reduce((sum, m) => {
     const row = augRow(m.name);
     return sum + (row ? RULES.augmentEffZr(row, m) : 0);
   }, 0));
@@ -3299,7 +3478,7 @@ function shMountEditor(host, hostRow, hostActive) {
     el("button", { class: "btn-add", title: `Accepts ${cap.label} — ${free} ZP free`,
       onclick: () => openMountPicker({
         title: `Mount on ${host.name} — ${free} ZP free`,
-        groups: mountBrowserGroups(cap, free, host.mounted, mult),
+        groups: mountBrowserGroups(cap, free, sub.items, mult),
         afterAdd: () => playChangedRecalc(),
         onAdd: name => {
           const row = augRow(name) || {};
@@ -3307,14 +3486,14 @@ function shMountEditor(host, hostRow, hostActive) {
           if (CHAR.play.cash < cost
               && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
             return;
-          host.mounted.push({ name });
+          sub.add({ name });
           logCash(`Mounted ${name} on ${host.name}`, -cost,
             { kind: "mount", host: host.name, name });
         },
       }) }, "+ Mount")));
 
-  if (host.mounted.length) {
-    wrap.append(el("div", {}, ...host.mounted.map((m, idx) => {
+  if (sub.items.length) {
+    wrap.append(el("div", {}, ...sub.items.map((m, idx) => {
       const row = augRow(m.name) || {};
       const hasZr = +row.ZR > 0;
       // Same α-cyber cash math as the Augments tab: going alpha adds
@@ -3326,18 +3505,25 @@ function shMountEditor(host, hostRow, hostActive) {
           title: (m.alpha ? "α-cyber grade — click to revert" : "Upgrade to α-cyber grade")
             + ` (ZR −20% min 0.1, cost ×2 min +${CURRENCY_SYMBOL}1,000)`,
           onclick: async () => {
-            m.alpha = !m.alpha;
-            logCash(m.alpha ? `Upgraded ${m.name} (${host.name}) to α-cyber grade`
-                            : `Reverted ${m.name} (${host.name}) from α-cyber grade`,
-              m.alpha ? -alphaExtra : alphaExtra);
+            const now = !m.alpha;
+            // On a chargen host the mount object IS the creation record, so
+            // flipping the flag in place would re-price what creation paid for.
+            // Swap it instead: drop the old, fit an α copy, both in play.
+            if (sub.onChargenHost && idx < sub.baseCount) {
+              sub.removeAt(idx);
+              sub.add({ ...m, alpha: now });
+            } else {
+              m.alpha = now;
+            }
+            logCash(now ? `Upgraded ${m.name} (${host.name}) to α-cyber grade`
+                        : `Reverted ${m.name} (${host.name}) from α-cyber grade`,
+              now ? -alphaExtra : alphaExtra);
             await playChangedRecalc();
           } }, "α") : null,
-        el("button", { class: "chip-btn", title: "Unmount (not refunded)",
-          onclick: async () => {
-            if (!confirm(`Remove ${m.name} from ${host.name}? Not refunded.`)) return;
-            host.mounted.splice(idx, 1);
-            await playChangedRecalc();
-          } }, "✕"));
+        el("button", { class: "chip-btn", title: "Unmount — sell it on or write it off",
+          onclick: () => disposeOfMod({ entry, list: "mounted", index: idx,
+            name: m.name, hostName: host.name,
+            value: Math.round((+row.Cost || 0) * mult) }) }, "✕"));
     })));
   }
   return wrap;
@@ -3455,7 +3641,8 @@ function shGear(body) {
     const t = el("table");
     t.append(el("tr", {}, el("th", {}, "Weapon"), el("th", {}, "Stats"),
       el("th", {}, "Equip"), el("th", {}, "")));
-    weaponEntries.forEach(({ ref: w, arr, i: wi, inPlay, category }) => {
+    weaponEntries.forEach(en => {
+      const { ref: w, arr, i: wi, inPlay, category } = en;
       const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
       const canMod = !NO_WEAPON_MOD_TYPES.includes(r.Type);
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
@@ -3467,7 +3654,7 @@ function shGear(body) {
             wi > 0, wi < arr.length - 1),
           el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
           el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type, w.name)),
-          shMountEditor(w, r, w.equipped !== false)),
+          shMountEditor(en, r, w.equipped !== false)),
         el("td", { class: "sub" },
           `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
           ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
@@ -3480,7 +3667,7 @@ function shGear(body) {
             value: Math.round((+r.Cost || 0) * mult) }) }, "✕"))));
       const upgBoxes = weaponUpgradeSlots(w, r, mult);
       if (canMod || upgBoxes.length) {
-        const strip = canMod ? weaponModSlots(w, mult, w.name)
+        const strip = canMod ? weaponModSlots(en, mult, w.name)
                              : el("div", { class: "sh-modslots" });
         upgBoxes.forEach(b => strip.append(b));
         t.append(el("tr", { class: "sh-modslots-row" },
@@ -3520,14 +3707,16 @@ function shGear(body) {
     const t = el("table");
     t.append(el("tr", {}, el("th", {}, "Armor"), el("th", { class: "num" }, "B / I"),
       el("th", {}, "Extras"), el("th", {}, "Worn"), el("th", {}, "")));
-    armorEntries.forEach(({ ref: a, arr, i: localIndex, inPlay, category }, ai) => {
+    armorEntries.forEach((en, ai) => {
+      const { ref: a, arr, i: localIndex, inPlay, category } = en;
       const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
       const baseCost = +r.Cost || 0;
+      const extrasSub = sublistOf(en, "extras");
       // Extras are cost multipliers; the marginal charge is base cost × (mult − 1).
       const extrasCell = r.Style === "Y"
         ? fittedCategoryEditor({
             id: `sh-aextras-${ai}-${a.name}`,
-            items: a.extras || [],
+            items: extrasSub.items,
             groups: [{ label: "Armor Extras", items: DATA.tables.armor_extras.map(x => ({
               name: x.Extra,
               cost: Math.round(baseCost * ((+x.Multiplier || 1) - 1) * armorMult),
@@ -3537,11 +3726,15 @@ function shGear(body) {
               const ex = DATA.tables.armor_extras.find(x => x.Extra === name) || {};
               const cost = Math.round(baseCost * ((+ex.Multiplier || 1) - 1) * armorMult);
               if (!overdrawOK(name, cost)) return;
-              (a.extras = a.extras || []).push(name);
+              extrasSub.add(name);
               logCash(`Added ${name} to ${a.name}`, -cost,
                 { kind: "armor_extra", host: a.name, name });
             },
-            onRemove: index => { a.extras.splice(index, 1); },
+            onRemove: index => disposeOfMod({ entry: en, list: "extras", index,
+              name: sublistName(extrasSub.items[index]), hostName: a.name,
+              value: Math.round(baseCost * (((+(DATA.tables.armor_extras
+                .find(x => x.Extra === sublistName(extrasSub.items[index])) || {}).Multiplier || 1)) - 1)
+                * armorMult) }),
             effectOf: name => (DATA.tables.armor_extras.find(x => x.Extra === name) || {}).Effects || "",
             rerender: renderSheet,
             afterAdd: () => playChangedRecalc(),
@@ -3564,7 +3757,7 @@ function shGear(body) {
             ([arow.material, arow.style].filter(Boolean).join(" · ") || r.Slot || "") + ` · wt ${r.wt || 0}`),
           aeffects.length ? el("div", { class: "sub armor-effects" },
             aeffects.map(e => `${e.label}: ${e.text}`).join(" · ")) : null,
-          shMountEditor(a, r, a.active !== false)),
+          shMountEditor(en, r, a.active !== false)),
         el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
         el("td", { class: "sub" }, extrasCell),
         el("td", {}, el("input", { type: "checkbox", ...(a.active !== false ? { checked: 1 } : {}),
@@ -3601,7 +3794,8 @@ function shGear(body) {
     el("th", { class: "num" }, "Weight"),
     el("th", {}, "Effect"), el("th", {}, "Carried"), el("th", {}, "")));
   let gearWeightCarried = 0, gearWeightOwned = 0;
-  gearEntries.forEach(({ ref: g, inPlay, arr, i: gi }) => {
+  gearEntries.forEach(en => {
+    const { ref: g, inPlay, arr, i: gi } = en;
     const r = DATA.tables.misc_gear.find(x => x.Item === g.name) || {};
     // Focus/Fetish/Spirit Bag links (chosen in chargen) now show — and stay
     // editable — on the sheet (issue #14). gearLinkSelect returns null otherwise.
@@ -3625,7 +3819,7 @@ function shGear(body) {
         inPlay ? el("span", { class: "sh-tag" }, "bought in play") : null,
         linkSel ? el("div", { class: "sub sh-gearlink" }, "Linked to ", linkSel)
           : (g.link ? el("div", { class: "sub" }, `Linked to ${g.link}`) : null),
-        shMountEditor(g, r, g.carried !== false)),
+        shMountEditor(en, r, g.carried !== false)),
       // Ammo is counted in uses, so it gets a live -/+ tracker for burning
       // rounds at the table (issue #21). It moves no cash -- buying more goes
       // through the Buy section below, which charges per use.
@@ -4564,24 +4758,28 @@ function shDecking(body) {
   const deckBuySection = el("div", { class: "card sh-card", id: "deck-buy" },
     el("h3", {}, "Buy decks & programs"));
   const deckCard = el("div", { class: "card sh-card" }, el("h3", {}, "Cyberdecks"));
-  deckEntries.forEach(({ ref: d, arr: deckArr, i: deckIndex, inPlay, category }, di) => {
+  deckEntries.forEach((en, di) => {
+    const { ref: d, arr: deckArr, i: deckIndex, inPlay, category } = en;
     const r = DATA.tables.decks.find(x => x.Name === d.name) || {};
     const isActive = d.name === dk.active_deck;
-    d.mods = d.mods || [];
+    const modSub = sublistOf(en, "mods");
+    const deckModCost = name => Math.round(
+      (+(DATA.tables.deck_mods.find(m => m["Deck Mod"] === name) || {}).Cost || 0) * mult);
     const modEditor = fittedCategoryEditor({
       id: `sh-dmods-${di}-${d.name}`,
-      items: d.mods,
+      items: modSub.items,
       groups: modGroups(DATA.tables.deck_mods, "Deck Mod", null, "Deck Mods"),
       onAdd: name => {
-        const mr = DATA.tables.deck_mods.find(m => m["Deck Mod"] === name) || {};
-        const cost = Math.round((+mr.Cost || 0) * mult);
+        const cost = deckModCost(name);
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-        d.mods.push(name);
+        modSub.add(name);
         logCash(`Fitted ${name} to ${d.name}`, -cost,
           { kind: "deck_mod", host: d.name, name });
       },
-      onRemove: index => { d.mods.splice(index, 1); },
+      onRemove: index => disposeOfMod({ entry: en, list: "mods", index,
+        name: sublistName(modSub.items[index]), hostName: d.name,
+        value: deckModCost(sublistName(modSub.items[index])) }),
       effectOf: name => (DATA.tables.deck_mods.find(m => m["Deck Mod"] === name) || {}).Effect || "",
       rerender: renderSheet, afterAdd: () => playChangedRecalc(),
     });
@@ -5098,24 +5296,28 @@ function shRigging(body) {
 
   // --- VCRs
   const rigCard = el("div", { class: "card sh-card" }, el("h3", {}, "Vehicle Control Rigs"));
-  rigEntries.forEach(({ ref: r, arr: rigArr, i: rigIndex, inPlay, category }, ri) => {
+  rigEntries.forEach((en, ri) => {
+    const { ref: r, arr: rigArr, i: rigIndex, inPlay, category } = en;
     const st = RULES.rigStats(r, DATA.tables);
     const isActive = r.name === rg.active_rig;
-    r.mods = r.mods || [];
+    const modSub = sublistOf(en, "mods");
+    const rigModCost = name => Math.round(
+      (+(DATA.tables.rig_mods.find(m => m["Rig Mod"] === name) || {}).Cost || 0) * rigMult);
     const modEditor = fittedCategoryEditor({
       id: `sh-rmods-${ri}-${r.name}`,
-      items: r.mods,
+      items: modSub.items,
       groups: modGroups(DATA.tables.rig_mods, "Rig Mod", null, "Rig Mods"),
       onAdd: name => {
-        const mr = DATA.tables.rig_mods.find(m => m["Rig Mod"] === name) || {};
-        const cost = Math.round((+mr.Cost || 0) * rigMult);
+        const cost = rigModCost(name);
         if (CHAR.play.cash < cost
             && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-        r.mods.push(name);
+        modSub.add(name);
         logCash(`Fitted ${name} to ${r.name}`, -cost,
           { kind: "rig_mod", host: r.name, name });
       },
-      onRemove: index => { r.mods.splice(index, 1); },
+      onRemove: index => disposeOfMod({ entry: en, list: "mods", index,
+        name: sublistName(modSub.items[index]), hostName: r.name,
+        value: rigModCost(sublistName(modSub.items[index])) }),
       effectOf: name => (DATA.tables.rig_mods.find(m => m["Rig Mod"] === name) || {}).Effect || "",
       rerender: renderSheet, afterAdd: () => playChangedRecalc(),
     });
@@ -5182,7 +5384,13 @@ function shRigging(body) {
     const mult = 1;   // fitted weapons & mods — never surcharged
     const unitReadonly = !!(activeTabObj() && activeTabObj().readonly);
     const card = el("div", { class: "card sh-card" }, el("h3", {}, cfg.title));
-    entries.forEach(({ ref: u, arr: unitArr, i: localIndex, inPlay, category }, i) => {
+    entries.forEach((en, i) => {
+      const { arr: unitArr, i: localIndex, inPlay, category } = en;
+      // Read through the override if this unit has been edited in play; write
+      // through `edit`, which creates one on a chargen unit. `u` is display +
+      // identity (name, label); `edit` owns weapons and mods.
+      const u = unitView(en);
+      const edit = () => unitEditTarget(en);
       const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === u.name) || {};
       const summary = (calcArr || [])[i] || {};
       const key = `${cfg.table}:${i}`;
@@ -5237,13 +5445,15 @@ function shRigging(body) {
         const modChips = weaponModIdx[wi].map(mi => {
           const nm = modName(u.mods[mi]);
           return el("span", { class: "chip", style: "margin:2px 4px 0 0;cursor:pointer",
-            title: "Remove mod", onclick: () => { u.mods.splice(mi, 1); playChangedRecalc(); } },
+            title: "Sell or remove mod",
+            onclick: () => disposeOfUnitMod(en, mi, nm, wn,
+              Math.round((+(findMod(nm) || {}).Cost || 0) * mult)) },
             nm + " ✕");
         });
         const addWeaponMod = weaponScopedMods.length ? fittedCategoryEditor({
           id: `rig-wm-${key}-${wi}`, items: [],
           groups: modGroups(weaponScopedMods, mnc, null, "Weapon mods"),
-          onAdd: name => { if (buyMod(name, wn)) u.mods.push({ name, weapon: wi }); },
+          onAdd: name => { if (buyMod(name, wn)) edit().mods.push({ name, weapon: wi }); },
           onRemove: () => {}, rerender: renderSheet, afterAdd: () => playChangedRecalc(),
         }) : null;
         // Energy mounts run on Heat and carry no Modes/Ammo columns at all.
@@ -5259,8 +5469,16 @@ function shRigging(body) {
             ? { class: "wpn-ammo-mod", title: `${uAmmo.name} loaded` } : {},
           `${label} ${uShot[key]}`);
         return el("div", { class: "sub", style: "margin:4px 0" },
-          el("span", { class: "chip", style: "cursor:pointer", title: "Remove weapon",
-            onclick: () => removeUnitWeapon(u, wi, cfg.table) }, wn + " ✕"),
+          el("span", { class: "chip", style: "cursor:pointer", title: "Sell or remove weapon",
+            onclick: async () => {
+              const result = await promptDisposal(wn,
+                Math.round((+(findWeapon(wn) || {}).Cost || 0) * mult));
+              if (!result) return;
+              removeUnitWeapon(edit(), wi, cfg.table);
+              logCash(`${result.sold ? "Sold" : "Lost"} ${wn} (off ${u.label || u.name})`,
+                result.sold ? result.amount : 0);
+              await playChangedRecalc();
+            } }, wn + " ✕"),
           " ", uBit("DMG", "damage"), " · ", uBit("Acc", "acc"),
           (ammo ? ` · Mag ${ammo}` : ""),
           wr.Pen ? el("span", {}, " · ") : null, wr.Pen ? uBit("Pen", "pen") : null,
@@ -5280,8 +5498,10 @@ function shRigging(body) {
         const mr = findMod(nm) || {};
         const effect = mr.Effect || mr.ModeEffect || "";
         return el("div", { class: "sub" },
-          el("span", { class: "chip", style: "margin:2px 4px 0 0;cursor:pointer", title: "Remove mod",
-            onclick: () => { u.mods.splice(mi, 1); playChangedRecalc(); } }, nm + " ✕"),
+          el("span", { class: "chip", style: "margin:2px 4px 0 0;cursor:pointer",
+            title: "Sell or remove mod",
+            onclick: () => disposeOfUnitMod(en, mi, nm, u.label || u.name,
+              Math.round((+mr.Cost || 0) * mult)) }, nm + " ✕"),
           effect ? el("span", { style: "color:var(--manon)" }, effect) : null);
       });
 
@@ -5299,7 +5519,8 @@ function shRigging(body) {
           const cost = Math.round((+wr.Cost || 0) * mult);
           if (CHAR.play.cash < cost
               && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-          u.weapons.push(name); logCash(`Mounted ${name} on ${u.label || u.name}`, -cost);
+          edit().weapons.push(name);
+          logCash(`Mounted ${name} on ${u.label || u.name}`, -cost);
         },
         onRemove: () => {}, rerender: renderSheet, afterAdd: () => playChangedRecalc(),
       });
@@ -5308,7 +5529,7 @@ function shRigging(body) {
       const addMod = fittedCategoryEditor({
         id: `rig-m-${key}`, items: [],
         groups: modGroups(unitScopedMods, mnc, null, `${cfg.nameKey} Mods`),
-        onAdd: name => { if (buyMod(name, u.label || u.name)) u.mods.push(name); },
+        onAdd: name => { if (buyMod(name, u.label || u.name)) edit().mods.push(name); },
         onRemove: () => {}, rerender: renderSheet, afterAdd: () => playChangedRecalc(),
       });
 

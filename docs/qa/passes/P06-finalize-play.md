@@ -453,6 +453,52 @@ the finalized sheet, and the creation record is left exactly as built.
   disposal permanent-in-reverse.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-021: Fitting and pulling mods leaves the creation budget alone
+- **Type:** leak
+- **Steps:** load `kitchen-sink-final.json`.
+- **Check:**
+
+      (async () => { CHAR = RULES.mergeDefaults(CHAR); CHAR.weapons[0].mods = ["Gyro-mount"]; CHAR.finalized = true; ensurePlay(); CHAR.play.fitted_mods = []; CHAR.play.disposed_mods = []; await recalc(); const creation = () => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; return RULES.calculate(c).budget.remaining; }; const base = creation(); sheetTab = "gear"; renderSheet(); const chip = [...document.querySelectorAll("#sheet .sh-modslot .chip")].find(c => /Gyro-mount/.test(c.textContent)); chip.click(); await new Promise(r => setTimeout(r, 80)); const m = document.querySelector(".mount-modal"); const dialog = { heading: m.querySelector("h3").textContent, amount: m.querySelectorAll("input")[1].value }; [...m.querySelectorAll("button")].find(b => b.textContent.trim() === "Sell").click(); await new Promise(r => setTimeout(r, 150)); const pulled = { creation: creation(), chargenRecord: JSON.parse(JSON.stringify(CHAR.weapons[0].mods)), disposed: JSON.parse(JSON.stringify(CHAR.play.disposed_mods)), onSheet: (CALC.weapons || [])[0].mods.map(x => x.name), ledger: CHAR.play.cash_log[0].label }; sheetTab = "gear"; renderSheet(); const sel = [...document.querySelectorAll("#sheet .sh-modslot select")].find(s => [...s.options].some(o => o.value === "Optical Scope")); sel.value = "Optical Scope"; sel.dispatchEvent(new Event("change")); await new Promise(r => setTimeout(r, 150)); const fitted = { creation: creation(), chargenRecord: JSON.parse(JSON.stringify(CHAR.weapons[0].mods)), fitted: JSON.parse(JSON.stringify(CHAR.play.fitted_mods)), onSheet: (CALC.weapons || [])[0].mods.map(x => x.name) }; return { base, dialog, pulled, fitted }; })()
+
+- **Expected:** `base`, `pulled.creation` and `fitted.creation` are all
+  **32402**. `dialog` is
+  `{ heading: "Part with Gyro-mount?", amount: "750" }` — half of ㄓ1,500.
+  After the pull, `chargenRecord` is still `["Gyro-mount"]`, `disposed` holds
+  `{ category: "weapons", host: 0, list: "mods", name: "Gyro-mount" }`,
+  `onSheet` is `[]`, and the ledger reads
+  `"Sold Gyro-mount (off Kalishnikov A-80)"`. After the fit, `chargenRecord` is
+  *still* `["Gyro-mount"]`, `fitted` holds the Optical Scope record, and
+  `onSheet` is `["Optical Scope"]` — the Gyro-mount stays sold, so the sheet
+  shows only what the character actually has.
+- **Note:** Both directions leaked until 2026-08-05. Pulling a chargen mod
+  handed its ㄓ1,500 back to the creation budget; fitting one in play billed the
+  creation budget for something play cash had just paid for, which could leave a
+  character overspent and unable to re-finalize. `chargenRecord` is the tell in
+  both halves — it must never change. If `creation` moves, the mod editors are
+  writing into the chargen host again.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-022: Drones and vehicles copy-on-write instead
+- **Type:** correctness
+- **Steps:** none — builds a unit with a mod and a mounted weapon.
+- **Check:**
+
+      (async () => { CHAR = RULES.defaultCharacter(); CHAR.name = "Unit mods"; CHAR.lifestyles = [{ name: "Squatter", months: 1 }]; const wpn = DATA.tables.weapons.find(x => (+x.Cost || 0) > 0); const dm = DATA.tables.drone_mods[0]; CHAR.drones = [{ name: DATA.tables.drones[0].Drone, label: "", weapons: [wpn.Weapon], mods: [{ name: dm["Drone Mod"] }] }]; CHAR.finalized = true; ensurePlay(); await recalc(); const creation = () => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; return RULES.calculate(c).budget.remaining; }; const base = creation(); const pull = async re => { sheetTab = "rigging"; renderSheet(); const chip = [...document.querySelectorAll("#sheet .chip")].find(c => re.test(c.textContent) && /✕/.test(c.textContent)); chip.click(); await new Promise(r => setTimeout(r, 80)); const m = document.querySelector(".mount-modal"); const h = m.querySelector("h3").textContent; [...m.querySelectorAll("button")].find(b => b.textContent.trim() === "Lost / discarded").click(); await new Promise(r => setTimeout(r, 140)); return h; }; const modHead = await pull(new RegExp(dm["Drone Mod"])); const wpnHead = await pull(new RegExp(wpn.Weapon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))); return { base, after: creation(), modHead, wpnHead, overrides: JSON.parse(JSON.stringify(CHAR.play.unit_overrides)), chargenDrone: JSON.parse(JSON.stringify(CHAR.drones[0])) }; })()
+
+- **Expected:** `base` and `after` are equal. Both dialogs open (`modHead` and
+  `wpnHead` are `"Part with …?"`). `overrides` is
+  `{ "drones:0": { "mods": [], "weapons": [] } }` and `chargenDrone` still
+  carries both its mod and its weapon.
+- **Note:** Units are the one category that does NOT use per-mod records. A
+  unit's mods point at its weapons by index, so pulling a weapon renumbers the
+  mods on the others — replaying that as individual add/remove entries on every
+  recalc would be a reindexing minefield. The first play edit snapshots that
+  unit's `weapons` and `mods` into `play.unit_overrides` and everything after
+  works on the copy. Same guarantee, different mechanism: `chargenDrone`
+  unchanged is what both are for. Unit mods get no Undo button — restoring one
+  out of a renumbered set isn't a safe single step.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

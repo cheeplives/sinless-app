@@ -51,7 +51,17 @@ const el = (tag, attrs = {}, ...kids) => {
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, v);
   }
-  for (const k of kids) if (k != null) n.append(k);
+  // Arrays of children are flattened rather than appended whole. `append` takes
+  // Nodes and strings, so handing it an array stringifies it — a cell built as
+  // `el("td", {}, cond ? [a, b] : [c, d])` rendered the literal text
+  // "[object HTMLSpanElement],[object HTMLInputElement]". Nesting is allowed,
+  // and null/undefined at any depth is skipped so `cond ? x : null` still works.
+  const add = kid => {
+    if (kid == null) return;
+    if (Array.isArray(kid)) { for (const k of kid) add(k); return; }
+    n.append(kid);
+  };
+  for (const k of kids) add(k);
   return n;
 };
 const fmt = amount => CURRENCY_SYMBOL + Number(amount || 0).toLocaleString();

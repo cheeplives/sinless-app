@@ -522,6 +522,25 @@ path by which play could reach into the creation record.
   play buys today.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-024: No stringified objects reach the DOM
+- **Type:** correctness
+- **Steps:** any finalized character; a fixture with gear in it is best.
+- **Check:**
+
+      (async () => { const hits = []; for (const t of ["overview","skills","kismet","gear","augments","magic","decking","rigging","actions","notes"]) { sheetTab = t; renderSheet(); const txt = document.querySelector("#sheet").textContent; if (/\[object /.test(txt)) hits.push({ tab: t, sample: (txt.match(/.{0,40}\[object [^\]]*\].{0,20}/) || [])[0] }); } return hits; })()
+
+- **Expected:** `[]`
+- **Note:** A one-line canary for a whole class of rendering bug. `el()`'s
+  children go to `node.append()`, which takes Nodes and strings — hand it
+  anything else and it silently stringifies. A Gear-tab cell built as
+  `el("td", {}, cond ? [a, b] : [c, d])` shipped for weeks rendering the literal
+  text `"[object HTMLSpanElement],[object HTMLInputElement]"` in the **Carried**
+  column, because an array child was appended whole instead of flattened.
+  `el()` flattens arrays now, so the same call site is correct — but any future
+  child that isn't a Node, string or array will land here the same way, and this
+  case names the tab and quotes the surrounding text.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

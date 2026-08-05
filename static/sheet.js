@@ -133,7 +133,6 @@ let sheetStickyScrolled = false;  // survives re-renders so the strip doesn't fl
 function ensurePlay() {
   const d = {
     ...RULES.defaultCharacter().play,
-    armor_worn: null,
     pool_boost: {},                       // pool name -> temporary bonus dice
     pool_kismet: {},                      // pool name -> permanent Kismet-die boons
     images: [],                           // [{ url (data URL), caption, big }]
@@ -149,8 +148,9 @@ function ensurePlay() {
         if (CHAR.play[k][k2] == null) CHAR.play[k][k2] = v2;
   }
   // The play shape is complete now, so the ledger exists and the one-time
-  // lifestyle repair can log what it changes. Guarded — it runs at most once.
+  // repairs can log what they change. Both are guarded — each runs at most once.
   reconcileLifestyles();
+  ensureKit();
   return CHAR.play;
 }
 /* The hard line between chargen and play (JC-010, JC-024).
@@ -167,39 +167,35 @@ function ensurePlay() {
  * reordering hit the right one. Read-only consumers want the flat `all*`
  * versions.
  *
- * Chargen kit sold or lost in play is filtered out here, matching what
- * `applyPlayAdvances` drops from the finalized character — the two have to
- * agree exactly or the index-straight-across contract breaks. The mapping runs
- * BEFORE the filter, so `i` stays the item's true index in the chargen array
- * and `play.disposed` keeps meaning what it says. */
-function ownedSplit(category, chargen, bought) {
-  const gone = new Set((CHAR.play.disposed || {})[category] || []);
-  return [...chargen.map((ref, i) => ({ ref, arr: chargen, i, inPlay: false, category }))
-            .filter(e => !gone.has(e.i)),
+ * The first half is `play.kit` — play's own copy of what the character left
+ * creation with, NOT the chargen arrays. `inPlay` still marks which side of
+ * Finalize an item came from, because the sheet labels play purchases, but both
+ * halves are equally play's to edit. Nothing here can reach the chargen record. */
+function ownedSplit(category, starting, bought) {
+  return [...starting.map((ref, i) => ({ ref, arr: starting, i, inPlay: false, category })),
           ...bought.map((ref, i) => ({ ref, arr: bought, i, inPlay: true, category }))];
 }
-function ownedWeapons()  { return ownedSplit("weapons", CHAR.weapons, CHAR.play.purchases.weapons); }
-function ownedArmor()    { return ownedSplit("armor", CHAR.armor, CHAR.play.purchases.armor); }
-function ownedDecks()    { return ownedSplit("decks", CHAR.decks, CHAR.play.purchases.decks); }
-function ownedRigs()     { return ownedSplit("rigs", CHAR.rigs, CHAR.play.purchases.rigs); }
-function ownedDrones()   { return ownedSplit("drones", CHAR.drones, CHAR.play.purchases.drones); }
-function ownedVehicles() { return ownedSplit("vehicles", CHAR.vehicles, CHAR.play.purchases.vehicles); }
-function ownedPrograms() { return ownedSplit("programs", CHAR.programs, CHAR.play.purchases.programs); }
-function ownedGear()     { return ownedSplit("gear", CHAR.gear, CHAR.play.purchases.gear); }
+function ownedWeapons()  { return ownedSplit("weapons", kitOf("weapons"), CHAR.play.purchases.weapons); }
+function ownedArmor()    { return ownedSplit("armor", kitOf("armor"), CHAR.play.purchases.armor); }
+function ownedDecks()    { return ownedSplit("decks", kitOf("decks"), CHAR.play.purchases.decks); }
+function ownedRigs()     { return ownedSplit("rigs", kitOf("rigs"), CHAR.play.purchases.rigs); }
+function ownedDrones()   { return ownedSplit("drones", kitOf("drones"), CHAR.play.purchases.drones); }
+function ownedVehicles() { return ownedSplit("vehicles", kitOf("vehicles"), CHAR.play.purchases.vehicles); }
+function ownedPrograms() { return ownedSplit("programs", kitOf("programs"), CHAR.play.purchases.programs); }
+function ownedGear()     { return ownedSplit("gear", kitOf("gear"), CHAR.play.purchases.gear); }
+function ownedAugments() { return ownedSplit("augments", kitOf("augments"), CHAR.play.purchases.augments); }
 
-/* Flat views for read-only consumers. Same filtering — anything that reads
- * these is looking at what the character HAS, and a sold weapon isn't it. */
-function keptChargen(category, list) {
-  const gone = new Set((CHAR.play.disposed || {})[category] || []);
-  return gone.size ? list.filter((_, i) => !gone.has(i)) : list;
-}
-function allWeapons()  { return [...keptChargen("weapons", CHAR.weapons), ...CHAR.play.purchases.weapons]; }
-function allArmor()    { return [...keptChargen("armor", CHAR.armor), ...CHAR.play.purchases.armor]; }
-function allDecks()    { return [...keptChargen("decks", CHAR.decks), ...CHAR.play.purchases.decks]; }
-function allPrograms() { return [...keptChargen("programs", CHAR.programs), ...CHAR.play.purchases.programs]; }
-function allRigs()     { return [...keptChargen("rigs", CHAR.rigs), ...CHAR.play.purchases.rigs]; }
-function allDrones()   { return [...keptChargen("drones", CHAR.drones), ...CHAR.play.purchases.drones]; }
-function allVehicles() { return [...keptChargen("vehicles", CHAR.vehicles), ...CHAR.play.purchases.vehicles]; }
+/* Flat views for read-only consumers — what the character HAS right now. */
+function allWeapons()  { return [...kitOf("weapons"), ...CHAR.play.purchases.weapons]; }
+function allArmor()    { return [...kitOf("armor"), ...CHAR.play.purchases.armor]; }
+function allDecks()    { return [...kitOf("decks"), ...CHAR.play.purchases.decks]; }
+function allPrograms() { return [...kitOf("programs"), ...CHAR.play.purchases.programs]; }
+function allRigs()     { return [...kitOf("rigs"), ...CHAR.play.purchases.rigs]; }
+function allDrones()   { return [...kitOf("drones"), ...CHAR.play.purchases.drones]; }
+function allVehicles() { return [...kitOf("vehicles"), ...CHAR.play.purchases.vehicles]; }
+function allGear()     { return [...kitOf("gear"), ...CHAR.play.purchases.gear]; }
+function allAugmentsOwned() { return [...kitOf("augments"), ...CHAR.play.purchases.augments]; }
+function allKnowledgeSkills() { return kitOf("knowledge_skills"); }
 function allUnits(table) { return table === "drones" ? allDrones() : allVehicles(); }
 
 function schedulePlaySave() {
@@ -361,45 +357,22 @@ const CASH_UNDO = {
     ls.months -= 1;
     return true;
   },
-  // Undoing a disposal puts the item back and takes the sale money away again
-  // (undoCashSpend does the cash half). A loss logs delta 0, so undoing one
-  // just returns the item.
-  dispose_chargen: u => {
-    const list = (CHAR.play.disposed || {})[u.category] || [];
-    const i = list.indexOf(u.at);
-    if (i < 0) return false;
-    list.splice(i, 1);
-    return true;
-  },
-  // A pulled chargen mod: drop the disposal record and it is back on the item.
-  undispose_mod: u => {
-    const list = CHAR.play.disposed_mods || [];
-    const i = list.findIndex(r => r.category === u.category && r.host === u.host
-      && r.list === u.list && r.name === u.name);
-    if (i < 0) return false;
-    list.splice(i, 1);
-    return true;
-  },
-  // A mod that was fitted in play, or one on a play-bought host: put it back
-  // where it was.
-  refit_mod: u => {
-    if (u.inPlay) {
-      const owner = ((CHAR.play.purchases || {})[u.category] || [])[u.host];
-      if (!owner) return false;
-      const arr = owner[u.list] = owner[u.list] || [];
-      arr.splice(Math.max(0, Math.min(arr.length, u.at)), 0, deepCopyEntry(u.entry));
-      return true;
-    }
-    (CHAR.play.fitted_mods = CHAR.play.fitted_mods || []).push({
-      category: u.category, host: u.host, list: u.list,
-      name: sublistName(u.entry),
-      ...(u.entry && typeof u.entry === "object" ? { entry: deepCopyEntry(u.entry) } : {}) });
-    return true;
-  },
-  dispose_play: u => {
-    const list = (CHAR.play.purchases || {})[u.category];
+  // Undoing a disposal puts the item back where it was and takes the sale money
+  // away again (undoCashSpend does the cash half). A loss logs delta 0, so
+  // undoing one only returns the item.
+  restore_item: u => {
+    const list = u.inPlay ? (CHAR.play.purchases || {})[u.category] : kitOf(u.category);
     if (!Array.isArray(list) || u.entry === undefined) return false;
     list.splice(Math.max(0, Math.min(list.length, u.at)), 0, deepCopyEntry(u.entry));
+    return true;
+  },
+  restore_mod: u => {
+    const owner = (u.inPlay ? (CHAR.play.purchases || {})[u.category] : kitOf(u.category))
+      || [];
+    const host = owner[u.host];
+    if (!host || u.entry === undefined) return false;
+    const arr = host[u.list] = host[u.list] || [];
+    arr.splice(Math.max(0, Math.min(arr.length, u.at)), 0, deepCopyEntry(u.entry));
     return true;
   },
   // Unpaid month changes: the counter, a chargen correction, the one-time
@@ -430,6 +403,100 @@ async function undoCashSpend(entry) {
   CHAR.play.cash -= entry.delta;   // delta is negative, so this refunds it
   log.splice(idx, 1);
   await playChangedRecalc();
+}
+
+/* ================================================================ the kit
+ *
+ * `play.kit` is play's own copy of what the character walked out of creation
+ * with. Everything the play sheet edits — worn flags, fitted mods, quantities,
+ * α-grades, sales, losses, reordering — edits the kit; the chargen arrays are
+ * never written to after Finalize. That single rule is what keeps the creation
+ * budget stable, lets Back to Chargen show the character exactly as built, and
+ * makes Revert a one-liner: rebuild the kit from chargen.
+ *
+ * It replaced three narrower mechanisms (`disposed`, `fitted_mods` /
+ * `disposed_mods`, `unit_overrides`), each of which patched one path by which
+ * play could reach into the creation record. */
+function kitFromChargen() {
+  const kit = {};
+  for (const category of RULES.KIT_CATEGORIES)
+    kit[category] = deepCopyEntry(CHAR[category] || []);
+  return kit;
+}
+function kitOf(category) {
+  const kit = CHAR.play.kit;
+  if (!kit) return CHAR[category] || [];        // pre-Finalize / pre-migration
+  return (kit[category] = kit[category] || []);
+}
+
+/* Build the kit if there isn't one, and migrate a character saved before it
+ * existed. The legacy replay lives in the engine, so migration is just "ask the
+ * engine what this character currently has, and keep that". */
+function ensureKit() {
+  const play = CHAR.play;
+  if (play.kit) return play.kit;
+  if (!CHAR.finalized) return null;             // nothing to copy yet
+  const legacy = play.disposed || play.fitted_mods || play.disposed_mods
+    || play.unit_overrides;
+  const hadLegacyEdits = legacy && (
+    Object.values(play.disposed || {}).some(v => (v || []).length)
+    || (play.fitted_mods || []).length || (play.disposed_mods || []).length
+    || Object.keys(play.unit_overrides || {}).length);
+  if (hadLegacyEdits) {
+    // Replay the old records through the engine, then keep the result minus
+    // anything bought in play (which stays in play.purchases where it lives).
+    const resolved = RULES.applyPlayAdvances(JSON.parse(JSON.stringify(CHAR)));
+    play.kit = {};
+    for (const category of RULES.KIT_CATEGORIES) {
+      const bought = ((play.purchases || {})[category] || []).length;
+      const all = resolved[category] || [];
+      play.kit[category] = deepCopyEntry(bought ? all.slice(0, all.length - bought) : all);
+    }
+  } else {
+    play.kit = kitFromChargen();
+  }
+  play.kit_baseline = kitFromChargen();
+  // The old records are now folded into the kit; leaving them would apply twice.
+  play.disposed = {}; play.fitted_mods = []; play.disposed_mods = [];
+  play.unit_overrides = {};
+  return play.kit;
+}
+
+/* Re-finalize. The kit is play's, so an unrelated trip through chargen must not
+ * disturb it — but a genuine edit to the BUILD should carry across, the same
+ * ruling that governs lifestyle months. `kit_baseline` is what chargen said at
+ * the last sync, so anything that differs from it now is an owner edit:
+ * appended entries are added to the kit, removed ones are taken out of it, and
+ * everything the player did in play is left alone. */
+function reconcileKit() {
+  const play = CHAR.play;
+  if (!play.kit) { ensureKit(); return; }
+  const baseline = play.kit_baseline || {};
+  const notes = [];
+  for (const category of RULES.KIT_CATEGORIES) {
+    const now = CHAR[category] || [];
+    const was = baseline[category] || [];
+    const kit = play.kit[category] = play.kit[category] || [];
+    const label = e => (e && typeof e === "object") ? (e.name || "") : String(e);
+    const tally = list => list.reduce((m, e) => m.set(label(e), (m.get(label(e)) || 0) + 1), new Map());
+    const nowCount = tally(now), wasCount = tally(was);
+    for (const [name, n] of nowCount) {                 // added in chargen
+      for (let k = (wasCount.get(name) || 0); k < n; k++) {
+        kit.push(deepCopyEntry(now.find(e => label(e) === name)));
+        notes.push(`+${name}`);
+      }
+    }
+    for (const [name, n] of wasCount) {                 // removed in chargen
+      for (let k = (nowCount.get(name) || 0); k < n; k++) {
+        const at = kit.findIndex(e => label(e) === name);
+        if (at >= 0) { kit.splice(at, 1); notes.push(`−${name}`); }
+      }
+    }
+  }
+  play.kit_baseline = kitFromChargen();
+  if (notes.length)
+    logCash(`Chargen build edited: ${notes.slice(0, 6).join(", ")}`
+      + (notes.length > 6 ? ` +${notes.length - 6} more` : ""), 0);
 }
 
 /* ---------------------------------------------- disposing of kit during play
@@ -510,137 +577,41 @@ function promptDisposal(name, value) {
   });
 }
 
-function disposedList(category) {
-  const d = CHAR.play.disposed = CHAR.play.disposed || {};
-  return (d[category] = d[category] || []);
-}
-function isDisposed(category, index) {
-  return ((CHAR.play.disposed || {})[category] || []).includes(index);
-}
-function disposalLabel(name, result, fromChargen) {
-  const how = result.sold ? "Sold" : "Lost";
-  return `${how} ${name}${fromChargen ? " (chargen kit)" : ""}`;
-}
-
-/* The one entry point every ✕ on the play sheet goes through. `arr` is the
- * array the row is backed by and `index` its position in it; `inPlay` says
- * which side of Finalize it came from. Returns true when something happened. */
-async function disposeOfItem({ category, arr, index, inPlay, name, value }) {
-  const result = await promptDisposal(name, value);
-  if (!result) return false;
-  const undo = inPlay
-    ? { kind: "dispose_play", category, entry: deepCopyEntry(arr[index]), at: index }
-    : { kind: "dispose_chargen", category, at: index };
-  if (inPlay) arr.splice(index, 1);
-  else disposedList(category).push(index);
-  logCash(disposalLabel(name, result, !inPlay), result.sold ? result.amount : 0, undo);
-  await playChangedRecalc();
-  return true;
-}
 function deepCopyEntry(entry) {
   return (entry && typeof entry === "object") ? JSON.parse(JSON.stringify(entry)) : entry;
 }
-
-/* ------------------------------------------- sublists inside an owned item
- *
- * Weapon mods, armor extras, deck/rig/unit mods, mounted augments, a drone's
- * weapons. These live INSIDE the item, so on a chargen host every fit and pull
- * used to write straight into the creation record — pulling a chargen mod
- * handed its cost back to the creation budget, and fitting one in play billed
- * the creation budget for something play cash had already paid for.
- *
- * `sublistOf` hands back the list a row should DISPLAY plus the two writers,
- * and picks where they write:
- *   - play-owned host → straight into the item, which play owns outright
- *   - chargen host    → a record in play.fitted_mods / play.disposed_mods,
- *                       leaving the chargen object untouched
- *
- * The displayed list is base − disposed + fitted, in that order, matching what
- * `applyPlayAdvances` builds. So an index into `items` maps cleanly: anything
- * below `baseCount` is chargen kit (pulling it records a disposal), anything
- * above is a play fitting (pulling it just drops the record). */
 const sublistName = m => (m && typeof m === "object") ? m.name : m;
 
+/* The one entry point every ✕ on the play sheet goes through. `arr` is the
+ * array the row is backed by — the kit or play.purchases, both play's — so
+ * parting with something is now just a splice. Returns true when it happened. */
+async function disposeOfItem({ category, arr, index, inPlay, name, value }) {
+  const result = await promptDisposal(name, value);
+  if (!result) return false;
+  const entry = deepCopyEntry(arr[index]);
+  arr.splice(index, 1);
+  logCash(`${result.sold ? "Sold" : "Lost"} ${name}`, result.sold ? result.amount : 0,
+    { kind: "restore_item", category, inPlay, at: index, entry });
+  await playChangedRecalc();
+  return true;
+}
+
+/* Sublists inside an owned item: weapon mods, armor extras, deck/rig/unit mods,
+ * mounted augments, a drone's weapons. The host is play's own copy either way
+ * now, so these are plain array operations — no records, no replay, no
+ * index bookkeeping. The shape is kept so call sites read the same. */
 function sublistOf(entry, list) {
-  const host = entry.ref;
-  if (entry.inPlay) {
-    const arr = host[list] = host[list] || [];
-    return { items: arr, baseCount: arr.length, onChargenHost: false,
-             add: v => arr.push(v),
-             removeAt: i => { arr.splice(i, 1); } };
-  }
-  const play = CHAR.play;
-  play.fitted_mods = play.fitted_mods || [];
-  play.disposed_mods = play.disposed_mods || [];
-  const mine = recs => recs.filter(r => r.category === entry.category
-    && r.host === entry.i && r.list === list);
-  const base = Array.isArray(host[list]) ? host[list] : [];
-  // Drop one occurrence per disposal record, by name — two identical mods on
-  // one weapon are interchangeable, and removing "the first match" is what the
-  // engine does too.
-  const kept = base.slice();
-  for (const rec of mine(play.disposed_mods)) {
-    const i = kept.findIndex(m => sublistName(m) === rec.name);
-    if (i >= 0) kept.splice(i, 1);
-  }
-  const fitted = mine(play.fitted_mods);
-  return {
-    items: [...kept, ...fitted.map(f => f.entry !== undefined ? f.entry : f.name)],
-    baseCount: kept.length,
-    onChargenHost: true,
-    add: v => play.fitted_mods.push({
-      category: entry.category, host: entry.i, list, name: sublistName(v),
-      ...(v && typeof v === "object" ? { entry: deepCopyEntry(v) } : {}) }),
-    removeAt: i => {
-      if (i < kept.length) {
-        play.disposed_mods.push({ category: entry.category, host: entry.i, list,
-                                  name: sublistName(kept[i]) });
-        return;
-      }
-      const rec = fitted[i - kept.length];
-      const at = play.fitted_mods.indexOf(rec);
-      if (at >= 0) play.fitted_mods.splice(at, 1);
-    },
-  };
+  const arr = entry.ref[list] = entry.ref[list] || [];
+  return { items: arr, add: v => arr.push(v), removeAt: i => { arr.splice(i, 1); } };
 }
 
-/* Drones and vehicles: copy-on-write rather than per-mod records.
- *
- * A unit's mods point at its weapons by index (`mod.weapon`), so pulling one
- * weapon renumbers the mods on the others — see removeUnitWeapon. Recording
- * that as individual add/remove entries would mean replaying a reindexing on
- * every recalc. Instead, the first play edit to a CHARGEN unit snapshots its
- * weapons and mods into play.unit_overrides and everything afterwards mutates
- * the copy, so the chargen unit is never touched and all the existing index
- * bookkeeping keeps working unchanged. Revert drops the overrides with the rest
- * of the play layer. Units bought in play are already play-owned and edit
- * directly. */
-function unitEditTarget(entry) {
-  if (entry.inPlay) return entry.ref;
-  const key = `${entry.category}:${entry.i}`;
-  const overrides = CHAR.play.unit_overrides = CHAR.play.unit_overrides || {};
-  if (!overrides[key]) {
-    overrides[key] = { weapons: deepCopyEntry(entry.ref.weapons || []),
-                       mods: deepCopyEntry(entry.ref.mods || []) };
-  }
-  return overrides[key];
-}
-/* What a unit row should DISPLAY: the override once one exists, else the
- * chargen unit as built. Never creates an override — only an edit does. */
-function unitView(entry) {
-  if (entry.inPlay) return entry.ref;
-  const override = (CHAR.play.unit_overrides || {})[`${entry.category}:${entry.i}`];
-  return override ? { ...entry.ref, ...override } : entry.ref;
-}
-
-/* Pulling a mod off a drone or vehicle. Goes through the override rather than
- * the record model, for the index reasons above; no Undo button, because
- * restoring one mod out of a rewritten index set isn't a safe single step. */
+/* Pulling a mod off a drone or vehicle. Unit mods point at the unit's weapons
+ * by index, so removeUnitWeapon renumbers them; restoring one out of a
+ * renumbered set isn't a safe single step, hence no Undo button here. */
 async function disposeOfUnitMod(entry, modIndex, name, hostName, value) {
   const result = await promptDisposal(name, value);
   if (!result) return false;
-  const target = unitEditTarget(entry);
-  target.mods.splice(modIndex, 1);
+  entry.ref.mods.splice(modIndex, 1);
   logCash(`${result.sold ? "Sold" : "Lost"} ${name} (off ${hostName})`,
     result.sold ? result.amount : 0);
   await playChangedRecalc();
@@ -653,50 +624,14 @@ async function disposeOfMod({ entry, list, index, name, value, hostName }) {
   const result = await promptDisposal(name, value);
   if (!result) return false;
   const sub = sublistOf(entry, list);
-  const fromChargen = sub.onChargenHost && index < sub.baseCount;
-  const removed = sub.items[index];
+  const removed = deepCopyEntry(sub.items[index]);
   sub.removeAt(index);
-  const undo = fromChargen
-    ? { kind: "undispose_mod", category: entry.category, host: entry.i, list, name }
-    : { kind: "refit_mod", category: entry.category, host: entry.i, list,
-        inPlay: entry.inPlay, at: index, entry: deepCopyEntry(removed) };
   logCash(`${result.sold ? "Sold" : "Lost"} ${name} (off ${hostName})`,
-    result.sold ? result.amount : 0, undo);
+    result.sold ? result.amount : 0,
+    { kind: "restore_mod", category: entry.category, inPlay: entry.inPlay,
+      host: entry.i, list, at: index, entry: removed });
   await playChangedRecalc();
   return true;
-}
-
-/* Which chargen armor was being worn at Finalize, for Revert to put back.
- *
- * Stored as { name: worn } rather than a positional array. The old array was
- * indexed against CHAR.armor, so anything that changed that list's shape slid
- * every flag along by one and Revert dressed the character in the wrong pieces.
- * Names are stable, and two copies of the same armor are interchangeable for
- * this purpose — they differ only in fitted Extras, which Revert doesn't touch.
- * The legacy array shape is still read, so characters saved before this keep
- * working. */
-function wornSnapshotOf(armorList) {
-  const out = {};
-  (armorList || []).forEach(a => { out[a.name] = a.active !== false; });
-  return out;
-}
-function restoreWornSnapshot(snapshot) {
-  if (!snapshot) return;
-  const byName = Array.isArray(snapshot)
-    ? wornSnapshotOfLegacy(snapshot)      // pre-2026-08-05 positional array
-    : snapshot;
-  CHAR.play.armor_worn = byName;
-  CHAR.armor.forEach(a => {
-    if (a.name in byName) a.active = byName[a.name] !== false;
-  });
-}
-/* A positional array can only be read back positionally — it carries no names.
- * Best effort against the CURRENT list; wrong if the list changed shape, which
- * is exactly the bug this replaced. Runs once, then the object form takes over. */
-function wornSnapshotOfLegacy(arr) {
-  const out = {};
-  CHAR.armor.forEach((a, i) => { if (i < arr.length) out[a.name] = arr[i] !== false; });
-  return out;
 }
 
 function chargenLifestyles() {
@@ -818,7 +753,6 @@ async function revertToChargenEnd() {
   const keepStart = play.starting_cash
     || (play.cash_log.find(e => e.label.startsWith("Starting cash roll")) || {}).delta || 0;
   const rollEntry = play.cash_log.find(e => e.label.startsWith("Starting cash roll"));
-  const wornSnapshot = play.armor_worn;
   const keepGhost = play.ghost_rating;   // rolled once at first finalize — never re-rolled
   CHAR.play = {};
   ensurePlay();
@@ -827,7 +761,12 @@ async function revertToChargenEnd() {
   CHAR.play.cash = keepStart;
   if (rollEntry) CHAR.play.cash_log = [rollEntry];
   if (keepGhost) CHAR.play.ghost_rating = keepGhost;
-  restoreWornSnapshot(wornSnapshot);
+  // A fresh copy of the build IS the revert: worn flags, fitted mods,
+  // quantities and everything else come back exactly as chargen has them. The
+  // old armor_worn snapshot existed only because play used to edit the chargen
+  // armor in place; there is nothing left to snapshot.
+  CHAR.play.kit = kitFromChargen();
+  CHAR.play.kit_baseline = kitFromChargen();
   seedLifestyles();
   await playChangedRecalc();
   alert("Character reverted to their post-chargen state.");
@@ -1231,11 +1170,14 @@ function sheetHeader() {
       el("div", { class: "v" }, fmt(play.cash), el("span", { class: "plus" }, " +"))));
 
   // Freeform character description, sitting between identity and the meters.
+  // Editing it in play writes to play, not to the chargen record — a character
+  // changing how they look at the table shouldn't rewrite how they were built.
+  // Falls back to the chargen text until play has its own.
   const descField = el("div", { class: "sh-desc" },
     el("textarea", { class: "sh-desc-input", placeholder: "Character description…",
       spellcheck: "true",
-      oninput: e => { CHAR.description = e.target.value; schedulePlaySave(); } },
-      CHAR.description || ""));
+      oninput: e => { play.description = e.target.value; schedulePlaySave(); } },
+      play.description ?? CHAR.description ?? ""));
 
   // Top band: identity (hamburger + name, details underneath) on the left,
   // description in the middle, meters on the right.
@@ -1603,34 +1545,12 @@ function loadoutMove(items, i, dir) {
 // the element itself rather than layering a stored order over several stores.
 // `after` re-renders: playChanged for name-keyed lists, playChangedRecalc where
 // a CALC array is index-aligned to the one being moved (armor).
-/* Reordering swaps two entries in place. When the array is a CHARGEN one, any
- * disposal recorded against those two positions has to swap with them —
- * play.disposed holds indices, and a stale index points at whatever moved into
- * the slot. Play purchase arrays carry no disposal records, so they just swap. */
+/* Reordering swaps two entries in place. Every list the play sheet can reorder
+ * is play's own — the kit or a purchases array — so this is just a swap. */
 function arrayMove(arr, i, dir, after = playChanged) {
   const j = i + dir;
   if (j < 0 || j >= arr.length) return;
   [arr[i], arr[j]] = [arr[j], arr[i]];
-  // Identity, not name: only the character's own chargen array for that
-  // category carries disposal records against it.
-  const category = DISPOSABLE_CATEGORIES.find(c => CHAR[c] === arr);
-  if (category) {
-    const list = (CHAR.play.disposed || {})[category];
-    if (Array.isArray(list)) {
-      for (let k = 0; k < list.length; k++) {
-        if (list[k] === i) list[k] = j;
-        else if (list[k] === j) list[k] = i;
-      }
-    }
-    // Sublist records address their host the same way, so they move too.
-    for (const recs of [CHAR.play.fitted_mods, CHAR.play.disposed_mods]) {
-      for (const r of recs || []) {
-        if (r.category !== category) continue;
-        if (r.host === i) r.host = j;
-        else if (r.host === j) r.host = i;
-      }
-    }
-  }
   after();
 }
 
@@ -1640,7 +1560,7 @@ function equippedCyberguns() {
   // Keep the source augment entry + its array so the Overview can drag-reorder
   // cyberguns (they're derived, so reordering acts on the underlying augments).
   const sources = [
-    CHAR.augments,
+    kitOf("augments"),
     (CHAR.play && CHAR.play.purchases && CHAR.play.purchases.augments) || [],
   ];
   const out = [];
@@ -1663,7 +1583,7 @@ function equippedCyberguns() {
    in play, merged, since you load from one stock. */
 function ownedAmmoRows() {
   const seen = new Map();
-  for (const g of [...CHAR.gear, ...((CHAR.play.purchases || {}).gear || [])]) {
+  for (const g of allGear()) {
     const row = DATA.tables.misc_gear.find(x => x.Item === g.name);
     if (row && (row.Class || "").startsWith("Ammo") && !seen.has(row.Item)) seen.set(row.Item, row);
   }
@@ -2119,7 +2039,7 @@ function shOverview(body) {
   // ammo type reads as a single stack of uses. Ordered as the tables list it.
   const ammoOnHand = (() => {
     const byName = new Map();
-    for (const g of [...CHAR.gear, ...((CHAR.play.purchases || {}).gear || [])]) {
+    for (const g of allGear()) {
       const row = DATA.tables.misc_gear.find(x => x.Item === g.name);
       if (!row || !(row.Class || "").startsWith("Ammo")) continue;
       const seen = byName.get(g.name);
@@ -2906,14 +2826,13 @@ function shSkills(body) {
 
   // Knowledge points are never forfeited at finalize — any leftover (or
   // freed up by a later Intelligence raise) budget stays spendable here.
-  CHAR.knowledge_skills ??= [];
   const kBudget = CALC.knowledge || { budget: 0, spent: 0, remaining: 0 };
   know.append(el("h4", { class: "sh-h4" }, "Knowledges"),
     el("p", { class: "hint", style: "margin:0 0 6px" },
       `${kBudget.remaining} / ${kBudget.budget} points left — 2 × Intelligence `
       + "(+1 per Knowledge Skillsoft), free-form, spendable any time."));
   const kt = el("table", { style: "max-width:560px" });
-  CHAR.knowledge_skills.forEach((k, i) => {
+  allKnowledgeSkills().forEach((k, i) => {
     const atCap = (k.points || 0) >= KNOWLEDGE_RANK_CAP;
     const pointsCtl = el("span", { class: "sh-mini" },
       el("button", { class: "mini-btn", title: "Reduce",
@@ -2929,14 +2848,14 @@ function shSkills(body) {
         oninput: e => { k.name = e.target.value; playChanged(false); } })),
       el("td", { class: "num" }, pointsCtl),
       el("td", {}, el("button", { class: "row-del", title: "Remove",
-        onclick: async () => { CHAR.knowledge_skills.splice(i, 1); await playChangedRecalc(); } }, "✕"))));
+        onclick: async () => { kitOf("knowledge_skills").splice(i, 1); await playChangedRecalc(); } }, "✕"))));
   });
-  if (!CHAR.knowledge_skills.length)
+  if (!allKnowledgeSkills().length)
     kt.append(el("tr", {}, el("td", { class: "sub", colspan: "3" }, "No knowledge skills yet.")));
   know.append(kt, el("div", { class: "add-row" },
     el("button", {
       class: "btn-add", disabled: kBudget.remaining < 1 ? "1" : null,
-      onclick: async () => { CHAR.knowledge_skills.push({ name: "", points: 1 }); await playChangedRecalc(); },
+      onclick: async () => { kitOf("knowledge_skills").push({ name: "", points: 1 }); await playChangedRecalc(); },
     }, "Add knowledge skill")));
   body.append(know);
 
@@ -3585,7 +3504,7 @@ function shGear(body) {
   });
   // Only what's actually on you counts against Strength -- gear left in a stash
   // carries no weight, which is the point of the per-item carried count.
-  [...CHAR.gear, ...play.purchases.gear].forEach(g => {
+  allGear().forEach(g => {
     const r = DATA.tables.misc_gear.find(x => x.Item === g.name) || {};
     load += wtNum(r.Weight) * carriedQty(g);
   });
@@ -3788,7 +3707,7 @@ function shGear(body) {
   // Two backing stores rendered as one table (chargen kit, then bought-in-play).
   // Reordering stays inside an item's own array — moving across the boundary
   // would silently relabel a purchase — so the handles stop at each block's edge.
-  const gearEntries = ownedSplit("gear", CHAR.gear, play.purchases.gear);
+  const gearEntries = ownedGear();
   const gt = el("table");
   gt.append(el("tr", {}, el("th", {}, "Item"), el("th", { class: "num" }, "Qty"),
     el("th", { class: "num" }, "Weight"),
@@ -3979,10 +3898,10 @@ function shAugments(body) {
   const mult = CALC.budget.gear_cost_multiplier || 1;
   const z = CALC.zoetics;
 
-  const augEntries = ownedSplit("augments", CHAR.augments, play.purchases.augments);
+  const augEntries = ownedAugments();
   // Slotted Skillsofts grant their bonus; how many can be slotted at once is
   // capped by the number of Chipjacks installed.
-  const ownedAugsAll = [...CHAR.augments, ...play.purchases.augments];
+  const ownedAugsAll = allAugmentsOwned();
   const chipjackCount = ownedAugsAll
     .filter(a => a.name === "Chipjack").reduce((sum, a) => sum + (a.count || 1), 0);
   const slottedSkillsoftCount = ownedAugsAll
@@ -4245,7 +4164,7 @@ function lifestyleCard() {
       "Each sector turn requires eliminating one month of pre-purchased lifestyle "
       + "or paying upkeep for your desired lifestyle."));
   // Hyperthyroid raises lifestyle cost 10% (matches HYPERTHYROID_LIFESTYLE_SURCHARGE in rules.js).
-  const hasHyperthyroid = [...CHAR.augments, ...((play.purchases && play.purchases.augments) || [])]
+  const hasHyperthyroid = allAugmentsOwned()
     .some(a => a.name === "Hyperthyroid");
   const lifestyleSurcharge = hasHyperthyroid ? 1.10 : 1;
   play.lifestyles.forEach((ls, i) => {
@@ -4333,7 +4252,7 @@ async function buyAugment(name, mult) {
   if (CHAR.heritage.type === "Synthetic" && r.Type === "Bioware") {
     alert(`Can't install ${name}: Synthetics cannot install Bioware.`); return;
   }
-  const owned = [...CHAR.augments, ...CHAR.play.purchases.augments];
+  const owned = allAugmentsOwned();
   const banReason = augmentAvailability(owned).bannedReason(name);
   if (banReason) { alert(`Can't install ${name}: ${banReason}.`); return; }
   // Cyberguns are capped at one per installed cyberarm.
@@ -5386,11 +5305,9 @@ function shRigging(body) {
     const card = el("div", { class: "card sh-card" }, el("h3", {}, cfg.title));
     entries.forEach((en, i) => {
       const { arr: unitArr, i: localIndex, inPlay, category } = en;
-      // Read through the override if this unit has been edited in play; write
-      // through `edit`, which creates one on a chargen unit. `u` is display +
-      // identity (name, label); `edit` owns weapons and mods.
-      const u = unitView(en);
-      const edit = () => unitEditTarget(en);
+      // The unit is play's own copy, so reads and writes are the same object.
+      const u = en.ref;
+      const edit = () => u;
       const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === u.name) || {};
       const summary = (calcArr || [])[i] || {};
       const key = `${cfg.table}:${i}`;
@@ -5825,7 +5742,7 @@ function buildMarkdown() {
     L.push("**Etiquettes:** " + etqList.map(([n, v]) => `${n} ${v}`).join(" · "));
     L.push("");
   }
-  const knows = CHAR.knowledge_skills.filter(k => k.name);
+  const knows = allKnowledgeSkills().filter(k => k.name);
   if (knows.length) {
     L.push("**Knowledges:** " + knows.map(k => `${k.name} ${k.points || 0}`).join(" · "));
     L.push("");
@@ -5879,7 +5796,7 @@ function buildMarkdown() {
     L.push("");
   }
 
-  const allAugments = [...CHAR.augments, ...play.purchases.augments];
+  const allAugments = allAugmentsOwned();
   if (allAugments.length) {
     L.push("## Augments");
     L.push("");
@@ -5945,11 +5862,11 @@ function buildMarkdown() {
     });
     L.push("");
   }
-  const allGear = [...CHAR.gear, ...play.purchases.gear];
-  if (allGear.length || play.lifestyles.length) {
+  const gearOwned = allGear();
+  if (gearOwned.length || play.lifestyles.length) {
     L.push("## Gear");
     L.push("");
-    allGear.forEach(g => L.push(`- ${g.name}${(g.qty || 1) > 1 ? ` ×${g.qty}` : ""}`));
+    gearOwned.forEach(g => L.push(`- ${g.name}${(g.qty || 1) > 1 ? ` ×${g.qty}` : ""}`));
     play.lifestyles.forEach(ls => {
       L.push(`- Lifestyle: ${ls.name} — ${ls.months || 0} month(s) prepaid${ls.active ? " **(current)**" : ""}`);
       if (ls.active && LIFESTYLE_EFFECTS[ls.name])

@@ -175,6 +175,13 @@ const CORE_EXPLOIT_COUNT = { Single: 1, Double: 2, Triple: 3, Quad: 4 };
 // Mage/Archmage summoning spells that grant a control exploit for the summoned
 // creature (one per spell known — the creature is directed with that action).
 const SUMMON_CONTROL_SPELLS = ["Create Darkenbeast", "Summon Elemental", "Bound Servant"];
+/* The character arrays that Finalize hands over to play (see play.kit). Gear
+ * plus knowledge skills — knowledge points are deliberately still spendable
+ * after Finalize, so that list has to be play's to edit too. Anything added
+ * here must also be copied by ensureKit() in sheet.js. */
+const KIT_CATEGORIES = ["weapons", "armor", "gear", "augments", "decks",
+  "programs", "rigs", "drones", "vehicles", "knowledge_skills"];
+
 // A Speaker gets two control exploit actions per spirit slotted in a bond slot.
 const SPEAKER_BOND_CONTROL_EXPLOITS = 2;
 // Bonds are bought in chargen, 0-4, and that count is the ONLY authority on how
@@ -529,31 +536,37 @@ function defaultCharacter() {
       ritual_advances: {},
       zp_advances: 0,
       spell_force_advances: {},
-      // Chargen kit sold or lost during play, as { category: [index, …] } into
-      // the CHARGEN arrays. The same hard line as `purchases`, running the
-      // other way: play never splices a chargen array, it records that the item
-      // is gone. So the creation budget still counts what was bought at
-      // creation, Back to Chargen shows the character as built, and Revert —
-      // which drops the whole play layer — hands everything back.
+      // ---- THE BRIGHT LINE ----------------------------------------------
+      // What the character walked out of creation with, copied into play at
+      // Finalize. From that moment play owns this outright: worn flags, fitted
+      // mods, quantities, α-grades, sales, losses, reordering — all of it edits
+      // `kit`, and the chargen arrays on the character are never written to
+      // again. That is the whole invariant, and it is what makes the creation
+      // budget stable, Back to Chargen show the character exactly as built, and
+      // Revert restore everything by simply rebuilding this from chargen.
+      //
+      // Before this existed, play mutated the chargen objects in place, and
+      // every leak we chased was a symptom: burning ammo re-priced the creation
+      // budget, α-grading an augment charged creation cash, selling a weapon
+      // refunded it. Three separate patches (`disposed`, `fitted_mods` /
+      // `disposed_mods`, `unit_overrides`) each covered one path; this replaces
+      // all three. They are still READ below so characters saved before
+      // 2026-08-05 render correctly until ensureKit() migrates them.
+      //
+      // null until a character is finalized for the first time.
+      kit: null,
+      // Play's own copy of the description, so editing it at the table doesn't
+      // rewrite the chargen record. null falls back to the chargen text.
+      description: null,
+      // What the chargen record looked like when `kit` was last synced, so a
+      // re-finalize can tell "the player changed this in play" from "the owner
+      // edited the build". Same rule as lifestyles: chargen wins, but only
+      // where chargen actually changed.
+      kit_baseline: null,
+      // Legacy, read-only — replaced by `kit`, migrated once by ensureKit().
       disposed: {},
-      // The same line one level down, for things fitted INTO a chargen item —
-      // weapon mods, armor extras, deck/rig/unit mods, mounted augments, a
-      // drone's weapons. Those live inside the chargen object, so play used to
-      // write straight into the creation record: pulling a chargen mod handed
-      // its cost back to the creation budget, and fitting one in play billed
-      // the creation budget for something play cash had already paid for.
-      //   [{ category, host, list, name, entry? }]
-      // `host` indexes the chargen array, `list` is the sublist key, and
-      // `entry` carries the whole object for lists that hold objects.
       fitted_mods: [],
       disposed_mods: [],
-      // Drones and vehicles get copy-on-write instead of per-mod records: a
-      // unit's mods reference its weapons BY INDEX, so removing one weapon
-      // renumbers the mods attached to the others. Tracking that as individual
-      // records would be a reindexing minefield. Instead the first play edit
-      // snapshots that unit's weapons+mods here and everything afterwards works
-      // on the copy, leaving the chargen unit untouched.
-      //   { "drones:0": { weapons: [...], mods: [...] } }
       unit_overrides: {},
       // Everything bought after Finalize. There is a hard line between the
       // chargen record and anything that happens once Finalize is pressed:
@@ -3482,10 +3495,56 @@ function applyPlayAdvances(character) {
     character.ritual_skills[name] = Math.min(PLAY_SKILL_RANK_CAP,
       toInt(asNumber(character.ritual_skills[name] || 0)) + advance(plus));
   }
-  // Sublist edits first: they address a chargen host by index, so they have to
-  // run before the item filter below reindexes anything. Removals before
-  // additions, so pulling a mod and fitting the same one again in play reads
-  // in the order it happened.
+  // The bright line. A finalized character carries its own copy of the kit it
+  // left creation with, and play owns it: swap the chargen arrays for it and
+  // everything downstream — pricing, ZR, armor totals, the sheet — is looking
+  // at what the character HAS, while the untouched chargen record goes on
+  // answering what they were BUILT with.
+  if (play.kit) {
+    for (const category of KIT_CATEGORIES) {
+      if (Array.isArray(play.kit[category])) character[category] = deepCopy(play.kit[category]);
+    }
+  } else applyLegacyPlayEdits(character, play);
+
+  // Play purchases append AFTER the kit, so index N of the character's array is
+  // index N of the matching CALC array either way. This is the only place the
+  // two halves are ever joined; everything upstream keeps them apart.
+  const purchases = play.purchases || {};
+  character.gear.push(...(purchases.gear || []));
+  character.augments.push(...(purchases.augments || []));
+  character.weapons.push(...(purchases.weapons || []));
+  character.armor.push(...(purchases.armor || []));
+  character.decks.push(...(purchases.decks || []));
+  character.programs.push(...(purchases.programs || []));
+  character.rigs.push(...(purchases.rigs || []));
+  character.drones.push(...(purchases.drones || []));
+  character.vehicles.push(...(purchases.vehicles || []));
+  character.magic.amp_powers.push(...(purchases.amp_powers || []));
+  character.magic.spells.push(...(purchases.spells || []));
+  character.hacking_rating = Math.min(HACKING_RATING_MAX,
+    toInt(asNumber(character.hacking_rating)) + advance(purchases.hacking_levels));
+  for (const [name, plus] of Object.entries(play.spell_force_advances || {})) {
+    for (const spell of character.magic.spells) {
+      if (spell.name === name) {
+        spell.force = Math.min(SPELL_FORCE_MAX,
+          toInt(asNumber(spell.force)) + advance(plus));
+        break;
+      }
+    }
+  }
+  return character;
+}
+
+/* Everything below is pre-kit bookkeeping, kept so characters saved before
+ * 2026-08-05 render correctly until ensureKit() converts them. Three separate
+ * mechanisms, each covering one way play could reach into the chargen record;
+ * `play.kit` replaces all of them with a copy play simply owns.
+ *
+ * Sublist edits run first: they address a chargen host by index, so they have
+ * to happen before the item filter reindexes anything. Removals before
+ * additions, so pulling a mod and fitting the same one again reads in the
+ * order it happened. */
+function applyLegacyPlayEdits(character, play) {
   const modName = m => (m && typeof m === "object") ? m.name : m;
   const hostSublist = record => {
     const list = Array.isArray(character[(record || {}).category])
@@ -3514,45 +3573,13 @@ function applyPlayAdvances(character) {
     if (Array.isArray(override.mods)) unit.mods = deepCopy(override.mods);
   }
 
-  // Chargen kit sold or lost in play drops out HERE, before the purchases are
-  // appended, so the recorded indices still line up with the chargen arrays.
-  // Only the finalized sheet loses it: `calculate` runs this on a copy and only
-  // when finalized, so the creation budget goes on counting what was bought at
-  // creation and Back to Chargen still shows the character as built.
-  const disposed = play.disposed || {};
-  for (const [category, indices] of Object.entries(disposed)) {
+  // Chargen kit sold or lost in play drops out last, so the recorded indices
+  // still line up with the chargen arrays while the edits above run.
+  for (const [category, indices] of Object.entries(play.disposed || {})) {
     if (!Array.isArray(character[category]) || !Array.isArray(indices)) continue;
     const gone = new Set(indices.map(i => toInt(asNumber(i, -1))));
     if (!gone.size) continue;
     character[category] = character[category].filter((_, i) => !gone.has(i));
-  }
-
-  // Play purchases append AFTER the chargen entries, so index N of the
-  // character's array is index N of the matching CALC array either way. This is
-  // the only place the two halves are ever joined; everything upstream keeps
-  // them apart.
-  const purchases = play.purchases || {};
-  character.gear.push(...(purchases.gear || []));
-  character.augments.push(...(purchases.augments || []));
-  character.weapons.push(...(purchases.weapons || []));
-  character.armor.push(...(purchases.armor || []));
-  character.decks.push(...(purchases.decks || []));
-  character.programs.push(...(purchases.programs || []));
-  character.rigs.push(...(purchases.rigs || []));
-  character.drones.push(...(purchases.drones || []));
-  character.vehicles.push(...(purchases.vehicles || []));
-  character.magic.amp_powers.push(...(purchases.amp_powers || []));
-  character.magic.spells.push(...(purchases.spells || []));
-  character.hacking_rating = Math.min(HACKING_RATING_MAX,
-    toInt(asNumber(character.hacking_rating)) + advance(purchases.hacking_levels));
-  for (const [name, plus] of Object.entries(play.spell_force_advances || {})) {
-    for (const spell of character.magic.spells) {
-      if (spell.name === name) {
-        spell.force = Math.min(SPELL_FORCE_MAX,
-          toInt(asNumber(spell.force)) + advance(plus));
-        break;
-      }
-    }
   }
   return character;
 }
@@ -4004,6 +4031,7 @@ return {
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
   SPEAKER_BOND_MAX, speakerBondCount,
+  KIT_CATEGORIES, applyPlayAdvances,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,
   surchargeFor,
 };

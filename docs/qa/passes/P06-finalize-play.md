@@ -379,127 +379,116 @@ sync, which is what lets the two be told apart.
 
 ---
 
-## Parting with kit in play
+## The bright line: `play.kit`
 
-The other half of the JC-024 line. A play purchase is never written into a
-chargen array; a chargen item sold or lost in play is never spliced *out* of
-one. The index goes into `play.disposed`, `applyPlayAdvances` filters it from
-the finalized sheet, and the creation record is left exactly as built.
+At Finalize the character's gear is **copied** into `play.kit`, and from then on
+the play sheet edits only that copy. Worn flags, fitted mods, quantities,
+α-grades, sales, losses, reordering — all of it lands in the kit, and the
+chargen arrays are never written to again.
 
-### P06-018: Selling chargen kit leaves the creation budget alone
+That one rule replaced four narrower mechanisms (`disposed`, `fitted_mods` /
+`disposed_mods`, `unit_overrides`, `armor_worn`), each of which had patched one
+path by which play could reach into the creation record.
+
+### P06-018: Ten play actions, and the chargen record does not move
 - **Type:** leak
-- **Steps:** load `kitchen-sink-final.json` (already finalized).
+- **Steps:** none — the Check builds and finalizes its own character each time.
 - **Check:**
 
-      (async () => { CHAR.finalized = true; ensurePlay(); CHAR.play.disposed = {}; await recalc(); const before = (() => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; return RULES.calculate(c).budget.remaining; })(); disposedList("weapons").push(0); logCash("Sold " + CHAR.weapons[0].name + " (chargen kit)", 1000, { kind: "dispose_chargen", category: "weapons", at: 0 }); await recalc(); const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; const k = RULES.calculate(c); return { before, remaining: k.budget.remaining, chargenWeapons: k.weapons.map(w => w.Weapon), playWeapons: (CALC.weapons || []).map(w => w.Weapon), chargenArray: CHAR.weapons.map(w => w.name), errors: k.errors }; })()
+      (async () => { const raw = JSON.parse(JSON.stringify(CHAR)); const KEYS = ["priorities","attributes","skills","knowledge_skills","heritage","magic","augments","weapons","armor","gear","decks","programs","rigs","drones","vehicles","lifestyles","description"]; const fp = () => { const o = {}; for (const k of KEYS) o[k] = CHAR[k]; return JSON.stringify(o); }; const view = () => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; const k = RULES.calculate(c); return [k.budget.remaining, (k.knowledge || {}).remaining]; }; const rows = []; const test = async (label, fn) => { CHAR = RULES.mergeDefaults(JSON.parse(JSON.stringify(raw))); CHAR.armor = [{ name: "Armor Jacket", style: "", material: "", extras: [], active: true }]; CHAR.finalized = true; ensurePlay(); await recalc(); const a = fp(), b = view(); fn(); await recalc(); rows.push({ label, chargen: fp() === a ? "same" : "CHANGED", budget: String(view()) === String(b) ? "same" : "MOVED" }); }; const K = c => CHAR.play.kit[c]; await test("worn", () => { K("armor")[0].active = false; }); await test("equipped", () => { K("weapons")[0].equipped = false; }); await test("carried", () => { K("gear")[0].carried = false; }); await test("qty +5", () => { K("gear")[0].qty = (K("gear")[0].qty || 1) + 5; }); await test("augment count +1", () => { K("augments")[0].count = (K("augments")[0].count || 1) + 1; }); await test("augment alpha", () => { K("augments")[0].alpha = true; }); await test("augment slotted", () => { K("augments")[0].slotted = !K("augments")[0].slotted; }); await test("knowledge added", () => { K("knowledge_skills").push({ name: "Streetwise", points: 3 }); }); await test("description", () => { CHAR.play.description = "changed"; }); await test("reorder", () => { arrayMove(K("weapons"), 0, 1, () => {}); }); return rows; })()
 
-- **Expected:**
-
-      { "before": 33902, "remaining": 33902,
-        "chargenWeapons": ["Kalishnikov A-80", "Katana"],
-        "playWeapons": ["Katana"],
-        "chargenArray": ["Kalishnikov A-80", "Katana"],
-        "errors": [] }
-
-- **Note:** This is P06-011 pointed the other way, and the bug it was written
-  for. Until 2026-08-05 every ✕ on the play sheet spliced the owning array, so
-  selling chargen kit handed its cost back to the creation budget — sell a
-  weapon in play, go Back to Chargen, spend the money again. `remaining` moving
-  at all means that is live once more. `chargenArray` is the tell: the chargen
-  record must be untouched even though the sheet no longer lists the weapon.
+- **Expected:** ten rows, every one `{ chargen: "same", budget: "same" }`.
+- **Note:** This is the case the refactor exists for. Before it, **all ten**
+  mutated the chargen record and four moved a creation budget — the qty stepper
+  by ㄓ5,000, an extra Skillsoft by ㄓ2,500, an α-grade by ㄓ2,500, a knowledge
+  skill by 3 points. A single `CHANGED` means something on the sheet is writing
+  through to `CHAR.<array>` again instead of `play.kit`; the offender is
+  whichever field that row touches.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P06-019: Sell, lose and cancel through the dialog
 - **Type:** correctness
-- **Steps:** continue from P06-018 (do not reload), then reset with
-  `CHAR.play.disposed = {}; CHAR.play.cash_log = []; await recalc();`.
+- **Steps:** reload `kitchen-sink-final.json` and enter play mode.
 - **Check:**
 
-      (async () => { const open = async re => { sheetTab = "gear"; renderSheet(); const row = [...document.querySelectorAll("#sheet table tr")].find(r => re.test(r.textContent) && r.querySelector(".row-del")); row.querySelector(".row-del").click(); await new Promise(r => setTimeout(r, 60)); return document.querySelector(".mount-modal"); }; const press = async (m, label) => { [...m.querySelectorAll("button")].find(b => b.textContent.trim() === label).click(); await new Promise(r => setTimeout(r, 120)); }; const cash0 = CHAR.play.cash; let m = await open(/Kalishnikov/); const shown = { heading: m.querySelector("h3").textContent, pct: m.querySelectorAll("input")[0].value, amount: m.querySelectorAll("input")[1].value }; await press(m, "Cancel"); const afterCancel = { cash: CHAR.play.cash, log: CHAR.play.cash_log.length }; m = await open(/Kalishnikov/); m.querySelectorAll("input")[1].value = "500"; await press(m, "Sell"); const afterSell = { cash: CHAR.play.cash, top: CHAR.play.cash_log[0] }; m = await open(/Katana/); await press(m, "Lost / discarded"); const afterLost = { cash: CHAR.play.cash, top: CHAR.play.cash_log[0] }; return { cash0, shown, afterCancel, afterSell, afterLost, disposed: CHAR.play.disposed }; })()
+      (async () => { CHAR.finalized = true; ensurePlay(); CHAR.play.kit = kitFromChargen(); CHAR.play.cash_log = []; await recalc(); const open = async re => { sheetTab = "gear"; renderSheet(); const row = [...document.querySelectorAll("#sheet table tr")].find(r => re.test(r.textContent) && r.querySelector(".row-del")); row.querySelector(".row-del").click(); await new Promise(r => setTimeout(r, 60)); return document.querySelector(".mount-modal"); }; const press = async (m, label) => { [...m.querySelectorAll("button")].find(b => b.textContent.trim() === label).click(); await new Promise(r => setTimeout(r, 120)); }; const cash0 = CHAR.play.cash; let m = await open(/Kalishnikov/); const shown = { heading: m.querySelector("h3").textContent, pct: m.querySelectorAll("input")[0].value, amount: m.querySelectorAll("input")[1].value }; await press(m, "Cancel"); const cancelled = { cash: CHAR.play.cash === cash0, log: CHAR.play.cash_log.length }; m = await open(/Kalishnikov/); m.querySelectorAll("input")[1].value = "500"; await press(m, "Sell"); const sold = { cash: CHAR.play.cash, top: CHAR.play.cash_log[0].label, kit: CHAR.play.kit.weapons.map(w => w.name), chargen: CHAR.weapons.map(w => w.name) }; m = await open(/Katana/); await press(m, "Lost / discarded"); const lost = { cash: CHAR.play.cash, top: CHAR.play.cash_log[0] }; return { cash0, shown, cancelled, sold, lost }; })()
 
 - **Expected:** `shown` is `{ heading: "Part with Kalishnikov A-80?", pct: "50",
-  amount: "375" }` — half of the ㄓ749 it cost. Cancel changes nothing. The sale
-  adds the hand-typed **500** and logs
-  `{ delta: 500, label: "Sold Kalishnikov A-80 (chargen kit)", undo: { kind:
-  "dispose_chargen", category: "weapons", at: 0 } }`. The loss logs the same
-  shape with `delta: 0` and label `"Lost Katana (chargen kit)"`. `disposed`
-  ends `{ weapons: [0, 1] }`.
-- **Note:** The percentage is a starting point, not a rule — the amount field
-  wins, because what a fence pays is the table's call. Every disposal is logged
-  whether or not money moved, which is the whole point: a zero-delta row is how
-  "it burned in the car" stays visible. Escape and clicking the backdrop are
-  Cancel.
+  amount: "375" }`. `cancelled` is `{ cash: true, log: 0 }`. `sold.cash` is
+  `cash0 + 500`, `sold.top` is `"Sold Kalishnikov A-80"`, `sold.kit` is
+  `["Katana"]` and **`sold.chargen` is still `["Kalishnikov A-80", "Katana"]`**.
+  `lost.top` has `delta: 0` and label `"Lost Katana"`, with an undo descriptor
+  of kind `restore_item`.
+- **Note:** `sold.chargen` is the load-bearing assertion. The percentage seeds
+  the amount and the amount wins, because what a fence pays is the table's call.
+  Escape and clicking the backdrop are Cancel.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P06-020: Undo and Revert both hand the kit back
+### P06-020: The Back-to-Chargen round trip
 - **Type:** correctness
 - **Steps:** continue from P06-019.
 - **Check:**
 
-      (async () => { const realConfirm = window.confirm, realAlert = window.alert; window.confirm = () => true; window.alert = () => {}; await undoCashSpend(CHAR.play.cash_log[0]); const afterUndo = { disposed: JSON.parse(JSON.stringify(CHAR.play.disposed)), onSheet: (CALC.weapons || []).map(w => w.Weapon) }; await revertToChargenEnd(); window.confirm = realConfirm; window.alert = realAlert; return { afterUndo, afterRevert: { disposed: CHAR.play.disposed, onSheet: (CALC.weapons || []).map(w => w.Weapon), log: CHAR.play.cash_log.length } }; })()
+      (async () => { const out = {}; const sheet = () => (CALC.weapons || []).map(w => w.Weapon); const chargen = () => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; const k = RULES.calculate(c); return { weapons: k.weapons.map(w => w.Weapon), remaining: k.budget.remaining }; }; CHAR.finalized = true; ensurePlay(); CHAR.play.kit = kitFromChargen(); CHAR.play.kit_baseline = kitFromChargen(); CHAR.play.cash_log = []; await recalc(); CHAR.play.kit.weapons.splice(0, 1); await recalc(); out.sold = { sheet: sheet(), chargen: chargen() }; CHAR.finalized = false; await recalc(); out.backToChargen = { listed: sheet(), remaining: CALC.budget.remaining, errors: CALC.errors.length }; CHAR.finalized = true; reconcileKit(); await recalc(); out.refinalized = { sheet: sheet(), logged: CHAR.play.cash_log.length }; CHAR.finalized = false; CHAR.weapons.push({ name: "Katana", mods: [], equipped: true }); CHAR.finalized = true; reconcileKit(); await recalc(); out.afterBuildEdit = { sheet: sheet(), top: CHAR.play.cash_log[0].label }; window.confirm = () => true; window.alert = () => {}; await revertToChargenEnd(); out.reverted = sheet(); return out; })()
 
 - **Expected:**
 
-      { "afterUndo":   { "disposed": { "weapons": [0] }, "onSheet": ["Katana"] },
-        "afterRevert": { "disposed": {}, "log": 0,
-                         "onSheet": ["Kalishnikov A-80", "Katana"] } }
+      { "sold": { "sheet": ["Katana"],
+                  "chargen": { "weapons": ["Kalishnikov A-80", "Katana"], "remaining": 33902 } },
+        "backToChargen": { "listed": ["Kalishnikov A-80", "Katana"], "remaining": 33902, "errors": 0 },
+        "refinalized": { "sheet": ["Katana"], "logged": 0 },
+        "afterBuildEdit": { "sheet": ["Katana", "Katana"],
+                            "top": "Chargen build edited: +Katana" },
+        "reverted": ["Kalishnikov A-80", "Katana", "Katana"] }
 
-  The undo takes back the most recent entry — the lost Katana — leaving the
-  sold Kalishnikov disposed. Revert then clears the play layer entirely and
-  both weapons come back.
-- **Note:** Undoing a *sale* also takes the money back out — `undoCashSpend`
-  does the cash half, and a loss logged `delta: 0` so undoing one only returns
-  the item. Revert is the bigger hammer: it is the only thing that makes a
-  disposal permanent-in-reverse.
+- **Note:** Four separate promises in one case. Selling doesn't touch the build.
+  Back to Chargen shows the character exactly as made. A re-finalize that
+  changed nothing leaves the sale standing and **logs nothing** — `logged: 0` is
+  the half people get wrong, since a re-finalize that rebuilt the kit would
+  silently undo every sale. A re-finalize that *did* edit the build carries the
+  change across and says so. Revert rebuilds the kit from chargen, so everything
+  comes back — including the Katana added mid-case.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P06-021: Fitting and pulling mods leaves the creation budget alone
+### P06-021: Fitting and pulling mods leaves the creation record alone
 - **Type:** leak
-- **Steps:** load `kitchen-sink-final.json`.
+- **Steps:** reload `kitchen-sink-final.json`.
 - **Check:**
 
-      (async () => { CHAR = RULES.mergeDefaults(CHAR); CHAR.weapons[0].mods = ["Gyro-mount"]; CHAR.finalized = true; ensurePlay(); CHAR.play.fitted_mods = []; CHAR.play.disposed_mods = []; await recalc(); const creation = () => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; return RULES.calculate(c).budget.remaining; }; const base = creation(); sheetTab = "gear"; renderSheet(); const chip = [...document.querySelectorAll("#sheet .sh-modslot .chip")].find(c => /Gyro-mount/.test(c.textContent)); chip.click(); await new Promise(r => setTimeout(r, 80)); const m = document.querySelector(".mount-modal"); const dialog = { heading: m.querySelector("h3").textContent, amount: m.querySelectorAll("input")[1].value }; [...m.querySelectorAll("button")].find(b => b.textContent.trim() === "Sell").click(); await new Promise(r => setTimeout(r, 150)); const pulled = { creation: creation(), chargenRecord: JSON.parse(JSON.stringify(CHAR.weapons[0].mods)), disposed: JSON.parse(JSON.stringify(CHAR.play.disposed_mods)), onSheet: (CALC.weapons || [])[0].mods.map(x => x.name), ledger: CHAR.play.cash_log[0].label }; sheetTab = "gear"; renderSheet(); const sel = [...document.querySelectorAll("#sheet .sh-modslot select")].find(s => [...s.options].some(o => o.value === "Optical Scope")); sel.value = "Optical Scope"; sel.dispatchEvent(new Event("change")); await new Promise(r => setTimeout(r, 150)); const fitted = { creation: creation(), chargenRecord: JSON.parse(JSON.stringify(CHAR.weapons[0].mods)), fitted: JSON.parse(JSON.stringify(CHAR.play.fitted_mods)), onSheet: (CALC.weapons || [])[0].mods.map(x => x.name) }; return { base, dialog, pulled, fitted }; })()
+      (async () => { CHAR = RULES.mergeDefaults(CHAR); CHAR.weapons[0].mods = ["Gyro-mount"]; CHAR.finalized = true; ensurePlay(); CHAR.play.kit = kitFromChargen(); CHAR.play.kit_baseline = kitFromChargen(); CHAR.play.cash_log = []; await recalc(); const creation = () => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; return RULES.calculate(c).budget.remaining; }; const base = creation(); sheetTab = "gear"; renderSheet(); const chip = [...document.querySelectorAll("#sheet .sh-modslot .chip")].find(c => /Gyro-mount/.test(c.textContent)); chip.click(); await new Promise(r => setTimeout(r, 80)); const m = document.querySelector(".mount-modal"); const dialog = { heading: m.querySelector("h3").textContent, amount: m.querySelectorAll("input")[1].value }; [...m.querySelectorAll("button")].find(b => b.textContent.trim() === "Sell").click(); await new Promise(r => setTimeout(r, 150)); const pulled = { creation: creation(), kit: JSON.parse(JSON.stringify(CHAR.play.kit.weapons[0].mods)), chargen: JSON.parse(JSON.stringify(CHAR.weapons[0].mods)), ledger: CHAR.play.cash_log[0].label }; sheetTab = "gear"; renderSheet(); const sel = [...document.querySelectorAll("#sheet .sh-modslot select")].find(s => [...s.options].some(o => o.value === "Optical Scope")); sel.value = "Optical Scope"; sel.dispatchEvent(new Event("change")); await new Promise(r => setTimeout(r, 150)); const fitted = { creation: creation(), kit: JSON.parse(JSON.stringify(CHAR.play.kit.weapons[0].mods)), chargen: JSON.parse(JSON.stringify(CHAR.weapons[0].mods)) }; return { base, dialog, pulled, fitted }; })()
 
 - **Expected:** `base`, `pulled.creation` and `fitted.creation` are all
-  **32402**. `dialog` is
-  `{ heading: "Part with Gyro-mount?", amount: "750" }` — half of ㄓ1,500.
-  After the pull, `chargenRecord` is still `["Gyro-mount"]`, `disposed` holds
-  `{ category: "weapons", host: 0, list: "mods", name: "Gyro-mount" }`,
-  `onSheet` is `[]`, and the ledger reads
-  `"Sold Gyro-mount (off Kalishnikov A-80)"`. After the fit, `chargenRecord` is
-  *still* `["Gyro-mount"]`, `fitted` holds the Optical Scope record, and
-  `onSheet` is `["Optical Scope"]` — the Gyro-mount stays sold, so the sheet
-  shows only what the character actually has.
-- **Note:** Both directions leaked until 2026-08-05. Pulling a chargen mod
-  handed its ㄓ1,500 back to the creation budget; fitting one in play billed the
-  creation budget for something play cash had just paid for, which could leave a
-  character overspent and unable to re-finalize. `chargenRecord` is the tell in
-  both halves — it must never change. If `creation` moves, the mod editors are
-  writing into the chargen host again.
+  **32402**. `dialog` is `{ heading: "Part with Gyro-mount?", amount: "750" }`.
+  `pulled.kit` is `[]` and `fitted.kit` is `["Optical Scope"]`, while
+  **`chargen` reads `["Gyro-mount"]` in both** — the build is untouched
+  throughout.
+- **Note:** Mods leaked both ways before the kit existed: pulling a chargen mod
+  refunded ㄓ1,500 to the creation budget, and fitting one in play *charged* it
+  ㄓ1,500 for something play cash had already paid for — which could leave a
+  character overspent and unable to re-finalize.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P06-022: Drones and vehicles copy-on-write instead
+### P06-022: A character saved before the kit migrates once
 - **Type:** correctness
-- **Steps:** none — builds a unit with a mod and a mounted weapon.
+- **Steps:** none — the Check reloads the fixture itself, so it doesn't inherit
+  whatever the previous case left in `CHAR`.
 - **Check:**
 
-      (async () => { CHAR = RULES.defaultCharacter(); CHAR.name = "Unit mods"; CHAR.lifestyles = [{ name: "Squatter", months: 1 }]; const wpn = DATA.tables.weapons.find(x => (+x.Cost || 0) > 0); const dm = DATA.tables.drone_mods[0]; CHAR.drones = [{ name: DATA.tables.drones[0].Drone, label: "", weapons: [wpn.Weapon], mods: [{ name: dm["Drone Mod"] }] }]; CHAR.finalized = true; ensurePlay(); await recalc(); const creation = () => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; return RULES.calculate(c).budget.remaining; }; const base = creation(); const pull = async re => { sheetTab = "rigging"; renderSheet(); const chip = [...document.querySelectorAll("#sheet .chip")].find(c => re.test(c.textContent) && /✕/.test(c.textContent)); chip.click(); await new Promise(r => setTimeout(r, 80)); const m = document.querySelector(".mount-modal"); const h = m.querySelector("h3").textContent; [...m.querySelectorAll("button")].find(b => b.textContent.trim() === "Lost / discarded").click(); await new Promise(r => setTimeout(r, 140)); return h; }; const modHead = await pull(new RegExp(dm["Drone Mod"])); const wpnHead = await pull(new RegExp(wpn.Weapon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))); return { base, after: creation(), modHead, wpnHead, overrides: JSON.parse(JSON.stringify(CHAR.play.unit_overrides)), chargenDrone: JSON.parse(JSON.stringify(CHAR.drones[0])) }; })()
+      (async () => { const raw = await (await fetch("docs/qa/fixtures/kitchen-sink-final.json", { cache: "reload" })).json(); CHAR = RULES.mergeDefaults(raw); CHAR.weapons[0].mods = ["Gyro-mount"]; CHAR.finalized = true; CHAR.play = CHAR.play || {}; Object.assign(CHAR.play, { kit: null, kit_baseline: null, disposed: { weapons: [1] }, disposed_mods: [{ category: "weapons", host: 0, list: "mods", name: "Gyro-mount" }], fitted_mods: [{ category: "weapons", host: 0, list: "mods", name: "Optical Scope" }], unit_overrides: {} }); ensurePlay(); await recalc(); const first = JSON.stringify(CHAR.play.kit); ensurePlay(); ensurePlay(); return { kit: CHAR.play.kit.weapons.map(w => `${w.name}[${(w.mods || []).join("|")}]`), chargen: CHAR.weapons.map(w => `${w.name}[${(w.mods || []).join("|")}]`), legacyCleared: { disposed: CHAR.play.disposed, fitted: CHAR.play.fitted_mods, disposedMods: CHAR.play.disposed_mods }, stable: JSON.stringify(CHAR.play.kit) === first }; })()
 
-- **Expected:** `base` and `after` are equal. Both dialogs open (`modHead` and
-  `wpnHead` are `"Part with …?"`). `overrides` is
-  `{ "drones:0": { "mods": [], "weapons": [] } }` and `chargenDrone` still
-  carries both its mod and its weapon.
-- **Note:** Units are the one category that does NOT use per-mod records. A
-  unit's mods point at its weapons by index, so pulling a weapon renumbers the
-  mods on the others — replaying that as individual add/remove entries on every
-  recalc would be a reindexing minefield. The first play edit snapshots that
-  unit's `weapons` and `mods` into `play.unit_overrides` and everything after
-  works on the copy. Same guarantee, different mechanism: `chargenDrone`
-  unchanged is what both are for. Unit mods get no Undo button — restoring one
-  out of a renumbered set isn't a safe single step.
+- **Expected:**
+
+      { "kit": ["Kalishnikov A-80[Optical Scope]"],
+        "chargen": ["Kalishnikov A-80[Gyro-mount]", "Katana[]"],
+        "legacyCleared": { "disposed": {}, "fitted": [], "disposedMods": [] },
+        "stable": true }
+
+- **Note:** That legacy state means "Katana sold, Gyro-mount pulled, Optical
+  Scope fitted", and the migrated kit says exactly that. The old records are
+  replayed through the engine once and then cleared — leaving them would apply
+  every edit a second time. `stable: true` is the guard: migration must be
+  idempotent, since `ensurePlay` runs on every load.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
-
----
 
 ## Wrapping up
 
@@ -512,12 +501,11 @@ P06-011 is the load-bearing one. If `budget.remaining` moves when you buy
 something in play, the chargen/play split has broken and every "my cash is wrong
 after going back to chargen" report is live again.
 
-P06-018 to P06-020 are its mirror image, added the same day. P06-011 proves a
-play *purchase* can't reach the creation budget; P06-018 proves a play
-*disposal* can't either. Before that, every ✕ on the play sheet spliced the
-chargen array and refunded the item's cost to the creation budget — verified at
-ㄓ1,498 for a weapon, ㄓ20,000 for gear, ㄓ2,500 for an augment whose own button
-promised no refund.
+P06-018 to P06-022 cover the other half of that line, and **P06-018 is the one
+to run first if anything here looks wrong.** P06-011 proves a play *purchase*
+can't reach the creation budget; P06-018 proves nothing else can either. It is
+the case the whole `play.kit` refactor exists to keep passing, and a single
+`CHANGED` in its output means the shared-object bug is back.
 
 P06-015 to P06-017 are the lifestyle set, added 2026-08-05 after a real
 character (Jimmy Chan) turned up showing 4 prepaid months against a chargen

@@ -639,8 +639,9 @@ async function finalizeCharacter() {
   CHAR.finalized = true;
   ensurePlay();
   syncChargenLifestyles();   // carry chargen lifestyle(s) into play, even on re-finalize
-  // snapshot of the worn-armor flags at the moment of finalize, for revert
-  CHAR.play.armor_worn = wornSnapshotOf(CHAR.armor);
+  // Hand the build over to play. First finalize copies it; a re-finalize keeps
+  // what play has and carries across only what actually changed in chargen.
+  if (!CHAR.play.kit) ensureKit(); else reconcileKit();
   let rollNote = "";
   if (!CHAR.play.cash_rolled) {   // only on the first finalize, never re-rolled
     const dice = [0, 0, 0, 0].map(() => 1 + Math.floor(Math.random() * 6));

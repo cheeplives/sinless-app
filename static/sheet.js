@@ -3208,12 +3208,12 @@ function shGear(body) {
       // More than one owned means "how many are on me" is a real question, so it
       // gets a spinner; a single item is still a plain yes/no.
       el("td", {}, (!ro && owned > 1)
-        ? shCarriedStepper(g, playChangedRecalc)
-        : el("input", { type: "checkbox", ...(g.carried !== false ? { checked: 1 } : {}),
+        ? [el("span", { class: "sub" }, "Carried "), shCarriedStepper(g, playChangedRecalc)]
+        : [el("span", { class: "sub" }, "Carried "), el("input", { type: "checkbox", ...(g.carried !== false ? { checked: 1 } : {}),
             onchange: async e => {
               setCarriedQty(g, e.target.checked ? owned : 0);
               await playChangedRecalc();
-            } })),
+            } })]),
       el("td", {}, el("button", { class: "row-del", title: "Remove item",
         onclick: async () => {
           if (!confirm(`Remove ${g.name}?`)) return;

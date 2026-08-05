@@ -62,19 +62,28 @@ run `localStorage.clear()`.
 
 ## What import accepts
 
-### P08-004: The import gate is one truthiness check
+### P08-004: The import gate checks the shape and names what's wrong
 - **Type:** security
-- **Check:** (this mirrors the real condition in `sheet.js`'s import handler)
+- **Check:** (`sheet.js`'s import handler calls exactly this)
 
-      (() => { const accepts = v => (typeof v === "object" && v !== null && !Array.isArray(v) && !!v.attributes); return { emptyObject: accepts({}), justAttributes: accepts({attributes:{}}), attributesAsString: accepts({attributes:"yes"}), array: accepts([{attributes:{}}]), nul: accepts(null) }; })()
+      (() => { const v = RULES.validateCharacterShape; return { emptyObject: v({}).ok, justAttributes: v({attributes:{}}).ok, attributesAsString: v({attributes:"yes"}).problems, array: v([{attributes:{}}]).ok, nul: v(null).ok, weaponsString: v({attributes:{}, weapons:"sword"}).problems, badNumber: v({attributes:{Body:"x"}}).problems }; })()
 
 - **Expected:**
 
-      { "emptyObject": false, "justAttributes": true,
-        "attributesAsString": true, "array": false, "nul": false }
+      { "emptyObject": false, "justAttributes": true, "array": false, "nul": false,
+        "attributesAsString": ["`attributes` is missing or not an object"],
+        "weaponsString": ["`weapons` is not a list"],
+        "badNumber": ["non-numeric attribute(s): Body"] }
 
-- **Note:** `{attributes: "yes"}` is accepted as a character. Nothing checks the
-  shape of anything. This is JC-013 — mark **JUDGEMENT**.
+- **Note:** JC-013, ruled **A**. The gate used to be `typeof v === "object" &&
+  !Array.isArray(v) && !!v.attributes`, so `{attributes: "yes"}` was a character
+  and `weapons: "sword"` got all the way to a render before failing somewhere
+  unhelpful. It checks object-vs-list per key, numeric attributes, and
+  `magic.spells` / `magic.amp_powers`, and returns **every** problem so the
+  message can say what's wrong. `justAttributes` is still `true` on purpose: this
+  is a shape check, not a rules check. An out-of-range character imports fine and
+  is then told so by the normal errors — hand-editing a save is supported; being
+  handed a file that isn't a character isn't.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P08-005: A minimal accepted object survives mergeDefaults into a usable character
@@ -89,30 +98,38 @@ run `localStorage.clear()`.
         "errors": ["Classic priorities: assign each letter A–E exactly once (no repeats).",
                    "Choose a lifestyle with at least 1 prepaid month."] }
 
-- **Note:** Two errors, not the three `fresh-default.json` reports — because
-  `mergeDefaults` fills an absent heritage with `"Human"`, while
-  `defaultCharacter()` leaves `heritage.type` empty. The same character arrives
-  in a different state depending on which door it came through. Worth a JC if
-  there is not one already.
+- **Note:** Two errors, not the three `fresh-default.json` reports, and the
+  reason turned out to be narrower than it first looked. `defaultCharacter()`
+  sets `heritage.type: "Human"` and `mergeDefaults` fills an **absent** heritage
+  from that same default, so the two agree. What differs is *empty* versus
+  *absent*: `fresh-default.json` stores `"type": ""` explicitly, and
+  `mergeDefaults` leaves a present key alone. Since JC-016 that difference is
+  visible rather than silent — the fixture's third error reads `"Choose a
+  heritage…"`. Recorded in the JC-019 follow-up.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P08-006: Hand-edited advances bypass every cap
-- **Type:** leak
+### P08-006: Hand-edited advances are clamped, not believed
+- **Type:** correctness
 - **Check:**
 
-      (() => { const c = RULES.mergeDefaults({ attributes: { Strength: 4 }, name: "QA Cheater", finalized: true }); c.priorities={heritage:0,magic:1,attributes:2,skills:3,resources:4}; c.heritage.type="Human"; c.lifestyles=[{name:"Squatter",months:1}]; c.skills={Athletics:3}; c.play.skill_advances={Athletics:40}; c.play.attribute_advances={Strength:40}; const k = RULES.calculate(c); return { athletics: k.skills.Athletics.final, strength: k.attributes.Strength.final, strengthMax: k.attributes.Strength.max, errors: k.errors.length, warnings: k.warnings.length }; })()
+      (() => { const c = RULES.mergeDefaults({ attributes: { Strength: 4 }, name: "QA Cheater", finalized: true }); c.priorities={heritage:0,magic:1,attributes:2,skills:3,resources:4}; c.heritage.type="Human"; c.lifestyles=[{name:"Squatter",months:1}]; c.skills={Athletics:3}; c.play.skill_advances={Athletics:40}; c.play.attribute_advances={Strength:40}; const k = RULES.calculate(c); return { athletics: k.skills.Athletics.final, strength: k.attributes.Strength.final, strengthMax: k.attributes.Strength.max, errors: k.errors, warnings: k.warnings }; })()
 
-- **Expected:** `{ "athletics": 43, "strength": 44, "strengthMax": 20, "errors": 0, "warnings": 0 }`
-- **Note:** This is the full attack path in one expression: import a file, get
-  arbitrary advances, and because the character is finalized nothing is ever
-  reported. JC-013 combined with JC-012.
+- **Expected:** `{ "athletics": 8, "strength": 29, "strengthMax": 20, "errors": [], "warnings": [] }`
+- **Note:** This used to be the full attack path in one expression: import a
+  file, get `Athletics: 43` and `Strength: 44`, and because the character is
+  finalized never hear about it. JC-013 closed the first half — advances now
+  clamp to the caps the Kismet buttons enforce. The second half stands by
+  ruling: Strength 29 is still over its maximum of 20 and says nothing, because
+  attribute maxima are creation warnings (JC-002) and JC-012 deliberately keeps
+  creation rules out of the play set. What *would* show up here is an illegal
+  implant or an overdrawn wallet — see P06-001b.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
 
 ## The two play-shape definitions
 
-### P08-007: ensurePlay() and defaultCharacter().play define different key sets
+### P08-007: ensurePlay() is a superset of defaultCharacter().play
 - **Type:** correctness
 - **Check:**
 
@@ -120,12 +137,17 @@ run `localStorage.clear()`.
 
 - **Expected:**
 
-      { "onlyInDefault": ["dodge_dice","martial_art_advances","replicant_lifespan_months","ritual_advances"],
+      { "onlyInDefault": [],
         "onlyInEnsure": ["armor_worn","bond_slots","images","infusion_spirits","pool_boost","pool_kismet"] }
 
-- **Note:** Two sources of truth for the same object. Which keys a character has
-  depends on whether it was created fresh or topped up on entry to the sheet.
-  Neither list is a superset of the other. File a JC if there is not one already.
+- **Note:** JC-019, ruled **A**. `onlyInDefault` being **empty** is the whole
+  case: `ensurePlay` spreads `RULES.defaultCharacter().play`, so there is one
+  definition of the shape and a character created fresh carries the same keys as
+  one topped up on entry to the sheet. It used to also list `dodge_dice`,
+  `martial_art_advances`, `replicant_lifespan_months` and `ritual_advances`.
+  `onlyInEnsure` is expected to stay non-empty — those six are play-sheet fields
+  the engine has no opinion about, and each is commented in `ensurePlay` saying
+  so. A key appearing in `onlyInDefault` again means the spread was dropped.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
@@ -167,6 +189,8 @@ run `localStorage.clear()`.
 
 ## Wrapping up
 
-**P08-004, P08-006 and P08-007 are JUDGEMENT.** P08-003 is worth a close look:
+Every case should PASS. P08-004, P08-006 and P08-007 used to be JUDGEMENT;
+JC-013 and JC-019 were ruled on and all three are now correctness cases.
+P08-003 is worth a close look:
 silently deleting a corrupt save is defensible, but if you can make it happen
 with a *valid* file, that is a FAIL and a data-loss bug.

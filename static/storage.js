@@ -48,7 +48,11 @@ function loadCharacter(name) {
   const raw = localStorage.getItem(key);
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // Remember which slot this came out of, so a later save under a DIFFERENT
+    // name can tell "overwriting myself" from "overwriting someone else".
+    if (parsed && typeof parsed === "object") parsed.saved_as = sanitizeName(name);
+    return parsed;
   } catch {
     // Corrupt entry (partial write, manual edit): drop it so it stops
     // breaking loads, and report nothing found.
@@ -60,8 +64,21 @@ function loadCharacter(name) {
 /* Local write only (no server notify) — used by SYNC.hydrate. */
 function cacheCharacter(character) {
   const saved = sanitizeName(character.name);
+  character.saved_as = saved;
   localStorage.setItem(charPrefix() + saved, JSON.stringify(character));
   return saved;
+}
+
+/** The character already stored under `name`'s key, if it is a DIFFERENT one.
+ * Names are sanitised into storage keys, so "Ada Lovelace" and "Ada-Lovelace"
+ * land in the same slot and saving one silently replaces the other. Returns the
+ * stored character's own `name` (which may be spelled differently), or null
+ * when the slot is free or is this character's own. */
+function collidingCharacter(character) {
+  const key = sanitizeName(character.name);
+  if (character.saved_as === key) return null;
+  const existing = loadCharacter(key);
+  return existing ? (existing.name || key) : null;
 }
 
 function saveCharacter(character) {
@@ -158,6 +175,7 @@ function loadSubs() {
 function cacheSubs(subs) { try { localStorage.setItem(subsKey(), JSON.stringify(subs)); } catch { /* quota */ } }
 
 return { sanitizeName, listCharacters, loadCharacter, saveCharacter, deleteCharacter,
+         collidingCharacter,
          cacheCharacter, loadCustomContent, saveCustomContent, cacheCustomContent,
          CUSTOM_TABLES, loadPacks, cachePacks, loadSubs, cacheSubs,
          newLocalPackId, emptyPackData, normalizePackData };

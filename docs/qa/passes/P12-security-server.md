@@ -139,8 +139,9 @@ do not attempt to forge one.
 - **Check:** issue ~50 rapid `GET api/characters.php?public=1` requests.
 - **Expected:** none are rate limited. Limits cover `login`, `callback`,
   authenticated `write` and `admin` only.
-- **Note:** This is JC-015 — expected behaviour, recorded so the owner can rule
-  on whether it matters for a members-only instance. Mark **JUDGEMENT**.
+- **Note:** JC-015, ruled **A — acceptable**: every reader is an approved member
+  already, so unlimited read is fine and nothing changed. Worth revisiting only
+  if signup stops being approval-gated, which is the assumption it rests on.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

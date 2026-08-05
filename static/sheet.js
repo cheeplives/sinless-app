@@ -122,22 +122,19 @@ let sheetHeadObserver = null; // IntersectionObserver toggling the compact stick
 let sheetStickyScrolled = false;  // survives re-renders so the strip doesn't flicker
 
 /* ------------------------------------------------ play-state plumbing */
+/* Top up CHAR.play with whatever is missing, so a character that predates a
+ * field still gets it on the way into the sheet.
+ *
+ * The shape comes from RULES.defaultCharacter().play — one definition, so a
+ * character created fresh and one topped up here end up with the same keys —
+ * plus the fields below, which only the play sheet ever reads and the engine
+ * has no opinion about. */
 function ensurePlay() {
   const d = {
-    cash: 0, cash_rolled: false, starting_cash: 0, cash_log: [],
-    lifestyles: [], lifestyles_seeded: false, armor_worn: null,
-    kismet: 0, kismet_earned: 0, kismet_log: [],
-    boons_spent: 0, major_boons_spent: 0,
-    physical_damage: 0, stun_damage: 0, initiative: 0,
-    pool_used: {},                        // pool name -> dice spent from the pool
+    ...RULES.defaultCharacter().play,
+    armor_worn: null,
     pool_boost: {},                       // pool name -> temporary bonus dice
     pool_kismet: {},                      // pool name -> permanent Kismet-die boons
-    effects: [], modifiers: [], notes: "",
-    attribute_advances: {}, skill_advances: {},
-    zp_advances: 0, spell_force_advances: {},
-    purchases: { gear: [], augments: [], amp_powers: [], spells: [], hacking_levels: 0 },
-    decking: { active_deck: "", loaded: [] },
-    rigging: { active_rig: "", units: {} },
     images: [],                           // [{ url (data URL), caption, big }]
     infusion_spirits: {},                 // infusion slot -> spirit placed in it
     bond_slots: [],                       // [{ spirit, force, favors }] spirits placed in bonds
@@ -152,6 +149,26 @@ function ensurePlay() {
   }
   return CHAR.play;
 }
+/* Weapons and armor the character actually has, chargen buys first and play
+ * buys after — the same order applyPlayAdvances concatenates them in, so index
+ * N of this list is index N of CALC.weapons / CALC.armor. Each entry carries
+ * the array it lives in, so removing or reordering hits the right one and a
+ * play purchase never leaks back into the creation budget (JC-010). */
+function ownedSplit(chargen, bought) {
+  return [...chargen.map((ref, i) => ({ ref, arr: chargen, i, inPlay: false })),
+          ...bought.map((ref, i) => ({ ref, arr: bought, i, inPlay: true }))];
+}
+function ownedWeapons() {
+  return ownedSplit(CHAR.weapons, CHAR.play.purchases.weapons);
+}
+function ownedArmor() {
+  return ownedSplit(CHAR.armor, CHAR.play.purchases.armor);
+}
+/* Same lists, flattened, for the many read-only consumers that just want the
+ * items in CALC order and don't care where they were bought. */
+function allWeapons() { return [...CHAR.weapons, ...CHAR.play.purchases.weapons]; }
+function allArmor() { return [...CHAR.armor, ...CHAR.play.purchases.armor]; }
+
 function schedulePlaySave() {
   // Read-only shared views never persist (also server-rejected as non-owner).
   if (typeof activeTabObj === "function" && activeTabObj() && activeTabObj().readonly) return;
@@ -218,9 +235,86 @@ function undoKismetSpend(entry) {
   play.kismet -= entry.delta;   // delta is negative, so this refunds it
   play.kismet_log.splice(idx, 1);
 }
-function logCash(label, delta) {
+/* `undo`, when given, is a small serializable descriptor (cash_log is persisted
+ * as JSON, so no closures) naming what this spend bought, for undoCashSpend()
+ * below. Spends with nothing to reverse — manual adjustments, α-grade
+ * upgrades, quality changes — pass none and get no Undo button. */
+function logCash(label, delta, undo) {
   CHAR.play.cash += delta;
-  CHAR.play.cash_log.unshift({ label, delta });
+  CHAR.play.cash_log.unshift(undo ? { label, delta, undo } : { label, delta });
+}
+
+/* Reversing a cash purchase: the item goes and the money comes back in full.
+ * Kismet spends have always had this; cash didn't, so removing a bought item
+ * quietly kept the money. Undo lives only here in the Activity ledger — the
+ * per-row ✕ on the Gear tab still just removes the thing, since selling for
+ * face value on a whim isn't the same as taking back a misclick.
+ *
+ * Each handler returns true when it found and removed what the entry bought.
+ * Items are located by NAME at undo time, most recent first: object identity
+ * doesn't survive a save/load round trip. */
+function removeNamedEntry(list, name) {
+  const i = list.map(x => x.name).lastIndexOf(name);
+  if (i < 0) return false;
+  list.splice(i, 1);
+  return true;
+}
+function removeCountedEntry(list, name, countKey) {
+  const i = list.map(x => x.name).lastIndexOf(name);
+  if (i < 0) return false;
+  const count = list[i][countKey] || 1;
+  if (count > 1) list[i][countKey] = count - 1;
+  else list.splice(i, 1);
+  return true;
+}
+function removeFromSublist(hosts, hostName, key, name) {
+  const host = hosts.find(h => h.name === hostName
+    && ((h[key] || []).some(x => (x && x.name) === name || x === name)));
+  if (!host) return false;
+  const i = host[key].findIndex(x => (x && x.name) === name || x === name);
+  host[key].splice(i, 1);
+  return true;
+}
+const CASH_UNDO = {
+  weapon:    u => removeNamedEntry(CHAR.play.purchases.weapons, u.name),
+  armor:     u => removeNamedEntry(CHAR.play.purchases.armor, u.name),
+  // Amp powers cost ZP rather than cash, so they never reach this ledger.
+  spell:     u => removeNamedEntry(CHAR.play.purchases.spells, u.name),
+  gear:      u => removeCountedEntry(CHAR.play.purchases.gear, u.name, "qty"),
+  augment:   u => removeCountedEntry(CHAR.play.purchases.augments, u.name, "count"),
+  hacking_level: () => {
+    const p = CHAR.play.purchases;
+    if (!(p.hacking_levels > 0)) return false;
+    p.hacking_levels -= 1;
+    return true;
+  },
+  weapon_mod:  u => removeFromSublist(allWeapons(), u.host, "mods", u.name),
+  armor_extra: u => removeFromSublist(allArmor(), u.host, "extras", u.name),
+  mount: u => removeFromSublist(
+    [...allWeapons(), ...allArmor(), ...CHAR.gear, ...CHAR.play.purchases.gear],
+    u.host, "mounted", u.name),
+  lifestyle_month: u => {
+    const ls = (CHAR.play.lifestyles || []).find(x => x.name === u.name);
+    if (!ls || !(ls.months > 0)) return false;
+    ls.months -= 1;
+    return true;
+  },
+};
+async function undoCashSpend(entry) {
+  const log = CHAR.play.cash_log;
+  const idx = log.indexOf(entry);
+  const handler = entry && entry.undo && CASH_UNDO[entry.undo.kind];
+  if (idx < 0 || !handler) return;
+  if (!confirm(`Undo "${entry.label}"?\n\n`
+    + `It is removed and ${fmt(-entry.delta)} refunded in full.`)) return;
+  if (!handler(entry.undo)) {
+    alert(`"${entry.label}" isn't there any more — it was already removed.\n\n`
+      + "The ledger entry stays. Use Adjust if the refund is still owed.");
+    return;
+  }
+  CHAR.play.cash -= entry.delta;   // delta is negative, so this refunds it
+  log.splice(idx, 1);
+  await playChangedRecalc();
 }
 
 function chargenLifestyles() {
@@ -281,7 +375,7 @@ async function revertToChargenEnd() {
   if (!confirm("Revert this character to their state at the end of character generation?\n\n"
     + "This permanently erases everything gained in play:\n"
     + `  • Kismet (${play.kismet} available, ${play.kismet_earned} lifetime) and all advances\n`
-    + "  • Everything bought in play (gear, augments, powers, spells, Hacking levels)\n"
+    + "  • Everything bought in play (weapons, armor, gear, augments, powers, spells, Hacking levels)\n"
     + `  • ${RULES.currencyName()} beyond the original starting roll (back to ${fmt(play.starting_cash || 0)})\n`
     + "  • Damage, initiative, effects, modifiers, ledgers, and notes\n\n"
     + "The chargen build itself (attributes, skills, purchased gear) is untouched."))
@@ -904,8 +998,10 @@ function sheetMenu() {
       if (!file) return;
       let parsed;
       try { parsed = JSON.parse(await file.text()); } catch { parsed = null; }
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !parsed.attributes) {
-        alert("That file doesn't look like an exported Sinless character.");
+      const shape = RULES.validateCharacterShape(parsed);
+      if (!shape.ok) {
+        alert("That file doesn't look like an exported Sinless character:\n\n"
+          + shape.problems.map(p => "  • " + p).join("\n"));
         return;
       }
       sheetMenuOpen = false;
@@ -949,6 +1045,11 @@ function sheetMenu() {
       ...STORAGE.listCharacters().map(n => el("option", { value: n }, n)));
     const saveBtn = !ro ? el("button", { class: "btn sh-mi-save", onclick: () => {
       if (!CHAR.name) { alert("Give the character a street name first."); return; }
+      // Same silent-overwrite path as Finalize: the save keys on the sanitised
+      // name, so an unrelated character with a matching one is replaced.
+      const clash = STORAGE.collidingCharacter(CHAR);
+      if (clash && !confirm(`"${clash}" is already saved under this name.\n\n`
+        + "Saving REPLACES that character permanently. Overwrite them?")) return;
       STORAGE.saveCharacter(CHAR);
       if (typeof refreshLoadList === "function") refreshLoadList();
       saveBtn.textContent = "Saved ✓";
@@ -1149,7 +1250,7 @@ function loadedAmmoFor(entry, weaponRow) {
    (Knife, Shuriken, Molotov) are not launchable. */
 function ownedGrenadeRows() {
   const seen = new Map();
-  for (const w of CHAR.weapons) {
+  for (const w of allWeapons()) {
     const row = DATA.tables.weapons.find(x => x.Weapon === w.name);
     if (row && row.Type === "Thrown" && /grenade/i.test(row.Weapon) && !seen.has(row.Weapon))
       seen.set(row.Weapon, row);
@@ -1375,6 +1476,18 @@ function shOverview(body) {
   const play = CHAR.play;
   const econ = kismetEcon();
 
+  // Rules problems that survive Finalize. Creation budgets stop applying, but
+  // an illegal body or an empty wallet doesn't stop being illegal — the engine
+  // reports the reduced set once `finalized` is true, and this is where it
+  // lands. Silent for a clean character, which is the usual case.
+  if (CALC.errors.length || CALC.warnings.length) {
+    const list = el("div", { class: "card sh-card sh-validity" },
+      el("h3", {}, "Needs attention"),
+      ...CALC.errors.map(e => el("div", { class: "sh-advrow", style: "color:var(--bad)" }, "✕ " + e)),
+      ...CALC.warnings.map(w => el("div", { class: "sh-advrow", style: "color:var(--manon)" }, "⚠ " + w)));
+    body.append(list);
+  }
+
   // dossier warnings (Replicant illegality, Amp powers offline, …)
   for (const note of dossierNotes().slice(0, 2))
     body.append(el("div", { class: "sh-callout" }, "⚠ ", note));
@@ -1541,9 +1654,10 @@ function shOverview(body) {
   if (heritageCard) body.append(heritageCard);
 
   // --- equipped weapons (+ mods) and worn armor, mirrored from the Gear tab
-  const equippedWeapons = CHAR.weapons.filter(w => w.equipped !== false);
+  const weaponsAll = allWeapons(), armorAll = allArmor();
+  const equippedWeapons = weaponsAll.filter(w => w.equipped !== false);
   const cyberguns = equippedCyberguns();
-  const wornArmor = CHAR.armor.filter(a => a.active !== false);
+  const wornArmor = armorAll.filter(a => a.active !== false);
   const grantedWeapons = CALC.combat.granted_weapons || [];
   const traitGear = CALC.combat.trait_gear || [];
   // Ammo owned (chargen gear + anything bought in play), merged by name so one
@@ -1737,7 +1851,7 @@ function shOverview(body) {
       loadout.append(wt);
       // A weapon you own but haven't equipped is absent from this table, which
       // reads as the sheet having lost it. Name them, and say where to fix it.
-      const stowed = CHAR.weapons.filter(w => w.equipped === false);
+      const stowed = weaponsAll.filter(w => w.equipped === false);
       if (stowed.length) {
         loadout.append(el("p", { class: "hint" },
           `Not equipped, so not listed above: ${stowed.map(w => w.name).join(" · ")}. `
@@ -1823,8 +1937,8 @@ function shOverview(body) {
           const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
           // Match the Gear tab: Quality/Style/slot, weight, extras -- then the
           // gameplay effects those carry (issue #18). wornArmor is a filtered
-          // view, so map back through CHAR.armor to reach the CALC row.
-          const arow = (CALC.armor || [])[CHAR.armor.indexOf(a)] || {};
+          // view, so map back through the full owned list to reach the CALC row.
+          const arow = (CALC.armor || [])[armorAll.indexOf(a)] || {};
           const notes = [
             [arow.material, arow.style].filter(Boolean).join(" · ") || r.Slot || "",
             `wt ${r.wt || 0}`,
@@ -2725,7 +2839,8 @@ function weaponModSlots(w, mult, weaponName) {
             e.target.value = ""; return;
           }
           (w.mods = w.mods || []).push(name);
-          logCash(`Fitted ${name} to ${weaponName}`, -cost);
+          logCash(`Fitted ${name} to ${weaponName}`, -cost,
+            { kind: "weapon_mod", host: weaponName, name });
           playChangedRecalc();
         },
       }, el("option", { value: "" }, `+ ${slot}…`),
@@ -2830,6 +2945,17 @@ function shCarriedStepper(entry, onChange) {
     btn(1, "+", "Carry one more"));
 }
 
+/* Plain Carried yes/no for a deck, drone or vehicle — the same flag misc gear
+ * uses, minus the quantity. Only carried gear contributes Zoetic Rating. */
+function shCarriedToggle(entry) {
+  return el("label", { class: "sub",
+      style: "display:inline-flex;align-items:center;gap:6px;margin-top:4px",
+      title: "Only carried gear contributes Zoetic Rating" },
+    el("input", { type: "checkbox", ...(entry.carried !== false ? { checked: 1 } : {}),
+      onchange: async e => { entry.carried = e.target.checked; await playChangedRecalc(); } }),
+    el("span", {}, "Carried"));
+}
+
 function shUsesStepper(entry, onChange) {
   const val = el("span", { class: "sv" }, String(entry.qty || 0));
   const btn = (delta, label, title) => el("button", { class: "btn small", title,
@@ -2886,7 +3012,8 @@ function shMountEditor(host, hostRow, hostActive) {
               && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
             return;
           host.mounted.push({ name });
-          logCash(`Mounted ${name} on ${host.name}`, -cost);
+          logCash(`Mounted ${name} on ${host.name}`, -cost,
+            { kind: "mount", host: host.name, name });
         },
       }) }, "+ Mount")));
 
@@ -2966,11 +3093,11 @@ function shGear(body) {
   // half-width, stacked under Woolongs.
   const wtNum = n => +n || 0;
   let load = 0;
-  CHAR.weapons.filter(w => w.equipped !== false).forEach(w => {
+  allWeapons().filter(w => w.equipped !== false).forEach(w => {
     const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
     load += wtNum(r.Weight);
   });
-  CHAR.armor.filter(a => a.active !== false).forEach(a => {
+  allArmor().filter(a => a.active !== false).forEach(a => {
     const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
     load += wtNum(r.wt);
   });
@@ -3018,18 +3145,21 @@ function shGear(body) {
           + ` · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · wt ${r.Weight || 0}` })),
     }));
   const cyberguns = equippedCyberguns();
-  if (CHAR.weapons.length || cyberguns.length) {
+  const weaponEntries = ownedWeapons();
+  if (weaponEntries.length || cyberguns.length) {
     const t = el("table");
     t.append(el("tr", {}, el("th", {}, "Weapon"), el("th", {}, "Stats"),
       el("th", {}, "Equip"), el("th", {}, "")));
-    CHAR.weapons.forEach((w, wi) => {
+    weaponEntries.forEach(({ ref: w, arr, i: wi }) => {
       const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
       const canMod = !["Melee", "Thrown", "GrenadeLauncher", "Heavy", "Energy"].includes(r.Type);
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
       t.append(el("tr", {},
         el("td", {},
-          reorderHandle(() => arrayMove(CHAR.weapons, wi, -1), () => arrayMove(CHAR.weapons, wi, 1),
-            wi > 0, wi < CHAR.weapons.length - 1),
+          // Reordering stays inside the owning array — dragging a play purchase
+          // above a chargen one would change which budget paid for it.
+          reorderHandle(() => arrayMove(arr, wi, -1), () => arrayMove(arr, wi, 1),
+            wi > 0, wi < arr.length - 1),
           el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
           el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type, w.name)),
           shMountEditor(w, r, w.equipped !== false)),
@@ -3041,7 +3171,7 @@ function shGear(body) {
         el("td", {}, el("button", { class: "row-del", title: "Sell / remove weapon",
           onclick: async () => {
             if (!confirm(`Remove ${w.name}?`)) return;
-            CHAR.weapons.splice(wi, 1); await playChangedRecalc();
+            arr.splice(wi, 1); await playChangedRecalc();
           } }, "✕"))));
       const upgBoxes = weaponUpgradeSlots(w, r, mult);
       if (canMod || upgBoxes.length) {
@@ -3080,11 +3210,12 @@ function shGear(body) {
     { label: "Under Armor", items: DATA.tables.armor.filter(r => r.Slot === "Under").map(armorItem) },
     { label: "Other", items: DATA.tables.armor.filter(r => !(r.Slot || "").startsWith("Outer") && r.Slot !== "Under").map(armorItem) },
   ];
-  if (CHAR.armor.length) {
+  const armorEntries = ownedArmor();
+  if (armorEntries.length) {
     const t = el("table");
     t.append(el("tr", {}, el("th", {}, "Armor"), el("th", { class: "num" }, "B / I"),
       el("th", {}, "Extras"), el("th", {}, "Worn"), el("th", {}, "")));
-    CHAR.armor.forEach((a, ai) => {
+    armorEntries.forEach(({ ref: a, arr, i: localIndex }, ai) => {
       const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
       const baseCost = +r.Cost || 0;
       // Extras are cost multipliers; the marginal charge is base cost × (mult − 1).
@@ -3102,7 +3233,8 @@ function shGear(body) {
               const cost = Math.round(baseCost * ((+ex.Multiplier || 1) - 1) * armorMult);
               if (!overdrawOK(name, cost)) return;
               (a.extras = a.extras || []).push(name);
-              logCash(`Added ${name} to ${a.name}`, -cost);
+              logCash(`Added ${name} to ${a.name}`, -cost,
+                { kind: "armor_extra", host: a.name, name });
             },
             onRemove: index => { a.extras.splice(index, 1); },
             effectOf: name => (DATA.tables.armor_extras.find(x => x.Extra === name) || {}).Effects || "",
@@ -3111,15 +3243,17 @@ function shGear(body) {
           })
         : "—";
       // Quality / Style and their gameplay effects (issue #18). CALC.armor is
-      // built in CHAR.armor order, so index straight across.
+      // built chargen-then-play, the same order ownedArmor() lists them in, so
+      // the combined index goes straight across.
       const arow = (CALC.armor || [])[ai] || {};
       const aeffects = arow.effects || [];
       t.append(el("tr", {},
         el("td", {},
-          // CALC.armor is index-aligned to CHAR.armor, so a move has to recalc.
-          reorderHandle(() => arrayMove(CHAR.armor, ai, -1, playChangedRecalc),
-            () => arrayMove(CHAR.armor, ai, 1, playChangedRecalc),
-            ai > 0, ai < CHAR.armor.length - 1),
+          // A move has to recalc (CALC.armor is index-aligned), and stays inside
+          // the owning array so a play purchase can't drift into the chargen run.
+          reorderHandle(() => arrayMove(arr, localIndex, -1, playChangedRecalc),
+            () => arrayMove(arr, localIndex, 1, playChangedRecalc),
+            localIndex > 0, localIndex < arr.length - 1),
           el("b", {}, a.name),
           el("div", { class: "sub" },
             ([arow.material, arow.style].filter(Boolean).join(" · ") || r.Slot || "") + ` · wt ${r.wt || 0}`),
@@ -3133,7 +3267,7 @@ function shGear(body) {
             a.active = e.target.checked;
             // Only one piece per armor slot may be worn at a time.
             if (a.active && r.Slot) {
-              CHAR.armor.forEach(other => {
+              ownedArmor().forEach(({ ref: other }) => {
                 if (other === a) return;
                 const os = (DATA.tables.armor.find(x => x.Armor === other.name) || {}).Slot;
                 if (os === r.Slot) other.active = false;
@@ -3144,7 +3278,7 @@ function shGear(body) {
         el("td", {}, el("button", { class: "row-del", title: "Sell / remove armor",
           onclick: async () => {
             if (!confirm(`Remove ${a.name}?`)) return;
-            CHAR.armor.splice(ai, 1); await playChangedRecalc();
+            arr.splice(localIndex, 1); await playChangedRecalc();
           } }, "✕"))));
     });
     armorCard.append(t);
@@ -3253,13 +3387,16 @@ function shGear(body) {
     if (CHAR.rigs.length || CHAR.decks.length) {
       const vt = el("table");
       vt.append(el("tr", {}, el("th", {}, "Item"), el("th", {}, "Type")));
-      const addRows = (list, label) => list.forEach(u =>
+      // Rigs are gated by which one is active (Rigging tab), not by carrying, so
+      // only decks get the toggle.
+      const addRows = (list, label, carriable) => list.forEach(u =>
         vt.append(el("tr", {},
           el("td", {}, el("b", {}, u.label || u.name),
-            (u.label && u.name) ? el("span", { class: "sub" }, ` (${u.name})`) : null),
+            (u.label && u.name) ? el("span", { class: "sub" }, ` (${u.name})`) : null,
+            carriable ? shCarriedToggle(u) : null),
           el("td", { class: "sub" }, label))));
-      addRows(CHAR.rigs, "VCR");
-      addRows(CHAR.decks, "Cyberdeck");
+      addRows(CHAR.rigs, "VCR", false);
+      addRows(CHAR.decks, "Cyberdeck", true);
       vcard.append(vt);
     }
     body.append(vcard);
@@ -3290,9 +3427,9 @@ function shGear(body) {
       const r = DATA.tables.weapons.find(x => x.Weapon === name) || {};
       const cost = Math.round((+r.Cost || 0) * mult);
       if (!overdrawOK(name, cost)) return;
-      CHAR.weapons.push({ name, smart: Boolean(r["Integrated Smart"]),
+      CHAR.play.purchases.weapons.push({ name, smart: Boolean(r["Integrated Smart"]),
         mods: [], equipped: true, qty: 1 });
-      logCash(`Bought ${name}`, -cost);
+      logCash(`Bought ${name}`, -cost, { kind: "weapon", name });
     } }));
   buyBlock("Armor", categoryBrowser({ id: "sh-buy-armor", groups: armorBuyGroups,
     rerender: renderSheet, afterAdd: () => playChangedRecalc(),
@@ -3300,8 +3437,8 @@ function shGear(body) {
       const r = DATA.tables.armor.find(x => x.Armor === name) || {};
       const cost = Math.round((+r.Cost || 0) * mult);
       if (!overdrawOK(name, cost)) return;
-      CHAR.armor.push({ name, style: "", material: "", extras: [], active: true });
-      logCash(`Bought ${name}`, -cost);
+      CHAR.play.purchases.armor.push({ name, style: "", material: "", extras: [], active: true });
+      logCash(`Bought ${name}`, -cost, { kind: "armor", name });
     } }));
   buyBlock("Gear", categoryBrowser({ id: "sh-buy-gear", groups: gearBuyGroups,
     rerender: renderSheet, afterAdd: () => {},
@@ -3315,8 +3452,20 @@ function shGear(body) {
       t.append(el("tr", {},
         el("td", {}, entry.label),
         el("td", { class: "num", style: entry.delta >= 0 ? "color:var(--ok)" : "color:var(--bad)" },
-          (entry.delta >= 0 ? "+" : "") + fmt(entry.delta).replace("ㄓ-", "−ㄓ")))));
-    body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Activity"), t));
+          (entry.delta >= 0 ? "+" : "") + fmt(entry.delta).replace("ㄓ-", "−ㄓ")),
+        // Undo is only offered where there is something to take back: a
+        // purchase this ledger knows how to reverse.
+        el("td", {}, (entry.undo && CASH_UNDO[entry.undo.kind])
+          ? el("button", { class: "btn small",
+              title: `Undo this purchase and refund ${fmt(-entry.delta)}`,
+              onclick: () => undoCashSpend(entry) }, "Undo")
+          : null))));
+    body.append(el("div", { class: "card sh-card" }, el("h3", {}, "Activity"),
+      el("p", { class: "hint" },
+        "Undo takes back a purchase in full — the item goes and the "
+        + `${RULES.currencyName().toLowerCase()} comes back. Removing an item on the `
+        + "tabs above only removes it; the money stays spent."),
+      t));
   }
 }
 
@@ -3624,7 +3773,8 @@ function lifestyleCard() {
               && !confirm(`A month of ${ls.name} costs ${fmt(monthly)} but you have ${fmt(play.cash)}. Overdraw?`))
             return;
           ls.months = (ls.months || 0) + 1;
-          if (monthly) logCash(`Prepaid 1 month of ${ls.name} lifestyle`, -monthly);
+          if (monthly) logCash(`Prepaid 1 month of ${ls.name} lifestyle`, -monthly,
+            { kind: "lifestyle_month", name: ls.name });
           playChanged();
         }, "accent"),
         el("button", { class: "row-del", title: "Remove lifestyle",
@@ -3665,7 +3815,7 @@ async function buyGear(name, mult) {
   const existing = CHAR.play.purchases.gear.find(g => g.name === name);
   if (existing) existing.qty = (existing.qty || 1) + 1;
   else CHAR.play.purchases.gear.push({ name, qty: 1 });
-  logCash(`Bought ${name}`, -cost);
+  logCash(`Bought ${name}`, -cost, { kind: "gear", name });
   await playChangedRecalc();
 }
 async function buyAugment(name, mult) {
@@ -3709,7 +3859,7 @@ async function buyAugment(name, mult) {
     && CHAR.play.purchases.augments.find(a => a.name === name && !a.alpha);
   if (existing) existing.count = (existing.count || 1) + 1;
   else CHAR.play.purchases.augments.push({ name, count: 1 });
-  logCash(`Installed ${name}`, -cost);
+  logCash(`Installed ${name}`, -cost, { kind: "augment", name });
   await playChangedRecalc();
 }
 
@@ -3857,7 +4007,7 @@ function shMagic(body) {
                 && !confirm(`${name} at Force ${force} costs ${fmt(cost)} but you have ${fmt(play.cash)}. Overdraw?`))
               return;
             play.purchases.spells.push({ name, force });
-            logCash(`Learned ${name} at Force ${force}`, -cost);
+            logCash(`Learned ${name} at Force ${force}`, -cost, { kind: "spell", name });
             await playChangedRecalc();
           } }, "Buy")));
       }
@@ -4176,7 +4326,8 @@ function shDecking(body) {
               && !confirm(`A rating level costs ${fmt(levelCost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
             return;
           CHAR.play.purchases.hacking_levels = boughtLevels + 1;
-          logCash(`Hacking program rating ${rating} → ${rating + 1}`, -levelCost);
+          logCash(`Hacking program rating ${rating} → ${rating + 1}`, -levelCost,
+            { kind: "hacking_level" });
           await playChangedRecalc();
         },
       }, rating >= HACKING_RATING_MAX ? "At max (6)" : `Buy +1 rating (${fmt(levelCost)})`)));
@@ -4586,7 +4737,8 @@ function unitLoadoutTable(entries) {
     t.append(el("tr", {},
       el("td", {}, el("b", {}, u.label || u.name),
         u.label ? el("div", { class: "sub" }, u.name) : null,
-        el("div", { class: "sub" }, cfg.title.replace(/s$/, ""))),
+        el("div", { class: "sub" }, cfg.title.replace(/s$/, "")),
+        shCarriedToggle(u)),
       el("td", { class: "sub" }, stats,
         dmgLine ? el("div", { class: "sh-unit-dmg" }, dmgLine) : null),
       el("td", {}, attachCell)));
@@ -5177,10 +5329,11 @@ function buildMarkdown() {
   const cyberguns = equippedCyberguns();
   const grantedWeapons = c.granted_weapons || [];
   const traitGear = c.trait_gear || [];
-  if (CHAR.weapons.length || cyberguns.length || grantedWeapons.length || traitGear.length) {
+  const mdWeapons = allWeapons(), mdArmor = allArmor();
+  if (mdWeapons.length || cyberguns.length || grantedWeapons.length || traitGear.length) {
     L.push("## Weapons");
     L.push("");
-    CHAR.weapons.forEach(w => {
+    mdWeapons.forEach(w => {
       const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
       const smart = (calcRow.smart ?? w.smart) ? " (smart)" : "";
@@ -5216,10 +5369,10 @@ function buildMarkdown() {
     if (c.optics_notes && c.optics_notes.length) L.push(`- *Optics:* ${c.optics_notes.join(" · ")}`);
     L.push("");
   }
-  if (CHAR.armor.length) {
+  if (mdArmor.length) {
     L.push("## Armor");
     L.push("");
-    CHAR.armor.forEach(a => {
+    mdArmor.forEach(a => {
       const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
       L.push(`- **${a.name}** — ${r.Ballistic || 0}B/${r.Impact || 0}I${a.active !== false ? " (worn)" : ""}`);
     });

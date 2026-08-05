@@ -67,15 +67,26 @@ lifestyle, which P05-008 fixes.
   weapons have no rating, which is different from a rating of zero.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P05-005: Equipment limit breaches warn but do not block
-- **Type:** judgement-probe
+### P05-005: Slot breaches block; capacity breaches only warn
+- **Type:** correctness
 - **Check:**
 
-      (async () => { CHAR.priorities = { heritage: 1, magic: 2, attributes: 3, skills: 0, resources: 4 }; const drone = DATA.tables.drones[0].Drone; CHAR.rigs = [{ name: DATA.tables.rigs[0]["Rig Type"], mods: [] }]; CHAR.drones = Array.from({ length: 12 }, () => ({ name: drone, mods: [] })); await recalc(); return { errors: CALC.errors, warnings: CALC.warnings.filter(w => /drone|rig|capacit/i.test(w)) }; })()
+      (async () => { CHAR.priorities = { heritage: 1, magic: 2, attributes: 3, skills: 0, resources: 4 }; CHAR.skill_specializations = {}; const rig = DATA.tables.rigs[0]; CHAR.rigs = [{ name: rig["Rig Type"], mods: DATA.tables.rig_mods.map(m => m["Rig Mod"]) }]; const drone = DATA.tables.drones[0]; CHAR.drones = [{ name: drone.Drone, weapons: DATA.tables.drone_ballistic_weapons.slice(0, 3).map(w => w["Drone Ballistic Weapon"]), mods: [] }]; await recalc(); return { errors: CALC.errors.filter(e => /slot|hard point/i.test(e)), warnings: CALC.warnings.filter(w => /weight|WW/i.test(w)) }; })()
 
-- **Expected:** `errors` contains no drone/rig message; `warnings` does.
-- **Note:** A character over its rig's drone capacity finalizes cleanly. This is
-  JC-003 — mark **JUDGEMENT**.
+- **Expected:**
+
+      { "errors": ["Basic VCR: 5 mod slot(s) used but only 1 available.",
+                   "Bug-Spy: 3 weapons mounted — only 0 hard point(s)."],
+        "warnings": ["Bug-Spy: fitted weight 3 exceeds WW 0."] }
+
+- **Note:** JC-003, ruled **C**, and this case is the whole ruling in one output.
+  Mod slots and hard points are physical mounting points — there is nowhere to
+  put the thing — so they block. Loaded weight against WW is a capacity, so it
+  advises. The same drone raises one of each. Also still warnings: a deck's
+  required Hacking rating, a vehicle's leftover Cargo, and the Body ÷ 3 vehicle
+  weapon cap (a formula, unlike the drone's countable hard points).
+  `skill_specializations` is cleared first because an earlier case may have left
+  one behind, and its error would drown the filter.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P05-006: Overspending cash is an error and the chip goes negative
@@ -114,8 +125,11 @@ lifestyle, which P05-008 fixes.
 
 - **Expected:** `errors` is `[]`, `warnings` contains the Athletics cap message,
   `disabled` is `false`.
-- **Note:** This is JC-002 in the UI: a character can be finalized above the
-  rank cap. The case PASSes — the *policy* is the open question.
+- **Note:** JC-002, ruled **C**: cap breaches stay warnings, so this character
+  still finalizes. What changed is reachability — the Stats tab's skill stepper
+  now stops at `RULES.SKILL_RANK_CAP` and each attribute stepper at the largest
+  base that keeps Final inside its maximum, so 7 is only reachable the way this
+  case does it: by writing the value directly.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P05-009: Finalize requires a name
@@ -128,19 +142,29 @@ lifestyle, which P05-008 fixes.
   name.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P05-010: Finalizing over an existing name overwrites it without asking
-- **Type:** leak
+### P05-010: A name collision is detected before it overwrites anything
+- **Type:** correctness
 - **Steps:**
-  1. Run the Check. It saves a decoy character, then finalizes a **different**
-     character under the same name.
+  1. Run the Check. It saves a decoy character, then asks whether a **different**
+     character would land in the decoy's slot.
+  2. Then, by hand: name the open character `QA Collision`, save the decoy again,
+     and press **Finalize**. Confirm the prompt names the decoy and that
+     cancelling leaves it intact.
 - **Check:**
 
-      (async () => { const decoy = RULES.mergeDefaults({ attributes: { Strength: 9 }, name: "QA Collision" }); STORAGE.cacheCharacter(decoy); const before = STORAGE.loadCharacter("QA Collision").attributes.Strength; CHAR.name = "QA Collision"; CHAR.attributes.Strength = 2; await recalc(); STORAGE.cacheCharacter(CHAR); const after = STORAGE.loadCharacter("QA Collision").attributes.Strength; return { before, after, overwritten: before !== after }; })()
+      (async () => { const decoy = RULES.mergeDefaults({ attributes: { Strength: 9 }, name: "QA Collision" }); STORAGE.cacheCharacter(decoy); window.CHAR = RULES.defaultCharacter(); CHAR.name = "QA  Collision"; CHAR.attributes.Strength = 2; const clash = STORAGE.collidingCharacter(CHAR); const self = STORAGE.collidingCharacter(STORAGE.loadCharacter("QA Collision")); const free = STORAGE.collidingCharacter({ name: "QA Definitely Unused" }); return { clash, self, free, sanitisesSame: STORAGE.sanitizeName("QA  Collision") === STORAGE.sanitizeName("QA Collision") }; })()
 
-- **Expected:** `{ "before": 9, "after": 2, "overwritten": true }`
-- **Note:** No prompt, no rename, no warning — the decoy is gone. This is
-  JC-014, and it is silent data loss. Mark **JUDGEMENT** only because the policy
-  is undecided; flag it as high severity in your findings either way.
+- **Expected:**
+
+      { "clash": "QA Collision", "self": null, "free": null, "sanitisesSame": true }
+
+- **Note:** JC-014, ruled **A**. `clash` returns the **stored** character's own
+  name, which is what the prompt shows — note the two-space spelling collides
+  with the one-space one, since both sanitise to `QA-Collision`. `self` is null
+  because a character loaded from a slot carries `saved_as`, so re-saving itself
+  isn't a collision. Finalize and the sheet's Save both check this; nothing else
+  does, so `STORAGE.cacheCharacter` called directly still overwrites — that is
+  the low-level write, not the user action.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P05-011: A successful finalize enters play mode
@@ -174,7 +198,10 @@ lifestyle, which P05-008 fixes.
 
 ## Wrapping up
 
-Expected JUDGEMENT: **P05-005, P05-008, P05-010**. Everything else should PASS.
+Every case should PASS. P05-005 and P05-010 used to be JUDGEMENT / leak cases;
+JC-003 and JC-014 were ruled on and both are now correctness cases. P05-008 was
+always a PASS and stays one — JC-002 kept the warning and only made it
+unreachable through the UI.
 
 P05-007 is the load-bearing one — if an error stops disabling Finalize, every
 validation rule in the engine becomes advisory and the whole gate is gone.

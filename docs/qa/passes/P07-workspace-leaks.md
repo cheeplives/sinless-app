@@ -124,9 +124,10 @@ These cases use the workspace properly. Create the two characters first:
       (() => ({ a: STORAGE.sanitizeName("Ada Lovelace"), b: STORAGE.sanitizeName("Ada-Lovelace"), same: STORAGE.sanitizeName("Ada Lovelace") === STORAGE.sanitizeName("Ada-Lovelace") }))()
 
 - **Expected:** `{ "a": "Ada-Lovelace", "b": "Ada-Lovelace", "same": true }`
-- **Note:** `openCharacter` de-duplicates on load, but nothing stops you renaming
-  an open tab into a collision and overwriting the other character on save. This
-  feeds JC-014.
+- **Note:** `openCharacter` de-duplicates on load, and since JC-014 both Finalize
+  and the sheet's Save ask before replacing whoever holds the slot — see
+  P05-010. Two names still share one slot, which is what this case records; what
+  changed is that landing in an occupied one is no longer silent.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

@@ -289,6 +289,42 @@ const HOMEBREW_CONFIG = {
   ]},
 };
 
+/* Columns a row genuinely needs to behave like the thing it claims to be.
+ *
+ * Every numeric column is read through `asNumber`, so a blank one is silently 0
+ * — a weapon authored with nothing but a name is accepted, costs nothing, does
+ * no damage, contributes no ZR, and raises nothing anywhere. Nothing here
+ * BLOCKS a save (the free-form data model is deliberate, and a placeholder row
+ * is a reasonable thing to want): leaving one blank asks for confirmation and
+ * says what it will read as. Only the name is genuinely required.
+ *
+ * Listed per table rather than as a flag on each field so the shape of the
+ * requirement is visible in one place. Keys must exist in HOMEBREW_CONFIG. */
+const HOMEBREW_REQUIRED = {
+  rituals: ["Drain"],
+  speaker_spirits: ["Element", "Cost"],
+  spells: ["School", "Drain", "Cost"],
+  misc_gear: ["Class", "Cost"],
+  augments: ["Type", "ZR", "BI", "Cost"],
+  weapons: ["Type", "Cost", "Damage"],
+  armor: ["Slot", "Cost", "Ballistic", "Impact"],
+  vehicles: ["Cost", "Body", "Move", "Handling"],
+  drones: ["Cost", "Body", "Move", "Handling", "WW", "Hard Point"],
+  weapon_mods: ["Slot", "Cost"],
+  vehicle_ballistic_weapons: ["Cost", "Damage", "Weight"],
+  vehicle_energy_weapons: ["Cost", "Damage", "Weight"],
+  drone_ballistic_weapons: ["Cost", "Damage", "Weight"],
+  drone_energy_weapons: ["Cost", "Damage", "Weight"],
+  vehicle_mods: ["Cost", "Weight"],
+  drone_mods: ["Cost", "Weight"],
+};
+
+/** Required columns of `tableKey` that `row` leaves blank. */
+function hbMissingColumns(tableKey, row) {
+  return (HOMEBREW_REQUIRED[tableKey] || [])
+    .filter(col => String(row[col] ?? "").trim() === "");
+}
+
 /* Sorted unique non-empty values of one column, read from the live merged
  * table so existing custom rows contribute their groups too. */
 function hbDistinct(tableKey, col) {
@@ -540,9 +576,14 @@ function renderHomebrewEditor(root) {
   } else {
     const t = el("table");
     rows.forEach((row, i) => {
+      const missing = hbMissingColumns(hbTable, row);
       t.append(el("tr", {},
         el("td", {}, el("b", {}, row[cfg.nameKey] || "(unnamed)"),
-          el("div", { class: "sub" }, hbRowSummary(cfg, row))),
+          el("div", { class: "sub" }, hbRowSummary(cfg, row)),
+          missing.length
+            ? el("div", { class: "sub", style: "color:var(--amber)" },
+                `⚠ blank: ${missing.join(", ")} — reads as 0 / none`)
+            : null),
         el("td", { class: "hb-row-actions" },
           el("button", { class: "btn small", onclick: () => { hbEditIndex = i; renderHomebrew(); } }, "Edit"),
           el("button", { class: "row-del", title: "Delete",
@@ -604,12 +645,43 @@ function renderHomebrewEditor(root) {
           alert(`A ${cfg.label.replace(/s$/, "").toLowerCase()} named “${name}” already exists in the core data or another pack.`);
           return;
         }
+        // Blank required columns read as 0 / none everywhere downstream, which
+        // looks like the item not working rather than the row being incomplete.
+        const missing = hbMissingColumns(hbTable, row);
+        if (missing.length && !confirm(
+          `“${name}” leaves these columns blank:\n\n  ${missing.join(", ")}\n\n`
+          + "Blank numbers read as 0 and blank categories as none, so it will "
+          + "cost nothing and do nothing in those respects.\n\nAdd it anyway?"))
+          return;
         if (editing) rows[hbEditIndex] = row; else rows.push(row);
         hbEditIndex = null;
         hbSave(); renderHomebrew();
       } }, editing ? "Save Changes" : "Add"),
       editing ? el("button", { class: "btn ghost", onclick: () => { hbEditIndex = null; renderHomebrew(); } }, "Cancel") : null));
   root.append(form);
+
+  /* ---- rows that never made it in -------------------------------------- */
+  /* First writer of a name wins, so a homebrew row whose name matches core
+   * data or an earlier pack is dropped at merge time. Without this card the
+   * only symptom is content that simply never appears in any picker — the most
+   * confusing possible failure, since the row is still sitting in the editor
+   * looking fine. Covers every pack, not just the active one. */
+  if (HB_COLLISIONS.length) {
+    const card = el("div", { class: "card" },
+      el("h3", {}, `Not merged — name already taken (${HB_COLLISIONS.length})`),
+      el("p", { class: "hint" },
+        "Core data wins over your packs, and your packs win over subscriptions. "
+        + "These rows keep their place in their pack but never appear in a picker. "
+        + "Rename them to bring them back."));
+    const t = el("table");
+    HB_COLLISIONS.forEach(c => t.append(el("tr", {},
+      el("td", {}, el("b", {}, c.name),
+        el("div", { class: "sub" }, (HOMEBREW_CONFIG[c.table] || {}).label || c.table)),
+      el("td", { class: "sub" },
+        `in ${c.pack || "(unnamed pack)"}${c.owner ? ` by ${c.owner}` : ""}`))));
+    card.append(t);
+    root.append(card);
+  }
 
   /* ---- subscribed packs (read-only) ------------------------------------ */
   const subs = subscribedPacks();

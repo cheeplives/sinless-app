@@ -180,6 +180,35 @@ function initTheme() {
  * from RULES.HOUSE_RULE_DEFS. Choices are PER CHARACTER — a change writes to the
  * active character's house_rules, recomputes, saves, and re-renders. The panel
  * reflects whichever character is active (refreshed on every recalc). */
+const PRIORITY_CATEGORIES = ["heritage", "magic", "attributes", "skills", "resources"];
+const CLASSIC_PRIORITY_SEED = { attributes: 4, skills: 3, resources: 2, heritage: 1, magic: 0 };
+
+/* Classic priorities are a bijection over 0–4: one of each letter, no repeats.
+ * Point-buy allocations usually aren't, so switching rules needs the numbers
+ * replaced with a valid spread — which throws away whatever the player had
+ * chosen. It used to happen silently; now it asks first, and declining leaves
+ * the old numbers in place with the engine's "assign each letter exactly once"
+ * error to guide the fix. A character with nothing allocated yet has nothing to
+ * lose, so it's seeded without asking.
+ *
+ * `ask` is false when this runs as part of rendering the Priorities tab: only
+ * the switch itself is allowed to raise the question, or declining it would
+ * mean being asked again every time the tab is opened. */
+function seedClassicPriorities(ask = true) {
+  if (RULES.houseRule("priorities") !== "classic") return;
+  const values = PRIORITY_CATEGORIES.map(k => CHAR.priorities[k]);
+  const isPermutation = new Set(values).size === 5 && values.every(v => v >= 0 && v <= 4);
+  if (isPermutation) return;
+  const untouched = values.every(v => !v);
+  if (!untouched && (!ask || !confirm(
+      "Classic priorities need one of each letter A–E, and your current "
+      + "allocation isn't one.\n\nReplace it with a default spread "
+      + "(Attributes A, Skills B, Resources C, Heritage D, Magic E)?\n\n"
+      + "Cancel keeps your numbers — you'll be asked to fix them by hand.")))
+    return;
+  for (const k of PRIORITY_CATEGORIES) CHAR.priorities[k] = CLASSIC_PRIORITY_SEED[k];
+}
+
 let houseRuleControls = [];
 function initHouseRules() {
   const btn = $("#settings-btn"), panel = $("#settings-panel");
@@ -196,6 +225,7 @@ function initHouseRules() {
           RULES.setHouseRule(def.id, e.target.value);
           setHelp(e.target.value);
           if (typeof CHAR !== "undefined" && CHAR) {
+            if (def.id === "priorities") seedClassicPriorities();
             await recalc();
             if (CHAR.name) STORAGE.saveCharacter(CHAR);   // persist the choice on this character
             showActiveTab();
@@ -591,6 +621,14 @@ async function finalizeCharacter() {
     alert("Resolve these problems before finalizing:\n\n" + CALC.errors.join("\n"));
     return;
   }
+  // Saving keys on the sanitised name, so finalizing under a name someone else
+  // already holds replaces them outright — and "Ada Lovelace" and "Ada-Lovelace"
+  // sanitise to the same slot, so the clash isn't always obvious on the page.
+  const clash = STORAGE.collidingCharacter(CHAR);
+  if (clash && !confirm(`"${clash}" is already saved under this name.\n\n`
+    + `Finalizing as "${CHAR.name}" REPLACES that character permanently — `
+    + "their build, play state and history all go.\n\nOverwrite them?"))
+    return;
   const lost = unspentSummary();
   const msg = "Finalize this character?\n\n"
     + (lost.length
@@ -695,6 +733,19 @@ function setCarriedQty(g, n) {
   return next;
 }
 
+/* "Carried" toggle for a deck, drone or vehicle. Those have no quantity, so it
+ * stays a plain yes/no rather than the 0..owned spinner misc gear gets -- but
+ * the flag and its permissive default are the same one, and gear ZR reads it
+ * the same way: what you carry counts, what sits at home doesn't. */
+function carriedToggle(entry, onChange) {
+  return el("label", { class: "sub",
+      style: "display:inline-flex;align-items:center;gap:6px;margin-top:4px",
+      title: "Only carried gear contributes Zoetic Rating" },
+    el("input", { type: "checkbox", ...(entry.carried !== false ? { checked: 1 } : {}),
+      onchange: e => { entry.carried = e.target.checked; onChange(); } }),
+    el("span", {}, "Carried"));
+}
+
 function stepper(get, set, min = 0, max = 99) {
   const clamp = n => Math.max(min, Math.min(max, n));
   const sv = el("span", { class: "sv", title: "Click to type a value",
@@ -763,20 +814,57 @@ function descriptionExpander(text, key, label = "More Details") {
  * several entries into one column, joined by " | ", each optionally prefixed
  * with "Name: ". data.js is one row per line, so a delimiter beats one row per
  * ability -- and homebrew identifies rows by a single column, which a per-
- * ability table couldn't do. Returns [] for blank input. */
+ * ability table couldn't do.
+ *
+ * Both delimiters are escapable with a backslash, so prose isn't barred from
+ * using them: `\|` is a literal pipe, `\:` a colon that isn't a label
+ * separator, and `\\` a literal backslash. Without this a pipe could never
+ * appear in spirit text at all, and "Meet at 10:00 sharp" rendered as a
+ * service named "Meet at 10" with the body "00 sharp". */
+const SPIRIT_ENTRY_SEPARATOR = "|";
+/** Index of the first unescaped `ch` in `s`, or -1. */
+function firstUnescapedIndex(s, ch) {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\") { i++; continue; }
+    if (s[i] === ch) return i;
+  }
+  return -1;
+}
+/** Resolve escapes for display: `\x` becomes `x` for any x. */
+function unescapeSpiritText(s) {
+  return String(s).replace(/\\(.)/g, "$1");
+}
+/** Split on unescaped pipes, escapes left intact for the caller to resolve. */
+function splitSpiritEntriesRaw(str) {
+  const source = String(str || "");
+  const parts = [];
+  let buffer = "";
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === "\\" && i + 1 < source.length) { buffer += ch + source[++i]; continue; }
+    if (ch === SPIRIT_ENTRY_SEPARATOR) { parts.push(buffer); buffer = ""; continue; }
+    buffer += ch;
+  }
+  parts.push(buffer);
+  return parts.map(p => p.trim()).filter(Boolean);
+}
+/** Entries as plain display text. Returns [] for blank input. */
 function splitSpiritEntries(str) {
-  return String(str || "").split("|").map(s => s.trim()).filter(Boolean);
+  return splitSpiritEntriesRaw(str).map(unescapeSpiritText).filter(Boolean);
 }
 function parseSpiritServices(str) {
-  return splitSpiritEntries(str).map(entry => {
-    const at = entry.indexOf(":");
+  return splitSpiritEntriesRaw(str).map(entry => {
     // Only treat the colon as a name separator when it looks like a label --
-    // a long run before it is prose ("Note: ..." vs "...ratio 2:1").
+    // a long run before it is prose ("Note: ..." vs "...ratio 2:1"). The 40 is
+    // measured on the raw entry; an escape adds one character to that count,
+    // which only matters for a label that is already at the limit.
+    const at = firstUnescapedIndex(entry, ":");
     if (at > 0 && at <= 40) {
-      return { name: entry.slice(0, at).trim(), text: entry.slice(at + 1).trim() };
+      return { name: unescapeSpiritText(entry.slice(0, at)).trim(),
+               text: unescapeSpiritText(entry.slice(at + 1)).trim() };
     }
-    return { name: "", text: entry };
-  });
+    return { name: "", text: unescapeSpiritText(entry) };
+  }).filter(svc => svc.name || svc.text);
 }
 
 /* Every service of a spirit as one block, for places that show a whole spirit
@@ -831,16 +919,11 @@ function tabPriorities(p) {
     ["heritage", "Heritage"], ["magic", "Magic"], ["attributes", "Attributes"],
     ["skills", "Skills"], ["resources", "Resources"],
   ];
-  // Classic is a bijection over 0\u20134. If the stored values aren't a valid
-  // permutation (new character, or just switched rules), seed a sensible one.
-  if (classic) {
-    const vals = cats.map(([k]) => CHAR.priorities[k]);
-    const isPerm = new Set(vals).size === 5 && vals.every(v => v >= 0 && v <= 4);
-    if (!isPerm) {
-      const seed = { attributes: 4, skills: 3, resources: 2, heritage: 1, magic: 0 };
-      for (const [k] of cats) CHAR.priorities[k] = seed[k];
-    }
-  }
+  // Classic is a bijection over 0\u20134. A character that has never allocated
+  // anything gets a sensible spread here; one that HAS is left alone, because
+  // overwriting it is a decision the player makes at the house-rule switch
+  // (seedClassicPriorities) rather than a side effect of opening this tab.
+  if (classic) seedClassicPriorities(false);
   const prow = { 4: DATA.tables.priorities[0], 3: DATA.tables.priorities[1],
     2: DATA.tables.priorities[2], 1: DATA.tables.priorities[3], 0: DATA.tables.priorities[4] };
   const grants = (cat, v) => {
@@ -1087,6 +1170,11 @@ function tabStats(p) {
     const adjCell = el("td", { class: "num" }, (c.adjust >= 0 ? "+" : "") + c.adjust);
     const finCell = el("td", { class: "num" }, el("b", {}, String(c.final)));
     const maxCell = el("td", { class: "num sub" }, String(c.max));
+    // The stepper stops at the base level that puts Final on the attribute's
+    // max: c.max and c.adjust share their bonuses, so the difference is the
+    // largest legal base. An imported character already over its max keeps its
+    // value (the engine still warns) rather than being yanked down by a "+".
+    const baseCeiling = Math.max(1, c.max - c.adjust, c.base);
     at.append(el("tr", {},
       el("td", {}, a),
       el("td", { class: "num" }, stepper(
@@ -1094,7 +1182,7 @@ function tabStats(p) {
         v => {
           CHAR.attributes[a] = v;
           costCell.textContent = String(costOf(v));
-        }, 1, 29)),
+        }, 1, baseCeiling)),
       costCell, adjCell, finCell, maxCell));
   }
   p.append(at);
@@ -1142,21 +1230,27 @@ function tabStats(p) {
       const s = CALC.skills[name];
       CHAR.skill_specializations ??= {};
       const spec = CHAR.skill_specializations[name];
-      const specOn = !!(spec && spec.on);
+      // A specialization needs a rank of its own to split, so the toggle only
+      // appears once the skill is bought. The stored flag is left alone: drop a
+      // skill to 0 and back and the specialization comes back with it.
+      const canSpecialize = Math.max(0, CHAR.skills[name] || 0) >= 1;
+      const specOn = !!(spec && spec.on) && canSpecialize;
       // Specialized skills split into a lower / higher rating (\u22121 / +1).
       const ratingText = specOn ? `${s.final - 1} / ${s.final + 1}` : String(s.final);
       const bonusCell = el("td", { class: "num sub" }, s.bonus ? "+" + s.bonus : "");
       const finCell = el("td", { class: "num" },
         el("b", {}, ratingText),
         s.soft ? el("span", { class: "sub" }, ` (soft ${s.soft})`) : null);
-      const specToggle = el("label", { class: "skill-spec-toggle" },
-        el("input", { type: "checkbox", ...(specOn ? { checked: 1 } : {}),
-          onchange: e => {
-            const entry = CHAR.skill_specializations[name] ??= { on: false, text: "" };
-            entry.on = e.target.checked;
-            refresh();
-          } }),
-        el("span", {}, "Spec"));
+      const specToggle = canSpecialize
+        ? el("label", { class: "skill-spec-toggle" },
+            el("input", { type: "checkbox", ...(specOn ? { checked: 1 } : {}),
+              onchange: e => {
+                const entry = CHAR.skill_specializations[name] ??= { on: false, text: "" };
+                entry.on = e.target.checked;
+                refresh();
+              } }),
+            el("span", {}, "Spec"))
+        : null;
       const specText = specOn
         ? el("input", { type: "text", class: "skill-spec-text",
             value: (spec && spec.text) || "", placeholder: "Specialization\u2026",
@@ -1172,7 +1266,12 @@ function tabStats(p) {
           (s.notes && s.notes.length) ? el("div", { class: "sub" }, "\u2726 " + s.notes.join(" \u00b7 ")) : null),
         el("td", { class: "num" }, stepper(
           () => CHAR.skills[name] || 0,
-          v => { CHAR.skills[name] = v; }, 0, 6)),
+          v => {
+            const had = canSpecialize;
+            CHAR.skills[name] = v;
+            // Crossing 0 <-> 1 adds or removes the Spec toggle on this row.
+            if (had !== (v >= 1)) refresh();
+          }, 0, RULES.SKILL_RANK_CAP)),
         bonusCell, finCell);
     };
 
@@ -1848,30 +1947,11 @@ function categoryBrowser({ id, groups, onAdd, rerender, afterAdd }) {
  * Families that can legitimately be bought many times are never hidden.
  */
 function augmentAvailability(ownedEntries) {
-  const STACKABLE_RE = /^(Skillsoft|Knowledge Skillsoft|Memory|Unmodified|Compartment|Chipjack)/i;
-  const LIMB_TYPES = new Set(["Right Arm", "Left Arm", "Right Leg", "Left Leg"]);
   const rowOf = name => DATA.tables.augments.find(a => a.Name === name) || {};
-  const isStackable = name =>
-    STACKABLE_RE.test(name) || LIMB_TYPES.has(rowOf(name).Type || "");
-  // Families whose tiers are NAMED rather than numbered. Bone Lacing's materials
-  // are ranks in disguise -- plastic < aluminum < titanium in cost, ZR, Body and
-  // armor alike -- but parse() only understands a trailing digit, so all three
-  // read as separate one-rank families and a character could buy the lot. Listed
-  // here they behave exactly like Wired Reflexes: taking one drops it and every
-  // grade below it, leaving the better grades buyable as an upgrade.
-  const NAMED_TIERS = {
-    "Bone Lacing": { plastic: 1, aluminum: 2, titanium: 3 },
-  };
-  // name -> {family, rank}
-  const parse = name => {
-    for (const [family, tiers] of Object.entries(NAMED_TIERS)) {
-      if (!name.startsWith(family + "-")) continue;
-      const rank = tiers[name.slice(family.length + 1).trim().toLowerCase()];
-      if (rank) return { family, rank };
-    }
-    const m = name.match(/^(.*?)[\s-]*(\d+)\s*$/);
-    return m ? { family: m[1].trim(), rank: +m[2] } : { family: name, rank: 1 };
-  };
+  // Tier parsing and the stackable-family list live in rules.js, so the picker
+  // hides exactly what the engine refuses to let you finalize holding.
+  const isStackable = name => RULES.augmentStacks(name, DATA.tables);
+  const parse = RULES.augmentTier;
   // Highest owned rank per family (skipping stackable families).
   const ownedMaxRank = {};
   const ownedNames = new Set();
@@ -2225,7 +2305,8 @@ function tabDecks(p) {
             onRemove: index => it.mods.splice(index, 1),
             effectOf: name =>
               (DATA.tables.deck_mods.find(m => m["Deck Mod"] === name) || {}).Effect || "",
-          })),
+          }),
+          carriedToggle(it, refresh)),
         el("td", { class: "num" }, fmt(r.Cost)),
         el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
     },
@@ -2359,6 +2440,27 @@ function vehicleConditionSelect(it, onChange) {
     effect ? el("span", { style: "color:var(--manon)" }, effect) : null);
 }
 
+/* Which rig is jacked in. Only the active rig contributes Zoetic Rating and
+ * rigging exploit actions, and creation used to have no way to say — so a rig
+ * bought in chargen silently counted for nothing. Writes the same
+ * play.rigging.active_rig the play sheet uses; with nothing chosen the engine
+ * falls back to the first owned rig, which is what this select shows. */
+function activeRigSelect() {
+  if (!CHAR.rigs.length) return null;
+  const rigging = ((CHAR.play ??= {}).rigging ??= { active_rig: "", units: {} });
+  const owned = CHAR.rigs.map(r => r.name);
+  const current = owned.includes(rigging.active_rig) ? rigging.active_rig : owned[0];
+  const sel = el("select", { onchange: e => { rigging.active_rig = e.target.value; refresh(); } },
+    ...owned.map(name => el("option", { value: name }, name)));
+  sel.value = current;
+  return el("div", { class: "card", style: "max-width:520px" },
+    el("h3", {}, "Active rig"),
+    el("p", { class: "hint" },
+      "The rig you're jacked into. Only this one contributes its Zoetic Rating "
+      + "and rigging exploit actions; the rest are just owned."),
+    sel);
+}
+
 function tabDrones(p) {
   p.append(el("h2", {}, "Rigs ", chip("cash")));
   p.append(listEditor({
@@ -2392,6 +2494,7 @@ function tabDrones(p) {
         el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
     },
   }));
+  p.append(activeRigSelect());
 
   const block = (title, key, table, nameKey, wtabs, kind) => {
     p.append(el("h2", {}, title));
@@ -2453,6 +2556,7 @@ function tabDrones(p) {
               (r.Frame ? ` \u00b7 ${r.Frame}` : "") + (r.Effect ? ` \u00b7 ${r.Effect}` : "")),
             el("div", { class: "sub", style: overLimit ? "color:var(--bad)" : "" }, limits),
             vehicleConditionSelect(it, refresh),
+            carriedToggle(it, refresh),
             fittedEditor(it, wtabs, guard)),
           el("td", { class: "num" }, el("b", {}, fmt(calcRow.cost ?? r.Cost))),
           el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));

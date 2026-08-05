@@ -36,17 +36,26 @@ is not optional, and a leftover QA pack will confuse every later pass.
 - **Expected:** `{ "found": true, "Pen": "3", "Bar": "4", "spent": 1000, "gearZr": 2 }`
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P09-003: Missing numeric columns silently read as zero
-- **Type:** leak
+### P09-003: Missing numeric columns read as zero, and the editor says so
+- **Type:** correctness
 - **Check:**
 
       (async () => { const row = { Weapon: "QA Malformed", Type: "Rifle", Custom: "Y" }; DATA.tables.weapons.push(row); const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:2, attributes:3, skills:4, resources:0 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.weapons = [{ name: "QA Malformed", smart: false, mods: [], equipped: true, qty: 1 }]; const k = RULES.calculate(c); return { spent: k.budget.spent, gearZr: k.zoetics.gear_zr, errors: k.errors, warnings: k.warnings, weapon: k.weapons[0] }; })()
 
 - **Expected:** the weapon is accepted, costs `0`, contributes `0` ZR, and
   produces **no** error or warning.
-- **Note:** A row with almost no columns is a perfectly good free weapon. There
-  is no schema validation on homebrew at all — file a JC if you think authoring
-  mistakes should be caught.
+- **Also check** (the editor half, which is where JC-022 landed):
+
+      (() => hbMissingColumns("weapons", { Weapon: "QA Malformed", Type: "Rifle", Custom: "Y" }))()
+
+- **Expected:** `["Cost", "Damage"]`.
+- **Note:** JC-022, ruled **C**. The *engine* is unchanged and this case still
+  passes as written — a row with almost no columns is still a perfectly good free
+  weapon, because the free-form data model is deliberate and a placeholder row is
+  a reasonable thing to want. What changed is upstream: `HOMEBREW_REQUIRED` lists
+  the columns each table's rows genuinely need, saving a row that leaves any of
+  them blank asks for confirmation and says what it will read as, and the row
+  list marks it in amber. Nothing blocks; only the name is genuinely required.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P09-004: A homebrew Ban column drives a real engine branch
@@ -61,17 +70,22 @@ is not optional, and a leftover QA pack will confuse every later pass.
   column fails safe (no error) rather than banning something unrelated.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P09-005: A name colliding with a core row is dropped silently
-- **Type:** leak
+### P09-005: A name colliding with a core row is dropped, and reported
+- **Type:** correctness
 - **Check:**
 
       (() => { const before = DATA.tables.weapons.filter(w => /^Katana$/i.test(w.Weapon)).length; const dup = { Weapon: "katana", Type: "Melee", Damage: "99", Cost: "0", Custom: "Y" }; const merged = [...DATA.tables.weapons]; const seen = new Set(merged.map(w => String(w.Weapon).toLowerCase())); const wouldDrop = seen.has(dup.Weapon.toLowerCase()); return { coreCount: before, wouldDrop, collisionsRecorded: HB_COLLISIONS.length }; })()
 
 - **Expected:** `{ "coreCount": 1, "wouldDrop": true, "collisionsRecorded": <n> }`
-- **Note:** This mirrors `mergeCustomContent`'s first-writer-wins rule without
-  actually re-merging. A homebrew row whose name matches a core row never
-  appears and the author is never told — the only record is `HB_COLLISIONS`,
-  which has no UI. File a JC if collisions should be surfaced.
+- **Also check** (the UI half, which is where JC-022 landed): add a weapon named
+  `katana` to a pack, then open **Homebrew**. A card headed **"Not merged — name
+  already taken"** lists it with its table and pack.
+- **Note:** JC-022, ruled **C**. The drop itself is unchanged — first writer of a
+  name wins, core > my packs > subscriptions — and this case still records that.
+  What changed is that `HB_COLLISIONS` finally has a UI, covering every pack
+  rather than just the active one. It was the more confusing of the two failure
+  modes JC-022 covered: content that simply never appears while the row sits in
+  the editor looking fine.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P09-006: Imported packs are field-whitelisted
@@ -137,5 +151,6 @@ Also remove the test character:
 
 ## Wrapping up
 
-Expected JUDGEMENT: **P09-003, P09-005, P09-007**. P09-008 must PASS — it is the
+Expected JUDGEMENT: **P09-007**. P09-003 and P09-005 were ruled on (JC-022) and
+are now correctness cases. P09-008 must PASS — it is the
 one case here that would be a security incident rather than a design question.

@@ -24,15 +24,38 @@ assuming a clean slate.
 
 ## The blanking behaviour
 
-### P06-001: A finalized character reports no errors or warnings, whatever its state
-- **Type:** leak
+### P06-001: A finalized character drops its creation-only problems
+- **Type:** correctness
 - **Check:**
 
       (() => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = true; c.lifestyles = []; c.skills = { Athletics: 99 }; const k = RULES.calculate(c); return { errors: k.errors, warnings: k.warnings }; })()
 
 - **Expected:** `{ "errors": [], "warnings": [] }`
-- **Note:** That character has **no lifestyle** and a skill at 99. Both are
-  silent. This is JC-012 — mark **JUDGEMENT**, not FAIL.
+- **Note:** JC-012, ruled **B**. That character has no lifestyle and a skill at
+  99, and both stay silent — they are creation rules and creation is over. The
+  lists are no longer blanked *unconditionally* though; P06-001b is the half that
+  now speaks.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-001b: …but still reports what stays illegal at the table
+- **Type:** correctness
+- **Check:**
+
+      (() => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = true; c.play.cash = -2500; c.augments = [...c.augments, { name: "Bone Lacing-Plastic", count: 1 }, { name: "Bone Lacing-Titanium", count: 1 }]; const k = RULES.calculate(c); return { errors: k.errors, warnings: k.warnings }; })()
+
+- **Expected:** `errors` contains both
+
+      "Bone Lacing: only one tier may be installed — remove all but one of Bone Lacing-Plastic, Bone Lacing-Titanium."
+      "Overdrawn by ㄓ2,500."
+
+- **Note:** The reduced set is *what is installed in your body, and what is in
+  your wallet*: augment conflicts and tiers, the Synthetic Bioware ban, augment
+  requirements, Body Index over Body, a martial art above Unarmed Combat, an
+  overdrawn `play.cash`, and the three worn-armor warnings. The overdraw is
+  measured against `play.cash`, **not** the creation budget. Overloaded mounts
+  and the magic/Amp OFFLINE state are deliberately excluded — the sheet has
+  dedicated read-outs for both. The play Overview renders whatever survives in a
+  **Needs attention** card, which is absent entirely for a clean character.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P06-002: The same character un-finalized reports both problems
@@ -74,17 +97,21 @@ assuming a clean slate.
   a character that has gone back to chargen.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P06-005: Advances are applied with no cap check at all
-- **Type:** leak
+### P06-005: Advances are clamped to the caps the Kismet buttons enforce
+- **Type:** correctness
 - **Check:**
 
-      (() => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = true; c.play.skill_advances = { Athletics: 40 }; c.play.attribute_advances = { Strength: 40 }; const k = RULES.calculate(c); return { athletics: k.skills.Athletics.final, strength: k.attributes.Strength.final, strengthMax: k.attributes.Strength.max, errors: k.errors.length }; })()
+      (() => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = true; c.play.skill_advances = { Athletics: 40 }; c.play.attribute_advances = { Strength: 40 }; const k = RULES.calculate(c); return { athletics: k.skills.Athletics.final, strength: k.attributes.Strength.final, strengthMax: k.attributes.Strength.max, errors: k.errors }; })()
 
-- **Expected:** `{ "athletics": 43, "strength": 44, "strengthMax": 20, "errors": 0 }`
-- **Note:** Athletics reaches 43 against a rank cap of 6, and Strength 44 against
-  a stated maximum of 20, with zero errors. The caps live only in the Kismet
-  tab's button `disabled` attributes, so a hand-edited or imported ledger walks
-  straight past them. This is JC-013 — mark **JUDGEMENT**.
+- **Expected:** `{ "athletics": 8, "strength": 29, "strengthMax": 20, "errors": [] }`
+- **Note:** JC-013, ruled **A**. Both used to sail through — Athletics reached 43
+  and Strength 44 — because the caps lived only in the Kismet tab's button
+  `disabled` attributes, which an imported or hand-edited ledger never touches.
+  `applyPlayAdvances` clamps now: skills to 8 (rank 6 by Kismet, 7 on a mastery
+  boon, 8 on a major one) and attributes to the engine's level range of 29.
+  Strength 29 is still over its per-heritage `strengthMax` of 20 — that stays a
+  **warning**, per JC-002, and warnings about creation caps aren't play-relevant,
+  so `errors` is empty.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
@@ -132,57 +159,72 @@ assuming a clean slate.
 - **Expected:** `{ "kismet": 18, "advance": 0, "logLength": 0 }`
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P06-009: Which spend kinds offer Undo at all
-- **Type:** judgement-probe
+### P06-009: The Activity ledger undoes a purchase and refunds it in full
+- **Type:** correctness
 - **Steps:**
-  1. Reload the fixture.
-  2. Click the **Kismet** tab. Note which ledger rows show an Undo button.
-  3. Click the **Gear** tab, buy any item, then remove it with the ✕ button.
+  1. Reload the fixture. The fixture starts with `play.cash` at **1500**.
+  2. Click the **Gear** tab and buy any item.
+  3. Scroll to **Activity** at the bottom. The purchase row has an **Undo**
+     button; the starting-cash roll does not.
+  4. Press Undo and confirm.
 - **Check:**
 
-      (() => ({ cash: CHAR.play.cash, cashLog: CHAR.play.cash_log.map(e => e.label) }))()
+      (async () => { window.confirm = () => true; const before = CHAR.play.cash; const w = DATA.tables.weapons.find(x => +x.Cost > 0 && x.Type === "Melee"); CHAR.play.purchases.weapons.push({ name: w.Weapon, smart: false, mods: [], equipped: true, qty: 1 }); logCash(`Bought ${w.Weapon}`, -Math.round(+w.Cost), { kind: "weapon", name: w.Weapon }); await playChangedRecalc(); const spent = CHAR.play.cash; await undoCashSpend(CHAR.play.cash_log[0]); return { before, spent, after: CHAR.play.cash, weapons: CHAR.play.purchases.weapons.length, top: CHAR.play.cash_log[0].label }; })()
 
-- **Expected:** the purchase's cash deduction remains after removing the item —
-  `cash` is **lower** than 1500 and the purchase entry is still in `cashLog`.
-- **Note:** Kismet spends of kind `attribute`, `skill`, `martial_art`, `ritual`
-  and `zp` all undo. Cash purchases do not — removing the item does not credit
-  the money back. This is JC-011; mark **JUDGEMENT**.
+- **Expected:** `spent` is `before` minus the weapon's cost, `after` is back to
+  `before` exactly, `weapons` is `0`, and `top` is the starting-cash roll — the
+  purchase row is gone from the ledger.
+- **Note:** JC-011, ruled **A but scoped**. Undo lives **only** in the Activity
+  ledger; the per-row ✕ on the tabs above still just removes the item and keeps
+  the money, and the card says so. Covered kinds: weapon, armor, gear, augment,
+  spell, hacking level, weapon mod, armor extra, gear mount, prepaid lifestyle
+  month. Rows with nothing to reverse — manual adjustments, α-grade upgrades,
+  quality changes, the cash roll — get no button. Undoing a purchase whose item
+  was already removed reports that and pays nothing.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
 
 ## Purchases crossing back into chargen
 
-### P06-010: A weapon bought in play lands in the chargen array
-- **Type:** leak
+### P06-010: A weapon bought in play lands in `play.purchases`
+- **Type:** correctness
 - **Steps:**
   1. Reload the fixture.
   2. Click the **Gear** tab.
   3. Expand a weapon category and click **Buy** on any weapon.
 - **Check:**
 
-      (() => ({ chargenWeapons: CHAR.weapons.map(w => w.name), playPurchasedGear: (CHAR.play.purchases.gear || []).map(g => g.name || g) }))()
+      (() => ({ chargenWeapons: CHAR.weapons.map(w => w.name), playWeapons: CHAR.play.purchases.weapons.map(w => w.name), allWeapons: allWeapons().map(w => w.name), calcWeapons: (CALC.weapons || []).map(w => w.Weapon) }))()
 
-- **Expected:** the newly bought weapon appears in `chargenWeapons` and **not**
-  in `playPurchasedGear`.
-- **Note:** Gear, augments, amp powers, spells and hacking levels bought in play
-  go to `play.purchases.*`. Weapons and armor go straight onto `CHAR.weapons` /
-  `CHAR.armor` — the arrays chargen prices. This is JC-010; mark **JUDGEMENT**.
+- **Expected:** `chargenWeapons` is unchanged (`["Kalishnikov A-80", "Katana"]`
+  for this fixture); the new weapon is in `playWeapons`; `allWeapons` is the two
+  chargen ones **followed by** the new one; `calcWeapons` matches `allWeapons`
+  element for element.
+- **Note:** JC-010, ruled **A**. Weapons and armor joined gear, augments, spells,
+  amp powers and hacking levels in `play.purchases`. The ordering matters as much
+  as the split: `applyPlayAdvances` appends purchases **after** the chargen
+  entries, so index N of the character's array is still index N of the matching
+  CALC array — which is what lets the Gear tab keep indexing straight across. The
+  Gear tab reads the union through `allWeapons()` / `allArmor()`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P06-011: That weapon is then charged against the creation budget
-- **Type:** leak
+### P06-011: That weapon is **not** charged against the creation budget
+- **Type:** correctness
 - **Steps:** (continues from P06-010 — do not reload)
 - **Check:**
 
-      (() => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; const k = RULES.calculate(c); return { remaining: k.budget.remaining, errors: k.errors }; })()
+      (() => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; const k = RULES.calculate(c); return { remaining: k.budget.remaining, weapons: k.weapons.map(w => w.Weapon), errors: k.errors }; })()
 
-- **Expected:** `remaining` is **lower** than the 33902 the fixture starts with,
-  by the price of the weapon you bought. If the weapon was expensive enough,
-  `errors` now contains a cash-overspend message.
-- **Note:** This is the concrete harm behind JC-010: money earned and spent in
-  play is retroactively deducted from the creation budget. Record the actual
-  numbers — they make the case far more convincing than the principle does.
+- **Expected:** `remaining` is still **33902** — the number the fixture starts
+  with, whatever you bought — `weapons` lists only the two chargen weapons, and
+  `errors` is `[]`.
+- **Note:** This is the harm JC-010 was ruled on: money earned and spent in play
+  used to be retroactively deducted from the creation budget the moment you went
+  Back to Chargen, and `revertToChargenEnd()` couldn't remove the item either.
+  Both follow from the split. If `remaining` moves at all, the purchase has
+  leaked back into the chargen arrays — re-check P06-010 first, since this case
+  can only be right if that one is.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
@@ -238,9 +280,11 @@ assuming a clean slate.
 
 ## Wrapping up
 
-Expected JUDGEMENT results: **P06-001, P06-005, P06-009, P06-010, P06-011**.
-Everything else should PASS.
+Every case should PASS. P06-001, P06-005, P06-009, P06-010 and P06-011 were all
+JUDGEMENT before the first round of rulings (JC-012, JC-013, JC-011, JC-010);
+each is now a correctness case for the ruled behaviour, joined by the new
+P06-001b.
 
-P06-011 is the one to write up carefully even when it "passes" as documented —
-the actual cash numbers are the evidence for JC-010, and nobody can rule on it
-without them.
+P06-011 is the load-bearing one. If `budget.remaining` moves when you buy
+something in play, the chargen/play split has broken and every "my cash is wrong
+after going back to chargen" report is live again.

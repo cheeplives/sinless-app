@@ -50,16 +50,17 @@ Load a fixture into chargen with this, substituting the filename:
   a real FAIL. Restore `chosen_type` to `"Archmage"` afterwards.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P04-004: A Mage with no school chosen only warns
-- **Type:** judgement-probe
+### P04-004: A Mage must choose a school
+- **Type:** correctness
 - **Check:**
 
       (async () => { CHAR.magic.chosen_type = "Mage"; CHAR.magic.school = ""; CHAR.magic.spells = [{ name: "Create Barrier", force: 4 }]; await recalc(); return { errors: CALC.errors, warnings: CALC.warnings }; })()
 
-- **Expected:** `errors` is `[]`; `warnings` mentions the missing school.
-- **Note:** With no school set, every spell trivially passes the school check, so
-  a schoolless Mage can take anything and still finalize. File a JC if there is
-  not one already.
+- **Expected:** `errors` contains `"Mage: choose one School of magic."`.
+- **Note:** JC-020, ruled **A**. This was a warning, which meant a schoolless
+  Mage could take spells from every school — with `school` empty the
+  out-of-school check is skipped entirely — and still finalize. Now it blocks, so
+  the check can no longer be dodged by leaving the field blank.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
@@ -127,7 +128,10 @@ Load a fixture into chargen with this, substituting the filename:
 
 - **Expected:** both tiers appear in `owned` (they are already installed), and
   the *picker* offers neither for a second purchase.
-- **Note:** This is the UI half of JC-008. The engine half is P02-007, where the
+- **Note:** This is the UI half of JC-008 — unchanged by the ruling, since the
+  picker always behaved. What changed is that it and the engine now share
+  `RULES.augmentTier` / `RULES.augmentStacks`, so they can't drift. The engine
+  half is P02-007, where the
   same character produces zero errors.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
@@ -160,6 +164,7 @@ Load a fixture into chargen with this, substituting the filename:
 
 ## Wrapping up
 
-Expected JUDGEMENT: **P04-004** and **P04-008**. Expected **FAIL: P04-007** —
+Expected JUDGEMENT: **P04-008**. P04-004 was ruled on (JC-020) and is now a
+correctness case. Expected **FAIL: P04-007** —
 that one is a genuine data-loss bug and should be reported as soon as you see it
 rather than held until the end of the session.

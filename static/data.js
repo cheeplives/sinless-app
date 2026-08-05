@@ -56,7 +56,7 @@ const DATA_BUNDLE ={
 {"Armor":"NBC suit","ZR":"0","BI":"","Cost":"7800","Ballistic":"0","Impact":"0","wt":"1","Rarity":"2","Slot":"Outer","Style":"N","Mount Types":"","Mount ZP":""},
 {"Armor":"Power Armor","ZR":"2","BI":"","Cost":"970000","Ballistic":"5","Impact":"5","wt":"2","Rarity":"7","Slot":"Outer","Style":"N","Mount Types":"Any","Mount ZP":"3"},
 {"Armor":"Tactical Plate","ZR":"0","BI":"","Cost":"5000","Ballistic":"4","Impact":"2","wt":"2","Rarity":"1","Slot":"Outer","Style":"N","Mount Types":"","Mount ZP":""},
-{"Armor":"Helmet","ZR":"0","BI":"","Cost":"500","Ballistic":"1","Impact":"1","wt":"1","Rarity":"3","Slot":"Outer*","Style":"N","Mount Types":"","Mount ZP":""},
+{"Armor":"Helmet","ZR":"0","BI":"","Cost":"500","Ballistic":"1","Impact":"1","wt":"1","Rarity":"3","Slot":"Outer*","Style":"N","Mount Types":"Eyeware, Earware, Commlink, Subvocal Mic, !Cybertechtronic Ears, !Cybertechtronic Eyes, !Eye Laser, !Cosmetic Modification, !Optical Datajack","Mount ZP":"2"},
 {"Armor":"Diaweave","ZR":"0","BI":"","Cost":"98800","Ballistic":"3","Impact":"3","wt":"1","Rarity":"4","Slot":"Under","Style":"N","Mount Types":"","Mount ZP":""},
 {"Armor":"Nanoweave","ZR":"0","BI":"","Cost":"11800","Ballistic":"2","Impact":"2","wt":"1","Rarity":"3","Slot":"Under","Style":"N","Mount Types":"","Mount ZP":""},
 {"Armor":"Nanoweave vest","ZR":"0","BI":"","Cost":"750","Ballistic":"1","Impact":"0","wt":"0","Rarity":"1","Slot":"Under","Style":"N","Mount Types":"","Mount ZP":""},

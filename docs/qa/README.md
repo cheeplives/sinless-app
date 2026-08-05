@@ -99,20 +99,28 @@ grep -rn "FAIL$" docs/qa/findings/
 ## Judgement calls
 
 [`JUDGEMENT-CALLS.md`](JUDGEMENT-CALLS.md) holds behaviour that is defensible but
-undecided — 23 entries seeded from the exploration that produced this suite.
-Testers append; only the owner fills in a ruling. It is the one file here that is
-live state rather than a point-in-time record.
+undecided. Testers append; only the owner fills in a ruling. It is the one file
+here that is live state rather than a point-in-time record.
 
-If you are the owner and want the short version of what needs deciding, the
-highest-consequence open items are **JC-014** (finalizing over an existing name
-silently overwrites it), **JC-010** (play purchases charged against the creation
-budget), and **JC-012/JC-013** together (an imported character with arbitrary
-advances is both unvalidated and, once finalized, completely silent).
+**JC-001 … JC-023 have been ruled on and implemented.** Around a third of this
+suite's cases were judgement-probes for them and are now correctness cases for
+the ruled behaviour — a run that still finds the *old* behaviour is a regression,
+not a rediscovery. Three entries are still live:
+
+- **JC-006** — the owner asked for a per-stat decision on how a gear-mounted
+  augment combines with a body one; the entry now asks stat by stat.
+- **JC-018** — ruled *no change* (rely on the CSP for imported image URLs), held
+  open for a second look.
+- **JC-024** and **JC-025** — raised while implementing the first round. JC-024
+  is the JC-010 leak still live for decks, programs, rigs, drones and vehicles;
+  JC-025 is that no host in the shipped data will mount a Smartlink, which makes
+  case (3) of JC-009's ruling unreachable.
 
 ## Keeping the suite honest
 
-Every expected value in these docs was observed from the running app at commit
-`794d60a`, not predicted. When the app changes deliberately, the expected values
-change with it — update the doc in the same commit as the behaviour, and say so
-in the commit message. A pass doc that disagrees with intended behaviour is worse
+Every expected value in these docs was observed from the running app, not
+predicted — first at commit `794d60a`, then re-observed for the cases the
+JC-001…023 rulings changed. When the app changes deliberately, the expected
+values change with it — update the doc in the same commit as the behaviour, and
+say so in the commit message. A pass doc that disagrees with intended behaviour is worse
 than no pass doc, because it trains the next runner to ignore failures.

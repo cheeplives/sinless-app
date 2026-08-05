@@ -177,6 +177,14 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
     cell, separated by `" | "`**. A service is `Name: text`; the name is
     everything before the first colon when that colon falls within 40
     characters, so ordinary prose colons stay in the body.
+  - **A backslash escapes either delimiter**, so neither is barred from prose:
+    `\|` is a literal pipe, `\:` a colon that is *not* a label separator, and
+    `\\` a literal backslash. Anything else after a backslash is passed through
+    with the backslash removed, so write `\\` whenever you want one to survive.
+    Escapes are resolved after splitting, so `Toll\: paid in memories | Bargain:
+    ...` is two entries and the first has no service name. The shipped data uses
+    none of this — no cell in `data.js` contains a backslash at all — but a
+    homebrew spirit writing `10\:00 sharp` or `black\|white` now renders it.
   - **`[F]` is the spirit's Force**, substituted live from the Force set on the
     bond slot (`play.bond_slots[i].force`) and shown as a dotted `F` when that
     is still 0. Write `[F]d6`, `6+[F]`, `2x[F]` — never the literal word.

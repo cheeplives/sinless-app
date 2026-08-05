@@ -188,5 +188,11 @@ share the fixture.
 else rests on, and a failure in any of them is a security incident to report
 immediately rather than at the end of the session.
 
-**P11-004 is expected JUDGEMENT.** P11-005 and P11-008 will often be BLOCKED
+**P11-004 is expected JUDGEMENT.** JC-018 was ruled *no change* — rely on the
+deployed CSP — but the owner kept it open for a second look, so keep recording
+what you observe. The thing worth noting for that review is where the CSP
+isn't: GitHub Pages, a `file://` open and `python -m http.server` all serve no
+`.htaccess`.
+
+P11-005 and P11-008 will often be BLOCKED
 depending on what you have available; say so rather than guessing.

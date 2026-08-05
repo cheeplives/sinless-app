@@ -65,17 +65,21 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
   rendering errors and that is a real FAIL — the player would never see it.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P03-004: Switching to the classic rule seeds a valid permutation
-- **Type:** judgement-probe
+### P03-004: Switching to the classic rule asks before rewriting priorities
+- **Type:** correctness
 - **Check:**
 
-      (async () => { const before = JSON.parse(JSON.stringify(CHAR.priorities)); RULES.setHouseRule("classic" && "priorities", "classic"); CHAR.house_rules.priorities = "classic"; activeTab = "priorities"; await recalc(); renderPanel(); const after = JSON.parse(JSON.stringify(CHAR.priorities)); return { before, after, changed: JSON.stringify(before) !== JSON.stringify(after), errors: CALC.errors.length }; })()
+      (async () => { window.CHAR = RULES.defaultCharacter(); CHAR.priorities = { heritage: 2, magic: 2, attributes: 2, skills: 2, resources: 2 }; CHAR.house_rules.priorities = "classic"; RULES.setHouseRule("priorities", "classic"); const before = JSON.parse(JSON.stringify(CHAR.priorities)); window.confirm = () => false; seedClassicPriorities(true); const declined = JSON.parse(JSON.stringify(CHAR.priorities)); window.confirm = () => true; seedClassicPriorities(true); const accepted = JSON.parse(JSON.stringify(CHAR.priorities)); await recalc(); return { before, declined, accepted, errors: CALC.errors.length }; })()
 
-- **Expected:** `changed` is `true` and `after` is a permutation of 0–4 with
-  `errors` of `0`.
-- **Note:** Switching rules **silently rewrites the character's priorities**.
-  That is convenient, but it is an unannounced mutation of player choices — file
-  a JC if you think it should be confirmed first.
+- **Expected:** `declined` is identical to `before` (all `2`s — the player's
+  allocation survives a cancel), `accepted` is
+  `{ heritage: 1, magic: 0, attributes: 4, skills: 3, resources: 2 }`, and
+  `errors` is `0`.
+- **Note:** JC-021. The rewrite used to happen silently on the switch. It now
+  asks, and only the switch asks — opening the Priorities tab passes
+  `ask = false`, so declining doesn't re-prompt on every render. A character
+  with **nothing** allocated is still seeded without asking; to see that, set
+  every priority to `0` first and expect no prompt.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
@@ -159,18 +163,26 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
   `"Athletics: maximum 6 skill points at creation."`, `final` is `7`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P03-011: A specialization can be set on a skill with no ranks, for free
-- **Type:** judgement-probe
+### P03-011: A specialization is free, but needs a rank in its skill
+- **Type:** correctness
 - **Steps:**
   1. On the Stats tab, find a skill the character has **0** ranks in.
-  2. Turn its specialization on and type any text.
+  2. Confirm there is **no Spec toggle** on that row.
+  3. Step it up to 1 and confirm the toggle appears without a manual refresh.
 - **Check:**
 
-      (async () => { const before = CALC.skill_points.spent; CHAR.skills = {}; CHAR.skill_specializations = { Sorcery: { on: true, text: "Fire" }, Archery: { on: true, text: "Longbow" } }; await recalc(); renderPanel(); return { before, after: CALC.skill_points.spent, ranks: CALC.skills.Sorcery.final, errors: CALC.errors.length, warnings: CALC.warnings.length }; })()
+      (async () => { window.CHAR = RULES.defaultCharacter(); CHAR.priorities = { heritage: 1, magic: 0, attributes: 2, skills: 3, resources: 4 }; CHAR.heritage.type = "Human"; CHAR.lifestyles = [{ name: "Squatter", months: 1 }]; CHAR.skills = { Sorcery: 2 }; CHAR.skill_specializations = { Sorcery: { on: true, text: "Fire" }, Archery: { on: true, text: "Longbow" } }; await recalc(); return { spent: CALC.skill_points.spent, errors: CALC.errors, sorceryFinal: CALC.skills.Sorcery.final }; })()
 
-- **Expected:** `{ "before": <n>, "after": 0, "ranks": 0, "errors": 0, "warnings": 0 }`
-- **Note:** Two specializations on skills with zero ranks, costing nothing and
-  drawing no complaint. This is JC-001 — mark **JUDGEMENT**.
+- **Expected:**
+
+      { "spent": 2,
+        "errors": ["Archery: a specialization needs at least 1 rank in the skill."],
+        "sorceryFinal": 2 }
+
+- **Note:** JC-001, ruled **B**. Specializations stay free and uncapped — `spent`
+  counts only the two Sorcery ranks — but the one on Archery (0 ranks) is an
+  error. The stored flag is deliberately not cleared, so a skill dropped to 0 and
+  raised again keeps its specialization.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
@@ -206,7 +218,8 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
 
 ## Wrapping up
 
-Expected JUDGEMENT: **P03-004 and P03-011**. Everything else should PASS.
+Every case should PASS. P03-004 and P03-011 used to be judgement-probes; both
+were ruled on (JC-021 and JC-001) and are now correctness cases.
 
 P03-003 and P03-005 are the two worth escalating immediately if they fail —
 between them they are the whole reason a player cannot accidentally build an

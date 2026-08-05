@@ -502,11 +502,16 @@ function defaultCharacter() {
       ritual_advances: {},
       zp_advances: 0,
       spell_force_advances: {},
+      // Everything bought after Finalize, kept apart from the chargen record so
+      // Back to Chargen doesn't charge play purchases against the creation
+      // budget and Revert can drop them wholesale.
       purchases: {
         gear: [],
         augments: [],
         amp_powers: [],
         spells: [],
+        weapons: [],
+        armor: [],
         hacking_levels: 0,
       },
       decking: { active_deck: "", loaded: [] },
@@ -617,6 +622,53 @@ function migrateRenamedSpirits(character) {
   }
 }
 
+/* Does this parsed JSON look like a Sinless character?
+ *
+ * Import used to accept anything that parsed, wasn't an array, and had a truthy
+ * `.attributes` — so a file with `attributes: 1` and `weapons: "sword"` got all
+ * the way to a render before failing somewhere unhelpful. This checks the shape
+ * mergeDefaults and the engine actually rely on, and hands back every problem
+ * at once so the message can say what's wrong rather than just "no".
+ *
+ * It is a shape check, not a rules check: an out-of-range character imports
+ * fine and is then told so by the normal errors and warnings. Hand-editing a
+ * save is a supported thing to do in a local-first app — being handed a file
+ * that isn't a character at all is not. */
+function validateCharacterShape(value) {
+  const problems = [];
+  const isPlainObject = v => v && typeof v === "object" && !Array.isArray(v);
+  if (!isPlainObject(value)) return { ok: false, problems: ["not a JSON object"] };
+
+  if (!isPlainObject(value.attributes)) problems.push("`attributes` is missing or not an object");
+  else {
+    // Not via asNumber: that coerces junk to 0 on purpose, which is right for
+    // the engine and useless for telling a file it's malformed.
+    const numeric = v => (typeof v === "number")
+      ? Number.isFinite(v)
+      : (String(v).trim() !== "" && Number.isFinite(Number(v)));
+    const bad = ATTRIBUTES.filter(name =>
+      name in value.attributes && !numeric(value.attributes[name]));
+    if (bad.length) problems.push(`non-numeric attribute(s): ${bad.join(", ")}`);
+  }
+
+  for (const key of ["skills", "priorities", "heritage", "magic", "ritual_skills",
+                     "etiquettes", "speaker", "play", "skill_specializations"]) {
+    if (key in value && !isPlainObject(value[key])) problems.push(`\`${key}\` is not an object`);
+  }
+  for (const key of ["weapons", "armor", "gear", "augments", "decks", "programs",
+                     "rigs", "drones", "vehicles", "lifestyles", "martial_arts",
+                     "knowledge_skills"]) {
+    if (key in value && !Array.isArray(value[key])) problems.push(`\`${key}\` is not a list`);
+  }
+  if (isPlainObject(value.magic)) {
+    for (const key of ["spells", "amp_powers"]) {
+      if (key in value.magic && !Array.isArray(value.magic[key]))
+        problems.push(`\`magic.${key}\` is not a list`);
+    }
+  }
+  return { ok: problems.length === 0, problems };
+}
+
 function mergeDefaults(character) {
   const defaults = defaultCharacter();
   const isPlainObject = v => v && typeof v === "object" && !Array.isArray(v);
@@ -715,7 +767,13 @@ function resolvePriorities(character, data, warnings, errors) {
     if (lo <= heritagePriority && heritagePriority <= hi) { allowedHeritages = heritages; break; }
   }
   const chosenHeritageType = character.heritage.type;
-  if (!allowedHeritages.includes(chosenHeritageType)) {
+  // With nothing chosen there is no subject to put in the priority message —
+  // it used to render as a bare " requires a higher Heritage priority", which
+  // reads like a bug. Say what's actually missing instead.
+  if (!chosenHeritageType) {
+    errors.push(`Choose a heritage (available at priority ${heritagePriority}: `
+                + `${allowedHeritages.join(", ")}).`);
+  } else if (!allowedHeritages.includes(chosenHeritageType)) {
     errors.push(
       `${chosenHeritageType} requires a higher Heritage priority `
       + `(available at priority ${heritagePriority}: ${allowedHeritages.join(", ")}).`);
@@ -1154,7 +1212,51 @@ function augmentEffectSums(owned) {
   };
 }
 
-function tallyAugments(character, data, warnings, errors) {
+/* ---- augment tiers ----------------------------------------------------------
+ * Most augment families are graded: Wired Reflexes 1/2/3, Muscle Augmentation
+ * 1..n. Taking a grade replaces the one below it rather than sitting alongside
+ * it. A few families genuinely stack (Skillsofts, Memory, Compartments) and so
+ * do the four limb-replacement types — you can have two cyberarms.
+ *
+ * Bone Lacing's tiers are named rather than numbered (plastic < aluminum <
+ * titanium in cost, ZR, Body and armor alike), so it needs its own table: the
+ * trailing-digit rule reads all three as separate one-rank families.
+ *
+ * The picker in app.js hides lower tiers of an owned family, but a character
+ * that arrives by import, homebrew or hand-edited JSON never passes through it,
+ * so `tallyAugments` re-checks and errors. Both live off these helpers. */
+const NAMED_AUGMENT_TIERS = {
+  "Bone Lacing": { plastic: 1, aluminum: 2, titanium: 3 },
+};
+const STACKABLE_AUGMENT_RE = /^(Skillsoft|Knowledge Skillsoft|Memory|Unmodified|Compartment|Chipjack)/i;
+const AUGMENT_LIMB_TYPES = new Set(["Right Arm", "Left Arm", "Right Leg", "Left Leg"]);
+
+/** `name` -> { family, rank }. Unnumbered names are their own rank-1 family. */
+function augmentTier(name) {
+  for (const [family, tiers] of Object.entries(NAMED_AUGMENT_TIERS)) {
+    if (!name.startsWith(family + "-")) continue;
+    const rank = tiers[name.slice(family.length + 1).trim().toLowerCase()];
+    if (rank) return { family, rank };
+  }
+  const m = String(name).match(/^(.*?)[\s-]*(\d+)\s*$/);
+  return m ? { family: m[1].trim(), rank: +m[2] } : { family: String(name), rank: 1 };
+}
+
+/** True when several of this augment may be installed side by side. */
+function augmentStacks(name, data) {
+  if (STACKABLE_AUGMENT_RE.test(name)) return true;
+  const row = findRow(data.augments, "Name", name);
+  return AUGMENT_LIMB_TYPES.has((row || {}).Type || "");
+}
+
+/* `playErrors`, when given, collects the subset of these errors that stays
+ * illegal after Finalize — what is installed in the character's body doesn't
+ * stop being wrong just because creation is over. See `calculate`. */
+function tallyAugments(character, data, warnings, errors, playErrors) {
+  const bothWays = message => {
+    errors.push(message);
+    if (playErrors) playErrors.push(message);
+  };
   const owned = [];  // [row, count, character entry]
   for (const entry of character.augments) {
     const row = findRow(data.augments, "Name", entry.name);
@@ -1169,8 +1271,22 @@ function tallyAugments(character, data, warnings, errors) {
   if (character.heritage.type === "Synthetic") {
     for (const [row] of owned) {
       if (row.Type === "Bioware") {
-        errors.push(`${row.Name}: Synthetics cannot have Bioware installed.`);
+        bothWays(`${row.Name}: Synthetics cannot have Bioware installed.`);
       }
+    }
+  }
+
+  // One tier per family — the better grade replaces the lesser (see augmentTier).
+  const tiersHeld = {};
+  for (const [row] of owned) {
+    if (augmentStacks(row.Name, data)) continue;
+    const { family } = augmentTier(row.Name);
+    (tiersHeld[family] ??= new Set()).add(row.Name);
+  }
+  for (const [family, held] of Object.entries(tiersHeld)) {
+    if (held.size > 1) {
+      bothWays(`${family}: only one tier may be installed — `
+               + `remove all but one of ${[...held].join(", ")}.`);
     }
   }
 
@@ -1179,11 +1295,11 @@ function tallyAugments(character, data, warnings, errors) {
     for (const bannedName of banned) {
       if (bannedName === "VCR") {
         if (hasVcr) {
-          errors.push(`Augment conflict: ${row.Name} is incompatible `
-                      + "with a Vehicle Control Rig.");
+          bothWays(`Augment conflict: ${row.Name} is incompatible `
+                   + "with a Vehicle Control Rig.");
         }
       } else if ([...ownedNames].some(name => name !== row.Name && name.startsWith(bannedName))) {
-        errors.push(`Augment conflict: ${row.Name} is incompatible with ${bannedName}.`);
+        bothWays(`Augment conflict: ${row.Name} is incompatible with ${bannedName}.`);
       }
     }
   }
@@ -1193,7 +1309,7 @@ function tallyAugments(character, data, warnings, errors) {
       if (!row.Name.startsWith(prefix)) continue;
       for (const group of groups) {
         if (!group.some(alternative => owns(alternative))) {
-          errors.push(`${row.Name} requires ${group.join(" or ")}.`);
+          bothWays(`${row.Name} requires ${group.join(" or ")}.`);
         }
       }
       break;
@@ -1297,19 +1413,38 @@ function tallyAugments(character, data, warnings, errors) {
 // are Headware, so an "Any" host would otherwise offer them — but a Skillsoft
 // only runs from a Chipjack wired into your head, never from a gear device.
 const MOUNT_EXCLUDED_RE = /^(Skillsoft|Knowledge Skillsoft)/;
+// Worn on the face, so it can't share a head with a Helmet.
+const HEAD_MOUNTED_GEAR = "Arwin Goggles";
 
+/* "Mount Types" is a comma-separated list of tokens. A token is an augment
+ * **Type** ("Eyeware"), the literal "Any", or a single augment **Name**
+ * ("Commlink") when a host takes one specific item out of a category it
+ * otherwise doesn't accept. A leading "!" excludes instead of including, which
+ * is how a host takes most of a category but not all of it — a Helmet mounts
+ * Eyeware and Earware, but not a whole Cybertechtronic Eye.
+ *
+ * Exclusions always beat inclusions, so order in the cell doesn't matter. */
 function mountCapability(row) {
   const raw = String(row["Mount Types"] || "").trim();
   if (!raw) return null;
-  const types = raw.split(",").map(t => t.trim()).filter(Boolean);
+  const tokens = raw.split(",").map(t => t.trim()).filter(Boolean);
+  const denied = [], types = [];
+  for (const token of tokens) {
+    if (token.startsWith("!")) denied.push(token.slice(1).trim());
+    else types.push(token);
+  }
   const any = types.some(t => t.toLowerCase() === "any");
+  const listed = (list, aug) => list.some(t => t === aug.Type || t === aug.Name);
+  const describe = list => list.join(", ");
   return {
-    types, any,
+    types, denied, any,
     capacity: asNumber(row["Mount ZP"]),
     // Takes an augment row: the Skillsoft exclusion is by name, not by type.
     accepts: aug => aug.Type !== "Bioware" && !MOUNT_EXCLUDED_RE.test(aug.Name || "")
-                    && (any || types.includes(aug.Type)),
-    label: any ? "any non-Bioware augment" : types.join(", "),
+                    && !listed(denied, aug)
+                    && (any || listed(types, aug)),
+    label: (any ? "any non-Bioware augment" : describe(types))
+           + (denied.length ? ` (except ${describe(denied)})` : ""),
   };
 }
 
@@ -1561,7 +1696,7 @@ function computePools(finalAttributes, chaPoolChoice) {
 }
 
 // ============================================================== step 6: skills
-function scoreSkills(character, heritage, amp, augments, warnings, errors) {
+function scoreSkills(character, heritage, amp, augments, warnings, errors, playErrors) {
   const skillPoints = {};
   for (const [name, value] of Object.entries(character.skills)) {
     if (name in SKILLS) skillPoints[name] = toInt(asNumber(value));
@@ -1575,10 +1710,23 @@ function scoreSkills(character, heritage, amp, augments, warnings, errors) {
   for (const ma of character.martial_arts || []) {
     const rank = Math.max(0, toInt(asNumber(ma.rank)));
     pointsSpent += rank * MARTIAL_ARTS_COST_MULTIPLIER;
-    if (rank > unarmedRank)
-      errors.push(`Martial Arts (${ma.style || "unnamed style"}) rank ${rank} cannot exceed Unarmed Combat rank ${unarmedRank}.`);
+    if (rank > unarmedRank) {
+      const message = `Martial Arts (${ma.style || "unnamed style"}) rank ${rank} `
+        + `cannot exceed Unarmed Combat rank ${unarmedRank}.`;
+      errors.push(message);
+      if (playErrors) playErrors.push(message);   // still illegal after Finalize
+    }
     if (rank > SKILL_RANK_CAP)
       warnings.push(`Martial Arts (${ma.style || "unnamed style"}): maximum ${SKILL_RANK_CAP} points at creation.`);
+  }
+
+  // A specialization stays free and uncapped, but it splits a rating you
+  // actually have -- the parent skill needs at least one rank of its own.
+  for (const [name, entry] of Object.entries(character.skill_specializations || {})) {
+    if (!entry || !entry.on || !(name in SKILLS)) continue;
+    if (Math.max(0, skillPoints[name] || 0) < 1) {
+      errors.push(`${name}: a specialization needs at least 1 rank in the skill.`);
+    }
   }
 
   const ritualSkills = {};
@@ -2058,7 +2206,9 @@ function budgetMagic(character, data, magicType, warnings, errors) {
 
   if (magicType === "Mage") {
     const school = character.magic.school;
-    if (!school) warnings.push("Mage: choose one School of magic.");
+    // A Mage's school is what bounds their spell list, so leaving it unset was
+    // a way to take spells from every school at once. It's required.
+    if (!school) errors.push("Mage: choose one School of magic.");
     for (const spell of character.magic.spells || []) {
       const row = findRow(data.spells, "Name", spell.name);
       if (row && school && row.School !== school) {
@@ -2145,11 +2295,18 @@ function assignWeaponModSlots(modNames, modsTable) {
   return { assigned, overflow };
 }
 
-function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
+function priceWeapons(character, data, gearCostMultiplier, warnings, strength, errors,
+                      activeAugmentNames) {
   const priced = [];
   let totalCost = 0.0, totalWeight = 0.0;
-  // Smartlink grants +1 Accuracy die to any smart-capable gun.
-  const hasSmartlink = (character.augments || []).some(a => a.name === "Smartlink");
+  // Smartlink grants +1 Accuracy die to any smart-capable gun. It comes three
+  // ways, and only the third is conditional: implanted on its own (Eyeware with
+  // no Cybertechtronic Eye) or as part of an eyeware suite inside a
+  // Cybertechtronic Eye, it is always live; mounted on a Helmet or Arwin
+  // Goggles it is live only while that host is worn. `activeAugmentNames` is
+  // built from the merged augment rows, which already drop mounted augments
+  // whose host isn't equipped, so all three fall out of one lookup.
+  const hasSmartlink = (activeAugmentNames || new Set()).has("Smartlink");
   for (const entry of character.weapons) {
     const row = findRow(data.weapons, "Weapon", entry.name);
     if (!row) continue;
@@ -2183,9 +2340,10 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
     // One mod per slot (Overbarrel / Underbarrel / Chassis). Dual-slot mods
     // land in whichever of their slots is free; any mod left without a free
     // slot is flagged.
+    // Slots are physical, so overflow binds (JC-003).
     const { overflow } = assignWeaponModSlots(fittedMods.map(m => m.name), data.weapon_mods);
     for (const name of overflow) {
-      warnings.push(`${entry.name}: no free slot for ${name} — one Overbarrel, `
+      errors.push(`${entry.name}: no free slot for ${name} — one Overbarrel, `
         + "one Underbarrel, and one Chassis mod per weapon.");
     }
 
@@ -2371,7 +2529,12 @@ function priceArmor(character, data, gearCostMultiplier, warnings) {
            ballistic_armor_max: maxBallistic };
 }
 
-function priceDecking(character, data, gearCostMultiplier, warnings) {
+/* Gear limits split two ways (JC-003). A limit that counts physical slots or
+ * mount points is BINDING and pushes an error: there is nowhere to put the
+ * thing. A limit derived from a formula or describing degraded performance
+ * (cargo left over, Body ÷ 3 weapons, drone loaded weight) stays advisory and
+ * pushes a warning for the GM to adjudicate. */
+function priceDecking(character, data, gearCostMultiplier, warnings, errors) {
   const hackingRating = Math.max(0, toInt(asNumber(character.hacking_rating)));
   let deckCost = 0.0;
   for (const entry of character.decks) {
@@ -2388,8 +2551,8 @@ function priceDecking(character, data, gearCostMultiplier, warnings) {
       }
     }
     if (slotsUsed > slotCapacity) {
-      warnings.push(`${entry.name}: deck mod slots exceeded `
-                    + `(${slotsUsed}/${slotCapacity}).`);
+      errors.push(`${entry.name}: deck mod slots exceeded `
+                  + `(${slotsUsed}/${slotCapacity}).`);
     }
     const requiredHacking = Math.max(1, Math.floor(toInt(asNumber(row.MCP)) / 2));
     if (hackingRating < requiredHacking) {
@@ -2432,7 +2595,7 @@ function rigStats(rigEntry, data) {
            modSlots, modSlotsUsed };
 }
 
-function priceRig(character, data, gearCostMultiplier, warnings) {
+function priceRig(character, data, gearCostMultiplier, warnings, errors) {
   let totalCost = 0.0;
   for (const entry of character.rigs) {
     const row = findRow(data.rigs, "Rig Type", entry.name);
@@ -2443,9 +2606,9 @@ function priceRig(character, data, gearCostMultiplier, warnings) {
       if (modRow) cost += asNumber(modRow.Cost);
     }
     const stats = rigStats(entry, data);
-    if (warnings && stats.modSlotsUsed > stats.modSlots) {
-      warnings.push(`${entry.name}: ${stats.modSlotsUsed} mod slot(s) used but only `
-                    + `${stats.modSlots} available.`);
+    if (errors && stats.modSlotsUsed > stats.modSlots) {
+      errors.push(`${entry.name}: ${stats.modSlotsUsed} mod slot(s) used but only `
+                  + `${stats.modSlots} available.`);
     }
     totalCost += round2(cost * gearCostMultiplier);
   }
@@ -2502,6 +2665,8 @@ function priceFittedVehicle(entry, baseRow, data, weaponAndModTables, gearCostMu
   return [cost, summary];
 }
 
+// Every vehicle limit is a guideline, so this one takes no `errors` — priceAll
+// passes it anyway and the extra argument is simply ignored.
 function checkVehicleLimits(summary, warnings) {
   const fitted = summary.fitted_detail || [];
   const heavy = fitted.filter(f => f.weight > HEAVY_FITTING_WEIGHT);
@@ -2518,18 +2683,21 @@ function checkVehicleLimits(summary, warnings) {
   const weaponCap = Math.floor(toInt(asNumber(summary.Body)) / VEHICLE_WEAPON_BODY_DIVISOR);
   summary.weapon_count = weaponCount;
   summary.weapon_cap = weaponCap;
+  // Body ÷ 3 is a guideline, not a count of mounting points, so it stays a
+  // warning even though the drone equivalent (hard points) is binding.
   if (weaponCount > weaponCap) {
     warnings.push(`${summary.name}: ${weaponCount} weapons mounted — `
                   + `max is ${weaponCap} (Body ÷ 3).`);
   }
 }
 
-function checkDroneLimits(summary, warnings) {
+function checkDroneLimits(summary, warnings, errors) {
   const fitted = summary.fitted_detail || [];
   const totalWeight = sumBy(fitted, f => f.weight);
   const ww = toInt(asNumber(summary.WW));
   summary.ww_used = totalWeight;
   summary.ww_max = ww;
+  // Overloading a drone degrades it; it doesn't make the fitting impossible.
   if (totalWeight > ww) {
     // %g-style formatting to match the Python reference exactly
     warnings.push(`${summary.name}: fitted weight ${Number(totalWeight.toPrecision(6))} exceeds WW ${ww}.`);
@@ -2539,13 +2707,15 @@ function checkDroneLimits(summary, warnings) {
   const hardPoints = toInt(asNumber(summary["Hard Point"]));
   summary.weapon_count = weaponCount;
   summary.weapon_cap = hardPoints;
+  // Hard points are physical mounts: past the last one there is nowhere to bolt
+  // the weapon on, so this one binds.
   if (weaponCount > hardPoints) {
-    warnings.push(`${summary.name}: ${weaponCount} weapons mounted — `
-                  + `only ${hardPoints} hard point(s).`);
+    errors.push(`${summary.name}: ${weaponCount} weapons mounted — `
+                + `only ${hardPoints} hard point(s).`);
   }
 }
 
-function priceDronesAndVehicles(character, data, gearCostMultiplier, warnings) {
+function priceDronesAndVehicles(character, data, gearCostMultiplier, warnings, errors) {
   // Weapons first, then the mod table — priceFittedVehicle walks the list in
   // order and stops at the first match, and charges for either kind alike.
   const flatten = cfg => [...cfg.weapons, cfg.mods];
@@ -2559,7 +2729,7 @@ function priceDronesAndVehicles(character, data, gearCostMultiplier, warnings) {
       const row = findRow(data[tableKey], nameColumn, entry.name);
       if (!row) continue;
       const [cost, summary] = priceFittedVehicle(entry, row, data, weaponTables, mult);
-      check(summary, warnings);
+      check(summary, warnings, errors);
       total += cost;
       summaries.push(summary);
     }
@@ -2623,14 +2793,24 @@ function gearZoeticRating(character, data) {
     const row = findRow(data.armor, "Armor", entry.name);
     if (row) total += asNumber(row.ZR) + ((entry.extras || []).length ? 1 : 0);
   }
-  add("decks", "Name", character.decks.map(d => d.name));
-  add("programs", "Name", character.programs);
-  const activeRigName = (character.play && character.play.rigging
-                         && character.play.rigging.active_rig) || "";
-  add("rigs", "Rig Type", character.rigs
-    .filter(r => r.name === activeRigName).map(r => r.name));
-  add("drones", "Drone", character.drones.map(d => d.name));
-  add("vehicles", "Vehicle", character.vehicles.map(v => v.name));
+  // ZR comes from what you are carrying, not from everything you own, so decks,
+  // drones and vehicles take the same permissive `carried !== false` flag misc
+  // gear uses.
+  const carriedDecks = character.decks.filter(d => d.carried !== false);
+  add("decks", "Name", carriedDecks.map(d => d.name));
+  // Programs have no carried flag of their own — they are software that runs on
+  // a deck, so they count exactly when there is a carried deck to run them on.
+  if (carriedDecks.length) add("programs", "Name", character.programs);
+  // A rig contributes when it is the active one. Nothing is ever flagged active
+  // during creation, so the first owned rig stands in — the same fallback
+  // deriveExploitActions and the play tab use.
+  const activeRig = activeGearRow(character.rigs,
+    ((character.play || {}).rigging || {}).active_rig, data.rigs, "Rig Type");
+  if (activeRig) total += asNumber(activeRig.ZR);
+  add("drones", "Drone", character.drones
+    .filter(d => d.carried !== false).map(d => d.name));
+  add("vehicles", "Vehicle", character.vehicles
+    .filter(v => v.carried !== false).map(v => v.name));
   return round2(total);
 }
 
@@ -3115,46 +3295,67 @@ function deepCopy(value) {
     : JSON.parse(JSON.stringify(value));
 }
 
+/* Applying an advance clamps it to the same ceiling the Kismet buttons enforce.
+ * The buttons alone aren't enough: a character can arrive by import, cloud sync
+ * or a hand-edited JSON file and carry any number at all, and until this
+ * clamped, `skill_advances: { Sorcery: 900 }` was simply believed.
+ *
+ * Skills top out at 8 — rank 6 by Kismet, 7 on a mastery boon, 8 on a major
+ * one. Attributes stay inside the engine's own level range; their per-heritage
+ * maximum is checked downstream, where it warns rather than blocks (JC-002).
+ * Nothing here ever lowers a value: a negative advance is discarded. */
+const PLAY_SKILL_RANK_CAP = EXPERTISE_SKILL_RANK_CAP;
+
 function applyPlayAdvances(character) {
   character = deepCopy(character);
   const play = character.play || {};
+  const advance = plus => Math.max(0, toInt(asNumber(plus)));
   for (const [name, plus] of Object.entries(play.attribute_advances || {})) {
     if (name in character.attributes) {
-      character.attributes[name] =
-        toInt(asNumber(character.attributes[name], 1)) + toInt(asNumber(plus));
+      character.attributes[name] = Math.min(ATTRIBUTE_LEVEL_MAX,
+        toInt(asNumber(character.attributes[name], 1)) + advance(plus));
     }
   }
   for (const [name, plus] of Object.entries(play.skill_advances || {})) {
     if (name in SKILLS) {
-      character.skills[name] =
-        toInt(asNumber(character.skills[name] || 0)) + toInt(asNumber(plus));
+      character.skills[name] = Math.min(PLAY_SKILL_RANK_CAP,
+        toInt(asNumber(character.skills[name] || 0)) + advance(plus));
     }
   }
   // Martial-art ranks bought in play, per style. Raising an existing style adds
-  // to its rank; a style first learned in play is appended.
+  // to its rank; a style first learned in play is appended. An unknown style is
+  // dropped — it can never be raised or displayed.
   character.martial_arts = character.martial_arts || [];
+  const knownStyles = new Set((loadData().martial_arts || []).map(row => row.Style));
   for (const [style, plus] of Object.entries(play.martial_art_advances || {})) {
-    const add = toInt(asNumber(plus));
-    if (!style || add === 0) continue;
+    const add = advance(plus);
+    if (!style || !add || !knownStyles.has(style)) continue;
     const entry = character.martial_arts.find(m => m.style === style);
-    if (entry) entry.rank = toInt(asNumber(entry.rank)) + add;
-    else character.martial_arts.push({ style, rank: add });
+    if (entry) entry.rank = Math.min(PLAY_SKILL_RANK_CAP, toInt(asNumber(entry.rank)) + add);
+    else character.martial_arts.push({ style, rank: Math.min(PLAY_SKILL_RANK_CAP, add) });
   }
+  const knownRituals = new Set((loadData().rituals || []).map(row => row.Name));
   for (const [name, plus] of Object.entries(play.ritual_advances || {})) {
-    character.ritual_skills[name] =
-      toInt(asNumber(character.ritual_skills[name] || 0)) + toInt(asNumber(plus));
+    if (!knownRituals.has(name)) continue;
+    character.ritual_skills[name] = Math.min(PLAY_SKILL_RANK_CAP,
+      toInt(asNumber(character.ritual_skills[name] || 0)) + advance(plus));
   }
+  // Play purchases append AFTER the chargen entries, so index N of the
+  // character's array is index N of the matching CALC array either way.
   const purchases = play.purchases || {};
   character.gear.push(...(purchases.gear || []));
   character.augments.push(...(purchases.augments || []));
+  character.weapons.push(...(purchases.weapons || []));
+  character.armor.push(...(purchases.armor || []));
   character.magic.amp_powers.push(...(purchases.amp_powers || []));
   character.magic.spells.push(...(purchases.spells || []));
-  character.hacking_rating = (toInt(asNumber(character.hacking_rating))
-                              + toInt(asNumber(purchases.hacking_levels)));
+  character.hacking_rating = Math.min(HACKING_RATING_MAX,
+    toInt(asNumber(character.hacking_rating)) + advance(purchases.hacking_levels));
   for (const [name, plus] of Object.entries(play.spell_force_advances || {})) {
     for (const spell of character.magic.spells) {
       if (spell.name === name) {
-        spell.force = toInt(asNumber(spell.force)) + toInt(asNumber(plus));
+        spell.force = Math.min(SPELL_FORCE_MAX,
+          toInt(asNumber(spell.force)) + advance(plus));
         break;
       }
     }
@@ -3172,6 +3373,18 @@ function calculate(character) {
   syncEngineeringSkills();   // reshape Engineering skills per the house rule
   syncEWSkill();             // add/remove Computer: Electronic Warfare per the EW rule
   const warnings = [], errors = [];
+  /* Creation rules stop applying at Finalize — budgets are spent and a play
+   * character is allowed to have drifted from them. But some of those checks
+   * describe states that stay illegal at the table whatever the budget says:
+   * what is installed in your body (augment conflicts, tiers, Body Index), a
+   * martial art outranking your Unarmed Combat, and cash you don't have.
+   * Those are pushed here too and are the only ones `calculate` reports once
+   * `finalized` is true.
+   *
+   * Deliberately NOT mirrored: anything the sheet already surfaces better on
+   * its own — overloaded mounts and the magic/Amp OFFLINE state both have
+   * dedicated read-outs and would only read as a second copy here. */
+  const playErrors = [], playWarnings = [];
 
   const priorities = resolvePriorities(character, data, warnings, errors);
   const magicType = priorities.magic_type;
@@ -3181,7 +3394,7 @@ function calculate(character) {
     heritage.zoetic_potential += toInt(asNumber(
       (character.play || {}).zp_advances));
   }
-  const augments = tallyAugments(character, data, warnings, errors);
+  const augments = tallyAugments(character, data, warnings, errors, playErrors);
   mergeMountedAugments(augments,
                        tallyMountedAugments(character, data, warnings, errors));
   const amp = tallyAmpPowers(character, data, magicType, warnings, errors);
@@ -3210,7 +3423,8 @@ function calculate(character) {
   // Permanent Kismet-die major boons add to a pool (finalized play only).
   if (finalized && character.play && character.play.pool_kismet) {
     for (const [pool, n] of Object.entries(character.play.pool_kismet)) {
-      if (pool in pools) pools[pool] += toInt(asNumber(n));
+      // Key-checked and non-negative: a boon adds dice, it never takes them.
+      if (pool in pools) pools[pool] += Math.max(0, toInt(asNumber(n)));
     }
   }
   // Flat infusion pool bonuses (attribute boosts already went in above, via
@@ -3219,7 +3433,7 @@ function calculate(character) {
     if (n && pool in pools) pools[pool] += n;
   }
 
-  const skillScoring = scoreSkills(character, heritage, amp, augments, warnings, errors);
+  const skillScoring = scoreSkills(character, heritage, amp, augments, warnings, errors, playErrors);
   skillScoring.points.budget = priorities.starting_skill_pts + replicantSkillBonus;
   skillScoring.points.remaining =
     skillScoring.points.budget - skillScoring.points.spent;
@@ -3259,6 +3473,7 @@ function calculate(character) {
   const bodyIndexOk = augments.body_index <= finalAttributes.Body;
   if (!bodyIndexOk) {
     errors.push("Too Many Biomods: Body Index exceeds Body.");
+    playErrors.push("Too Many Biomods: Body Index exceeds Body.");
   }
 
   // Small-heritage surcharge applies to physical kit only (see surchargeFor):
@@ -3267,33 +3482,67 @@ function calculate(character) {
   const gearCostMultiplier = heritage.gear_cost_multiplier;
   // Extra Arm / Extra Leg surcharge armor only, on top of any small-heritage one.
   const armorCostMultiplier = heritage.armor_cost_multiplier || 1;
+  // Every augment that is actually live right now: body augments plus mounted
+  // ones whose host is worn (tallyMountedAugments drops the rest).
+  const activeAugmentNames = new Set(augments.rows.map(([row]) => row.Name));
   const weapons = priceWeapons(character, data,
-    surchargeFor("weapon", gearCostMultiplier), warnings, finalAttributes.Strength);
+    surchargeFor("weapon", gearCostMultiplier), warnings, finalAttributes.Strength, errors,
+    activeAugmentNames);
   const armor = priceArmor(character, data,
     surchargeFor("armor", gearCostMultiplier) * armorCostMultiplier, warnings);
+  // What you have on right now stays worth flagging in play, so these three go
+  // to playWarnings as well.
+  const wornWarning = message => { warnings.push(message); playWarnings.push(message); };
   if (heritage.traits.some(row => row.Name === "Tough")
       && armor.items.some(item => item.Slot === "Under" && item.active)) {
-    warnings.push("Tough (Blighted boon) occupies the Under armor slot — "
-                  + "it doesn't stack with a worn Under armor piece.");
+    wornWarning("Tough (Blighted boon) occupies the Under armor slot — "
+                + "it doesn't stack with a worn Under armor piece.");
   }
-  if (heritage.has_antlers
-      && armor.items.some(item => item.Armor === "Helmet" && item.active)) {
-    warnings.push("Antlers (Green bane): cannot wear helmets or headgear.");
+  const helmetWorn = armor.items.some(item => item.Armor === "Helmet" && item.active);
+  if (heritage.has_antlers && helmetWorn) {
+    wornWarning("Antlers (Green bane): cannot wear helmets or headgear.");
+  }
+  // A Helmet sits in its own armor slot ("Outer*"), so it doesn't count against
+  // the one-Outer-piece rule the way a coat does — but it covers the same head
+  // and face as Arwin Goggles, and the two can't be worn together.
+  if (helmetWorn && (character.gear || []).some(
+        g => g.name === HEAD_MOUNTED_GEAR && g.carried !== false)) {
+    wornWarning(`A Helmet and ${HEAD_MOUNTED_GEAR} can't both be worn — `
+                + "take one off, or mount the goggles' augments in the helmet.");
   }
   const internalSlotOccupants = [...augments.internal_armor_slot_items];
   if (amp.powers_taken.has("Aspect of the Chelonian")) {
     internalSlotOccupants.push("Aspect of the Chelonian");
   }
   if (internalSlotOccupants.length > 1) {
-    warnings.push("Internal armor slot conflict: "
-                  + internalSlotOccupants.join(", ")
-                  + " all occupy the internal armor slot.");
+    wornWarning("Internal armor slot conflict: "
+                + internalSlotOccupants.join(", ")
+                + " all occupy the internal armor slot.");
   }
-  const decking = priceDecking(character, data, 1, warnings);
-  const rig = priceRig(character, data, 1, warnings);
+  // Identical duplicates stack — buying two of a thing is the player's call —
+  // but a repeat is far more often a double-add than a deliberate pair, so each
+  // repeated row gets one nudge. Armor warns per slot in priceArmor instead,
+  // where "active" is what decides whether the copies actually sum.
+  const warnDuplicates = (label, names) => {
+    const seen = new Set(), reported = new Set();
+    for (const name of names) {
+      if (!name) continue;
+      if (seen.has(name) && !reported.has(name)) {
+        warnings.push(`${label} ${name} is listed more than once — the copies stack.`);
+        reported.add(name);
+      }
+      seen.add(name);
+    }
+  };
+  warnDuplicates("Deck", character.decks.map(d => d.name));
+  warnDuplicates("Program", character.programs);
+  warnDuplicates("Gear", (character.gear || []).map(g => g.name));
+
+  const decking = priceDecking(character, data, 1, warnings, errors);
+  const rig = priceRig(character, data, 1, warnings, errors);
   // priceDronesAndVehicles applies the surcharge to vehicles only (drones pay
   // face value) — it splits internally, so it takes the raw multiplier.
-  const vehicles = priceDronesAndVehicles(character, data, gearCostMultiplier, warnings);
+  const vehicles = priceDronesAndVehicles(character, data, gearCostMultiplier, warnings, errors);
   const misc = priceMiscGearAndLifestyle(character, data, 1,
                                          augments.has_hyperthyroid);
   // Cybertechtronic augments are surcharged; Bioware pays face value.
@@ -3348,6 +3597,13 @@ function calculate(character) {
   const cashRemaining = round2(priorities.starting_cash - cashSpent);
   if (cashRemaining < 0) {
     errors.push(`Cash overspent by ㄓ${Math.round(-cashRemaining).toLocaleString("en-US")}.`);
+  }
+  // In play the creation budget stops meaning anything — purchases are paid out
+  // of play.cash, which the sheet lets you overdraw past a confirm. That, not
+  // `cashRemaining`, is the balance that has to add up at the table.
+  const playCash = asNumber((character.play || {}).cash);
+  if (finalized && playCash < 0) {
+    playErrors.push(`Overdrawn by ㄓ${Math.round(-playCash).toLocaleString("en-US")}.`);
   }
 
   // Every character must live somewhere: at least one prepaid month of a lifestyle.
@@ -3525,8 +3781,8 @@ function calculate(character) {
               spent: cashSpent, remaining: cashRemaining,
               gear_cost_multiplier: gearCostMultiplier,
               armor_cost_multiplier: armorCostMultiplier },
-    warnings: finalized ? [] : warnings,
-    errors: finalized ? [] : errors,
+    warnings: finalized ? playWarnings : warnings,
+    errors: finalized ? playErrors : errors,
   };
 }
 
@@ -3534,6 +3790,7 @@ return {
   calculate,
   defaultCharacter,
   mergeDefaults,
+  validateCharacterShape,
   // exposed for the UI and tests
   asNumber, loadData,
   ATTRIBUTES, SKILLS, TRAINED_ONLY_SKILLS, ETIQUETTES, POOL_NAMES,
@@ -3544,7 +3801,7 @@ return {
   meleeDamageIsComputable, assignWeaponModSlots,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
-  augmentLimbRequirement, augmentMeleeDamage,
+  augmentLimbRequirement, augmentMeleeDamage, augmentTier, augmentStacks,
   weaponSkillName,
   specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
   FIRING_MODES, weaponFiringModes, firingMode, parseFiringMode,

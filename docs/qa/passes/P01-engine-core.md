@@ -162,16 +162,36 @@ The currency glyph in error messages is `ㄓ` (U+3113). Copy it verbatim.
 - **Note:** Empty `errors` means this character finalizes. See JC-002.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P01-013: Finalizing blanks both lists, hiding the same problem
-- **Type:** leak
+### P01-013: Finalizing drops the creation-only problems and keeps the rest
+- **Type:** correctness
 - **Check:** (identical to P01-012 except `finalized = true`)
 
       (() => { const c = RULES.defaultCharacter(); c.priorities = {heritage:1,magic:0,attributes:4,skills:3,resources:2}; c.heritage.type = "Human"; c.skills = {Athletics:7}; c.finalized = true; const k = RULES.calculate(c); return { errors: k.errors, warnings: k.warnings }; })()
 
 - **Expected:** `{ "errors": [], "warnings": [] }`
-- **Note:** This character has no lifestyle *and* an over-cap skill, and reports
-  neither. Compare with P01-012. This is JC-012 — mark the result JUDGEMENT, not
-  FAIL, since the behaviour is deliberate.
+- **Note:** JC-012, ruled **B**. Both of this character's problems — no lifestyle
+  and an over-cap skill — are creation rules, and creation is over, so silence is
+  correct here. What changed is that the lists are no longer blanked
+  *unconditionally*: P01-013b is the other half.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P01-013b: A finalized character still reports what stays illegal in play
+- **Type:** correctness
+- **Check:**
+
+      (() => { const d = RULES.defaultCharacter(); d.priorities = {heritage:1,magic:0,attributes:4,skills:3,resources:2}; d.heritage.type = "Human"; d.skills = {Athletics:7, "Unarmed Combat": 1}; d.martial_arts = [{style: "Gun-Kata", rank: 4}]; d.play.cash = -1500; d.finalized = true; const k = RULES.calculate(d); return { errors: k.errors, warnings: k.warnings }; })()
+
+- **Expected:**
+
+      { "errors": ["Martial Arts (Gun-Kata) rank 4 cannot exceed Unarmed Combat rank 1.",
+                   "Overdrawn by ㄓ1,500."],
+        "warnings": [] }
+
+- **Note:** Same character, plus a martial art above its Unarmed Combat and an
+  overdrawn wallet. Athletics 7 is still silent (creation rule); these two aren't
+  (they stay wrong at the table). The overdraw is measured against `play.cash`,
+  **not** the creation budget — after Finalize the creation budget no longer
+  means anything, because play purchases are appended to the same arrays.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P01-014: A character with no lifestyle cannot finalize
@@ -192,25 +212,33 @@ The currency glyph in error messages is `ㄓ` (U+3113). Copy it verbatim.
 - **Expected:** `["Choose a lifestyle with at least 1 prepaid month."]`
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P01-016: Skill specializations cost nothing and are unlimited
-- **Type:** judgement-probe
+### P01-016: Skill specializations cost nothing, but need a rank to sit on
+- **Type:** correctness
 - **Check:**
 
-      (() => { const c = RULES.defaultCharacter(); c.priorities = {heritage:0,magic:1,attributes:2,skills:3,resources:4}; c.heritage.type = "Human"; c.lifestyles = [{name:"Squatter",months:1}]; const before = RULES.calculate(c).skill_points.spent; const d = JSON.parse(JSON.stringify(c)); d.skill_specializations = { Athletics: {on:true,text:"Running"}, Firearms: {on:true,text:"Rifles"}, Sorcery: {on:true,text:"Fire"} }; const k = RULES.calculate(d); return { before, after: k.skill_points.spent, errors: k.errors.length, warnings: k.warnings.length }; })()
+      (() => { const c = RULES.defaultCharacter(); c.priorities = {heritage:0,magic:1,attributes:2,skills:3,resources:4}; c.heritage.type = "Human"; c.lifestyles = [{name:"Squatter",months:1}]; const before = RULES.calculate(c).skill_points.spent; const d = JSON.parse(JSON.stringify(c)); d.skill_specializations = { Athletics: {on:true,text:"Running"}, Firearms: {on:true,text:"Rifles"}, Sorcery: {on:true,text:"Fire"} }; const k = RULES.calculate(d); return { before, after: k.skill_points.spent, errors: k.errors, warnings: k.warnings.length }; })()
 
-- **Expected:** `{ "before": 0, "after": 0, "errors": 0, "warnings": 0 }`
-- **Note:** Three specializations were added to skills the character has **no
-  ranks in**, and nothing was spent or complained about. This is JC-001 — mark
-  JUDGEMENT.
+- **Expected:**
+
+      { "before": 0, "after": 0, "warnings": 0,
+        "errors": ["Athletics: a specialization needs at least 1 rank in the skill.",
+                   "Firearms: a specialization needs at least 1 rank in the skill.",
+                   "Sorcery: a specialization needs at least 1 rank in the skill."] }
+
+- **Note:** JC-001, ruled **B**. `after` is still `0` — specializations remain
+  free and uncapped, which is the half of the old behaviour that was kept — but
+  all three sit on skills with no ranks, and each is now an error.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
 
 ## Wrapping up
 
-Expected non-PASS results on a healthy build: **P01-003, P01-005, P01-013 and
-P01-016 are JUDGEMENT**, not FAIL — they document decided-but-unruled behaviour
-and each already has a JC entry. Everything else should PASS.
+Expected non-PASS results on a healthy build: **P01-003 and P01-005 are
+JUDGEMENT**, not FAIL — they document decided-but-unruled behaviour and neither
+has been filed as a JC yet. P01-013 and P01-016 used to be on that list; both
+were ruled on (JC-012 and JC-001) and are now correctness cases, joined by the
+new P01-013b. Everything else should PASS.
 
 If a *correctness* case fails, that is a real regression in the engine and worth
 reporting immediately rather than at the end of the session.

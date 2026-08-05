@@ -35,10 +35,26 @@ a leak. That is a FAIL, and it goes in the findings file.
 
 Number sequentially from the highest existing JC. Never reuse a number.
 
+A `RESOLVED` entry keeps its original Observed/Question text — it is the record
+of why the decision was needed — and gains an **Applied** line saying what the
+code does now. Don't delete resolved entries; a re-run that finds the old
+behaviour back is a regression, and this is what it's measured against.
+
+## Status of the first round
+
+JC-001 … JC-023 were ruled on in
+[issue #27](https://github.com/cheeplives/sinless-app-beta/issues/27) and are
+implemented, except:
+
+- **JC-006** stays OPEN — the owner asked for more specific information, and the
+  entry has been rewritten to ask stat by stat.
+- **JC-015** and **JC-018** are ruled as *no change*: the current behaviour is
+  accepted. JC-018 is held open for a second look once the rest has settled.
+
 ---
 
 ## JC-001: Skill specializations are free, uncapped and unprerequisited
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/app.js` (`tabStats`, the specialization inputs); `character.skill_specializations`
 - **Observed:** A specialization is written straight onto the character and costs
   nothing. There is no point cost, no limit on how many skills may be
@@ -50,12 +66,17 @@ Number sequentially from the highest existing JC. Never reuse a number.
   B) Require ≥1 rank in the skill. C) Cap the count (e.g. one per skill group).
   D) Charge a skill point.
 - **Raised by:** P03
-- **RULING (owner only):** _
-- **Follow-up on ruling:** If anything other than (A), add validation in
-  `rules.js` and a P03 case asserting it.
+- **RULING (owner only):** **B — require ≥1 rank in the parent skill.** Free and
+  uncapped otherwise.
+- **Applied:** `scoreSkills` errors with `"<skill>: a specialization needs at
+  least 1 rank in the skill."`. In chargen the Spec toggle only appears once the
+  skill is bought, and stepping a skill across 0 ↔ 1 re-renders the row; the
+  stored flag is left alone, so dropping a skill to 0 and back brings its
+  specialization with it. The play sheet already gated on `final > 0`.
+  New case: P03-011.
 
 ## JC-002: Rank and attribute caps warn but do not block
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` — skill cap ~L1606, attribute max ~L1523
 - **Observed:** Exceeding `SKILL_RANK_CAP` (6) or an attribute's maximum produces
   a *warning*. Warnings do not disable the Finalize button, so a character can be
@@ -65,12 +86,16 @@ Number sequentially from the highest existing JC. Never reuse a number.
   finalize is blocked. C) Keep as warnings but clamp the stepper so the state is
   unreachable through the UI.
 - **Raised by:** P01, P03
-- **RULING (owner only):** _
-- **Follow-up on ruling:** (B) means moving the pushes from `warnings` to
-  `errors`; several fixtures would need new profiles.
+- **RULING (owner only):** **C — still warnings, but unreachable through the UI.**
+- **Applied:** The skill stepper is bounded by `RULES.SKILL_RANK_CAP` instead of a
+  hard-coded 6, and each attribute stepper stops at `max(1, c.max − c.adjust,
+  c.base)` — the largest base level that keeps Final inside the attribute's
+  maximum. The `c.base` term means an imported character already over its
+  maximum keeps its value rather than being yanked down by a "+". Both breaches
+  still warn, so `maxed-mage.json` is unchanged.
 
 ## JC-003: Deck / drone / vehicle limit breaches are finalizable
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` — `checkVehicleLimits`, `checkDroneLimits`, deck and rig pricing
 - **Observed:** Exceeding a rig's drone capacity, a vehicle's mod limits or a
   deck's slot count warns but does not block finalize.
@@ -78,11 +103,17 @@ Number sequentially from the highest existing JC. Never reuse a number.
 - **Options:** A) Advisory. B) Binding. C) Binding only where the limit is
   physical (slots) and advisory where it is a guideline.
 - **Raised by:** P05
-- **RULING (owner only):** _
-- **Follow-up on ruling:** —
+- **RULING (owner only):** **C — binding where the limit counts physical slots.**
+- **Applied:** The line is *slots and mount points bind; capacities and formulas
+  advise*. Now errors: deck mod slots, rig mod slots, drone hard points, weapon
+  mod slots (Overbarrel / Underbarrel / Chassis). Still warnings: a deck's
+  required Hacking rating, a vehicle's leftover Cargo, the Body ÷ 3 vehicle
+  weapon cap, and a drone's loaded weight against WW. Drone hard points bind
+  while the vehicle weapon cap doesn't, and that asymmetry is the ruling: one
+  counts mounts, the other is a formula.
 
 ## JC-004: Gear ZR counts unowned-state items inconsistently
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` `gearZoeticRating` (~L2606)
 - **Observed:** Weapons contribute only when `equipped`, armor only when
   `active` — but **decks, programs, drones and vehicles contribute
@@ -93,12 +124,16 @@ Number sequentially from the highest existing JC. Never reuse a number.
   weapons and armor are filtered. B) Owned — remove the equipped/active filters
   so everything counts. C) Intentional as-is: some gear is always "on you".
 - **Raised by:** P02
-- **RULING (owner only):** _
-- **Follow-up on ruling:** Under the `zr: houserule` setting this directly
-  changes the spellcasting dice penalty, so any change needs a P02 re-run.
+- **RULING (owner only):** **A — carried.**
+- **Applied:** Decks, drones and vehicles take the same permissive `carried !==
+  false` flag misc gear uses, with a Carried toggle on their rows in both chargen
+  and the play sheet. Programs have no carried flag of their own — they are
+  software that runs on a deck — so they count exactly when at least one carried
+  deck exists. That last part is the one place the ruling needed
+  interpretation; say so if it should be otherwise.
 
 ## JC-005: No rig ever contributes gear ZR during chargen
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` `gearZoeticRating`; keyed on `play.rigging.active_rig`
 - **Observed:** Rigs contribute ZR only when they are the *active* rig, and
   `active_rig` is `""` for the whole of character creation. A rig bought in
@@ -108,26 +143,52 @@ Number sequentially from the highest existing JC. Never reuse a number.
   current behaviour is correct, ZR is about what is jacked in. C) Yes, and add a
   chargen-side active-rig selector.
 - **Raised by:** P02
-- **RULING (owner only):** _
-- **Follow-up on ruling:** Interacts with JC-004; rule on both together.
+- **RULING (owner only):** **C — it counts, and chargen gets a selector.**
+- **Applied:** `gearZoeticRating` resolves the active rig through
+  `activeGearRow`, which falls back to the first owned rig when none is flagged
+  — the same fallback `deriveExploitActions` and the Rigging tab already used, so
+  the three now agree. The Rigging tab in chargen gained an **Active rig** card
+  writing the same `play.rigging.active_rig` the play sheet uses.
 
 ## JC-006: Mounted augments combine with mixed add-vs-max semantics
-- **Status:** OPEN
+- **Status:** OPEN — needs a per-stat decision
 - **Where:** `static/rules.js` `mergeMountedAugments` (~L1382)
-- **Observed:** When a gear-mounted augment duplicates a body one, attributes,
-  move, recoil, impact and ballistic **add**, while dodge, melee-exploit,
-  `ballistic_armor_max` and damage reduction take the **max**. Skill bonuses take
-  the max but their notes concatenate.
-- **Question:** Is the add/max split per stat intentional, and is it documented
-  anywhere a player could find?
-- **Options:** A) Intentional — document it. B) Should be uniform (all max).
-  C) Should be uniform (all add).
+- **Observed:** When a gear-mounted augment duplicates a body one, the two are
+  combined differently depending on the stat:
+
+  | Stat | Combined by | Note |
+  |---|---|---|
+  | Attributes (all six) | **add** | including their max adjustments |
+  | Move bonus | **add** | |
+  | Recoil capacity | **add** | |
+  | Impact / Ballistic armor | **add** | |
+  | Un-strippable impact armor (`ImpArmMin`) | **add** | |
+  | Cost | **add** | not a rules question |
+  | Dodge bonus | **max** | |
+  | Melee exploit actions | **max** | |
+  | `ballistic_armor_max` | **max** | the ballistic cap, so max is arguably forced |
+  | Physical damage reduction | **max** | |
+  | Skill bonuses | **max** | but their *notes* concatenate, so the sheet lists both sources for one bonus |
+
+- **Question:** The owner asked for more specific information rather than a
+  blanket ruling, so this is now: **for each row above, is add or max correct?**
+  Two sharper sub-questions fall out of it:
+  1. Is the split meant to be *"quantities add, ratings cap"* — i.e. a thing you
+     have more of stacks, a thing you are better at doesn't? That rule explains
+     every row except skill bonuses.
+  2. Should a skill bonus that takes the max still list both sources in its
+     note? Today a character with Smartlink implanted *and* mounted reads as one
+     bonus with two explanations.
+- **Options:** A) Intentional — document the rule behind it. B) Uniform max.
+  C) Uniform add. D) Per-stat, as ruled row by row above.
 - **Raised by:** P02
 - **RULING (owner only):** _
-- **Follow-up on ruling:** —
+- **Follow-up on ruling:** Whatever is decided needs a line in `docs/DATA.md`
+  under the mount conventions, since a player buying a second copy of an augment
+  for a helmet has no way to find this out today.
 
 ## JC-007: Duplicate items are never deduplicated
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` `priceArmor` (~L2364) and the gear pricing generally
 - **Observed:** The same armor row can be added twice and both copies count as
   `active`, summing their armor values. This only warns ("More than one X armor
@@ -137,11 +198,14 @@ Number sequentially from the highest existing JC. Never reuse a number.
 - **Options:** A) Stack — the player is responsible. B) Collapse duplicates when
   computing armor. C) Promote the warning to an error.
 - **Raised by:** P02, P05
-- **RULING (owner only):** _
-- **Follow-up on ruling:** —
+- **RULING (owner only):** **A — they stack.** But make sure every case warns.
+- **Applied:** `calculate` warns once per repeated name for decks, programs and
+  gear: `"<kind> <name> is listed more than once — the copies stack."`. Armor
+  keeps its existing per-slot warning, which is the more useful message there
+  because `active` is what decides whether the copies actually sum.
 
 ## JC-008: Augment tier exclusivity is enforced only in the picker
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** UI: `static/app.js` `augmentAvailability` / `NAMED_TIERS`. Engine: nothing.
 - **Observed:** The picker hides lower tiers of an owned family (Bone Lacing,
   Wired Reflexes), but `rules.js` never re-checks. A character that acquires both
@@ -152,12 +216,17 @@ Number sequentially from the highest existing JC. Never reuse a number.
 - **Options:** A) Engine rule — add an error. B) UI only — accept that imported
   characters can hold both. C) Engine warning rather than error.
 - **Raised by:** P02, P08
-- **RULING (owner only):** _
-- **Follow-up on ruling:** (A) would make `synthetic-augmented.json` invalid; the
-  fixture and its README profile would need updating.
+- **RULING (owner only):** **A — an engine rule, and an error.**
+- **Applied:** Tier parsing moved into `rules.js` as `augmentTier` /
+  `augmentStacks`, and `augmentAvailability` now calls them — so the picker hides
+  exactly what the engine refuses. `tallyAugments` errors with `"<family>: only
+  one tier may be installed — remove all but one of …"`. The error is also
+  play-relevant (JC-012), because an illegal implant doesn't become legal at
+  Finalize. `synthetic-augmented.json` is now a 1-error fixture, deliberately not
+  repaired — it's the proof the engine no longer takes the picker's word.
 
 ## JC-009: Smartlink is matched by name only
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` `priceWeapons` (~L2151)
 - **Observed:** The +1 Accuracy for a smart weapon checks only that an augment
   named `Smartlink` appears in `character.augments`. It does not check whether
@@ -167,11 +236,20 @@ Number sequentially from the highest existing JC. Never reuse a number.
   B) Yes — an implanted Smartlink is always live. C) Depends on where it is
   installed; needs a rules decision first.
 - **Raised by:** P02
-- **RULING (owner only):** _
-- **Follow-up on ruling:** —
+- **RULING (owner only):** **C, with the rule stated.** A Smartlink comes three
+  ways: (1) installed by itself — Eyeware with no Cybertechtronic Eye — always
+  active; (2) installed in a suite of eyeware inside a Cybertechtronic Eye —
+  always active; (3) mounted on a Helmet or Arwin Goggles — active only while
+  that host is equipped.
+- **Applied:** `priceWeapons` takes the set of augment names that are actually
+  live, built from `augments.rows` after `mergeMountedAugments`. That list is
+  body augments plus mounted ones whose host is worn, so all three cases fall out
+  of one lookup: (1) and (2) are body augments and always present, (3) drops out
+  when the host isn't equipped. See **JC-025** — in the shipped data Smartlink is
+  *Headware*, so case (3) currently has no host that will mount it.
 
 ## JC-010: Play-mode weapon and armor purchases land in the chargen arrays
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/sheet.js` `shGear` (weapon and armor buy paths)
 - **Observed:** Gear, augments, amp powers, spells and hacking levels bought in
   play go into `CHAR.play.purchases.*`. **Weapons and armor do not** — they are
@@ -184,12 +262,22 @@ Number sequentially from the highest existing JC. Never reuse a number.
   B) No — but then Back to Chargen must exclude them from the budget.
   C) Accept the leak; Back to Chargen is a rare escape hatch.
 - **Raised by:** P06
-- **RULING (owner only):** _
-- **Follow-up on ruling:** This is the single most likely source of "my cash is
-  wrong after going back to chargen" reports.
+- **RULING (owner only):** **A — move them into `play.purchases`.**
+- **Applied:** `play.purchases` gained `weapons` and `armor`;
+  `applyPlayAdvances` appends them **after** the chargen entries, so index N of
+  `character.weapons` is still index N of `CALC.weapons`. The sheet reads the
+  union through `allWeapons()` / `allArmor()`, and edits go through
+  `ownedWeapons()` / `ownedArmor()`, which tag each entry with the array it lives
+  in — so removing and reordering hit the right one. Reordering is confined to
+  the owning array, since dragging a play purchase above a chargen one would
+  change which budget paid for it. `play.armor_worn` still indexes `CHAR.armor`
+  alone and stays correct, because Revert clears the purchases anyway.
+- **Note:** decks, programs, rigs, drones and vehicles bought in play still push
+  straight onto the chargen arrays. That is the same leak and was not part of
+  this ruling — filed as **JC-024**.
 
 ## JC-011: Cash purchases have no refund path
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/sheet.js` — `logCash` is append-only; item removal splices without crediting
 - **Observed:** Kismet spends of kind `attribute`, `skill`, `martial_art`,
   `ritual` and `zp` all have working Undo. Cash purchases do not: removing a
@@ -199,12 +287,20 @@ Number sequentially from the highest existing JC. Never reuse a number.
 - **Options:** A) Yes — mirror the kismet undo. B) No — cash spent is spent; add
   a manual adjustment instead. C) Yes, but only within the same session.
 - **Raised by:** P06
-- **RULING (owner only):** _
-- **Follow-up on ruling:** Note the two Skillsoft paths already behave as (A),
-  so today the app is internally inconsistent whichever way this is ruled.
+- **RULING (owner only):** **A, scoped to the ledger.** Undo lives only in the
+  Activity list at the bottom of the Gear tab, and refunds in full.
+- **Applied:** `logCash` takes an optional serializable `undo` descriptor
+  (cash_log is persisted as JSON, so no closures), mirroring `spendKismet`.
+  Covered kinds: weapon, armor, gear, augment, spell, hacking level, weapon mod,
+  armor extra, gear mount, prepaid lifestyle month. Each Activity row with a
+  descriptor gets an Undo button; the item goes and the money comes back. The
+  per-row ✕ on the tabs above still just removes the item, and the card says so.
+  Entries with nothing to reverse — manual adjustments, α-grade upgrades, quality
+  changes, the starting cash roll — get no button. If the item is already gone,
+  Undo says so and leaves the ledger entry alone rather than paying twice.
 
 ## JC-012: Errors and warnings are blanked once finalized
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` ~L3526
 - **Observed:** `calculate` returns empty `errors` and `warnings` arrays whenever
   `finalized` is true. An illegal state introduced in play — Body Index over
@@ -215,12 +311,22 @@ Number sequentially from the highest existing JC. Never reuse a number.
   B) Show a reduced set that still makes sense in play (cash, Body Index).
   C) Show everything but style it as advisory.
 - **Raised by:** P06
-- **RULING (owner only):** _
-- **Follow-up on ruling:** This is why the fixtures README documents a
-  `finalized = false` probe to see a finalized character's real validity.
+- **RULING (owner only):** **B — a reduced set.**
+- **Applied:** `calculate` collects a parallel `playErrors` / `playWarnings` pair
+  and returns those instead of `[]` when finalized. The set is *what is installed
+  in your body, and what is in your wallet*: augment conflicts, the Synthetic
+  Bioware ban, augment requirements, tier exclusivity (JC-008), Body Index over
+  Body, a martial art above Unarmed Combat, an overdrawn `play.cash`, and the
+  three worn-armor warnings (Tough, Antlers, internal armor slot). The chargen
+  `Cash overspent` error is deliberately **not** included: after Finalize the
+  creation budget no longer means anything, since play purchases are appended to
+  the same arrays. Overloaded mounts and the magic/Amp OFFLINE state are also
+  excluded — the sheet already has dedicated read-outs for both, and a second
+  copy would only add noise. A **Needs attention** card at the top of the play
+  Overview renders whatever survives; it is silent for a clean character.
 
 ## JC-013: Import validation is a single truthiness check, and advances are unclamped
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/sheet.js` (the import file input); `static/rules.js` `applyPlayAdvances`
 - **Observed:** Character import accepts anything that parses as JSON, is a
   non-array object, and has a truthy `.attributes`. `applyPlayAdvances` then
@@ -232,12 +338,24 @@ Number sequentially from the highest existing JC. Never reuse a number.
   enforces. B) Trust the file — hand-editing is a feature for a local-first app.
   C) Trust it but surface a warning banner on an out-of-range character.
 - **Raised by:** P08
-- **RULING (owner only):** _
-- **Follow-up on ruling:** Interacts with JC-012 — under (B) an invalid imported
-  character is also silent, which is the worst combination.
+- **RULING (owner only):** **A — validate the shape and clamp the advances.**
+- **Applied:** `RULES.validateCharacterShape(value)` returns `{ ok, problems }`
+  and checks what `mergeDefaults` and the engine actually rely on: object-vs-list
+  per key, numeric attributes (tested directly, not through `asNumber`, which
+  coerces junk to 0 on purpose), and `magic.spells` / `magic.amp_powers`. Import
+  lists every problem at once instead of a flat "no". It stays a **shape** check:
+  an out-of-range character still imports and is then told so by the normal
+  errors, because hand-editing a save is supported and being handed a file that
+  isn't a character is not.
+  In `applyPlayAdvances`, skills clamp to `PLAY_SKILL_RANK_CAP` (8 — rank 6 by
+  Kismet, 7 on a mastery boon, 8 on a major one), attributes to
+  `ATTRIBUTE_LEVEL_MAX`, hacking to `HACKING_RATING_MAX`, spell force to
+  `SPELL_FORCE_MAX`; martial-art styles and ritual names are key-checked against
+  the data; negative advances are discarded, so nothing here ever lowers a value.
+  `pool_kismet` is key-checked and floored at 0.
 
 ## JC-014: Finalizing does not check name uniqueness
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/app.js` `finalizeCharacter`; `static/storage.js` `sanitizeName`
 - **Observed:** Finalize requires a non-empty name and no errors, but does not
   check whether that name is already taken. Saving keys on the sanitised name, so
@@ -248,12 +366,16 @@ Number sequentially from the highest existing JC. Never reuse a number.
   `uniqueCopyName` does for duplicates. C) No — overwriting is the expected
   behaviour of a save.
 - **Raised by:** P05, P08
-- **RULING (owner only):** _
-- **Follow-up on ruling:** This is a silent data-loss path, so it likely
-  outranks the other open items.
+- **RULING (owner only):** **A — prompt on collision.**
+- **Applied:** A character now remembers the slot it came from in `saved_as`
+  (stamped by `cacheCharacter` and by `loadCharacter`), which is what lets
+  `STORAGE.collidingCharacter(character)` tell "overwriting myself" from
+  "overwriting someone else". It returns the stored character's own name — which
+  may be spelled differently — or null. Both Finalize and the sheet's Save button
+  confirm before replacing, naming who would be lost.
 
 ## JC-015: Read endpoints are not rate limited
-- **Status:** OPEN
+- **Status:** RESOLVED — no change
 - **Where:** `api/lib.php` `rate_limit`; call sites in `api/*.php`
 - **Observed:** Rate limiting covers `login`, `callback`, authenticated `write`
   and `admin`. Plain GETs — including the shared-character and homebrew
@@ -262,11 +384,13 @@ Number sequentially from the highest existing JC. Never reuse a number.
 - **Options:** A) Yes — every reader is an approved member already. B) Add a
   read bucket. C) Limit only the gallery endpoints.
 - **Raised by:** P12
-- **RULING (owner only):** _
-- **Follow-up on ruling:** Low severity while signup is approval-gated.
+- **RULING (owner only):** **A — acceptable.** Every reader is an approved
+  member.
+- **Applied:** Nothing. Worth revisiting only if signup ever stops being
+  approval-gated, which is the assumption this rests on.
 
 ## JC-016: Heritage priority error renders with a blank subject
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` `resolvePriorities` (~L719)
 - **Observed:** With no heritage chosen, the error reads
   `" requires a higher Heritage priority (available at priority 0: Human,
@@ -274,16 +398,18 @@ Number sequentially from the highest existing JC. Never reuse a number.
   The message is only sensible once a heritage has actually been picked.
 - **Question:** Should an unchosen heritage produce this error at all?
 - **Options:** A) Suppress it while `heritage.type` is empty and rely on a
-  "choose a heritage" error instead. B) Keep the check but name the subject
-  ("No heritage chosen requires…" is still wrong — needs new wording).
+  "choose a heritage" error instead. B) Keep the check but name the subject.
   C) Cosmetic only; leave it.
 - **Raised by:** P01 (found while authoring the fixtures)
-- **RULING (owner only):** _
-- **Follow-up on ruling:** Whatever is chosen, `fresh-default.json`'s documented
-  3-error profile changes and its README entry needs updating.
+- **RULING (owner only):** **A.**
+- **Applied:** An empty `heritage.type` produces `"Choose a heritage (available
+  at priority N: …)"` instead, which still names what's on offer. The
+  higher-priority message is unchanged for a heritage that *is* chosen but out of
+  reach. `fresh-default.json` still has three errors; the second one now reads
+  properly, and the fixtures README records the new text.
 
 ## JC-017: Touch targets are far below any tablet guideline
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/style.css` — stepper and small-button sizing
 - **Observed:** Measured identically at 834×1194, 1194×834 and 1024×1366: on the
   play Overview 47 of 65 visible buttons are under 32 px tall with a minimum of
@@ -296,12 +422,19 @@ Number sequentially from the highest existing JC. Never reuse a number.
   B) Add a `@media (pointer: coarse)` block enlarging stepper and icon-button hit
   areas without changing the desktop layout. C) Enlarge everywhere.
 - **Raised by:** P13-004
-- **RULING (owner only):** _
-- **Follow-up on ruling:** (B) is the only option that does not change the
-  desktop density the app was designed around.
+- **RULING (owner only):** **B — coarse pointers only.**
+- **Applied:** The existing `@media(pointer:coarse)` block was extended to raise
+  everything clickable to a 32 px floor: steppers and their value, `.mini-btn`,
+  `.row-del`, `.btn` / `.btn-add` / `.counter` (min-height only — a width floor
+  would stretch the rows they sit in), `.chip-btn`, the reorder arrows, and
+  checkboxes/radios to 20 px, which are the densest targets on the Gear tab.
+  Labelled controls grow by padding rather than fixed size, so text isn't
+  clipped. Desktop density is untouched. P13-004 should be re-measured with the
+  browser reporting a coarse pointer, not just a tablet viewport — the original
+  measurement wouldn't have had this block active either way.
 
 ## JC-018: Imported image URLs are not restricted to data:
-- **Status:** OPEN
+- **Status:** OPEN — ruled *no change*, held for a second look
 - **Where:** `static/sheet.js` — the images card sets `src` from `play.images[].url`
 - **Observed:** Images added locally are re-encoded through a canvas and are
   always `data:` URLs. An **imported or shared** character's URLs are never
@@ -314,12 +447,17 @@ Number sequentially from the highest existing JC. Never reuse a number.
   B) Keep as-is and rely on CSP. C) Keep the URL but require confirmation before
   loading an off-origin image.
 - **Raised by:** P11-004
-- **RULING (owner only):** _
-- **Follow-up on ruling:** (B) leaves GitHub Pages and local installs exposed,
-  since neither serves the `.htaccess` CSP.
+- **RULING (owner only):** **B — rely on CSP.** Keep this open for a secondary
+  review once the rest of this round is implemented.
+- **Applied:** Nothing yet, by ruling. For that second look, the thing to weigh
+  is that (B) covers the deployed site and nothing else: GitHub Pages and a local
+  `file://` or `python -m http.server` install serve no `.htaccess`, so a shared
+  character opened there still fetches off-origin images. If the app is only ever
+  read from discreteinfinity.com that is fine; if it isn't, (A) is a two-line
+  filter on import. `hostile-payloads.json` carries both URL shapes for testing.
 
 ## JC-019: Two definitions of the play object disagree
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `RULES.defaultCharacter().play` vs `ensurePlay()` in `static/sheet.js`
 - **Observed:** Neither key set is a superset of the other. Only in
   `defaultCharacter`: `dodge_dice`, `martial_art_advances`,
@@ -331,13 +469,22 @@ Number sequentially from the highest existing JC. Never reuse a number.
 - **Options:** A) Make `ensurePlay` merge `defaultCharacter().play` so there is a
   single source of truth. B) Keep both but document why they differ.
 - **Raised by:** P08-007
-- **RULING (owner only):** _
-- **Follow-up on ruling:** Related: `mergeDefaults` fills an absent heritage with
-  `"Human"` while `defaultCharacter()` leaves it empty (P08-005), so the same
-  character differs by which door it came through.
+- **RULING (owner only):** **A.**
+- **Applied:** `ensurePlay` now spreads `RULES.defaultCharacter().play` and adds
+  only the six fields the engine has no opinion about (`armor_worn`,
+  `pool_boost`, `pool_kismet`, `images`, `infusion_spirits`, `bond_slots`), each
+  commented. A character created fresh and one topped up on entry now carry the
+  same keys.
+- **Still open from the follow-up:** the heritage half of P08-005 didn't turn out
+  to be a disagreement — `defaultCharacter()` sets `heritage.type: "Human"`, and
+  `mergeDefaults` fills an *absent* heritage from that same default, so the two
+  agree. The remaining wrinkle is that a heritage explicitly set to `""` (which
+  is what `fresh-default.json` holds) is left alone by `mergeDefaults`, so
+  "absent" and "empty" differ. That is now visible rather than silent, thanks to
+  JC-016's `"Choose a heritage"` error.
 
 ## JC-020: A Mage with no school can take any spell
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/rules.js` — the school check is `if (row && school && …)`
 - **Observed:** Choosing no school is only a warning, and with `school` empty the
   out-of-school check is skipped entirely. A schoolless Mage can therefore take
@@ -346,11 +493,13 @@ Number sequentially from the highest existing JC. Never reuse a number.
 - **Options:** A) Promote the missing-school warning to an error. B) Treat an
   empty school as "no spells permitted". C) Leave it.
 - **Raised by:** P04-004
-- **RULING (owner only):** _
-- **Follow-up on ruling:** —
+- **RULING (owner only):** **A.**
+- **Applied:** `"Mage: choose one School of magic."` is now an error, so a
+  schoolless Mage cannot finalize and the out-of-school check can no longer be
+  skipped by leaving the field blank.
 
 ## JC-021: Switching the priorities house rule rewrites the character
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/app.js` `tabPriorities` — auto-seeds a permutation on switch
 - **Observed:** Changing from point-buy to classic silently overwrites
   `CHAR.priorities` with a valid permutation. The player's previous allocation is
@@ -360,11 +509,18 @@ Number sequentially from the highest existing JC. Never reuse a number.
   resulting error guide the player. C) Leave as-is — the rewrite is a
   convenience.
 - **Raised by:** P03-004
-- **RULING (owner only):** _
-- **Follow-up on ruling:** —
+- **RULING (owner only):** **A — prompt first.**
+- **Applied:** The seeding moved out of the tab render into
+  `seedClassicPriorities(ask)`, called with `ask: true` from the ⚙ house-rule
+  handler and `ask: false` from `tabPriorities`. A character with nothing
+  allocated is still seeded silently — there is nothing to lose. One that has an
+  allocation is asked, and declining keeps the numbers with the engine's "assign
+  each letter exactly once" error to guide the fix, which is effectively option
+  (B) as the fallback. Only the switch itself asks, so declining doesn't mean
+  being re-prompted every time the tab is opened.
 
 ## JC-022: Homebrew rows get no schema validation and name collisions are silent
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/homebrew.js` `mergeCustomContent` / `HB_COLLISIONS`
 - **Observed:** A homebrew weapon with almost no columns is accepted, costs 0,
   contributes 0 ZR, and raises nothing — missing numerics read as 0 via
@@ -376,12 +532,20 @@ Number sequentially from the highest existing JC. Never reuse a number.
   B) Surface `HB_COLLISIONS` in the homebrew UI. C) Both. D) Neither — homebrew
   is expert-only.
 - **Raised by:** P09-003, P09-005
-- **RULING (owner only):** _
-- **Follow-up on ruling:** (B) is cheap and covers the more confusing of the two
-  failure modes — content that simply never appears.
+- **RULING (owner only):** **C — both.**
+- **Applied:** `HOMEBREW_REQUIRED` lists the columns each table's rows genuinely
+  need, in one place rather than as a flag on 195 fields. Saving a row that
+  leaves any of them blank asks for confirmation and says what it will read as;
+  the row list marks incomplete rows in amber. Nothing blocks — the free-form
+  data model is deliberate and a placeholder row is a reasonable thing to want —
+  only the name is genuinely required, as before. A **"Not merged — name already
+  taken"** card lists every `HB_COLLISIONS` entry across all packs, with the
+  table and the pack it came from, and explains the precedence rule. That card is
+  the fix for the more confusing of the two failure modes: content that simply
+  never appears.
 
 ## JC-023: Spirit prose has unescapable characters
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Where:** `static/app.js` `splitSpiritEntries` / `parseSpiritServices`
 - **Observed:** Entries split on a bare `|` with no escape, so a pipe can never
   appear in spirit prose. A colon within the first 40 characters is treated as a
@@ -393,6 +557,69 @@ Number sequentially from the highest existing JC. Never reuse a number.
   the parsers alone. B) Add escaping. C) Add a `check_data.py` rule that fails on
   either shape.
 - **Raised by:** P10-002, P10-004
+- **RULING (owner only):** **B — add escaping.** Document it in `data.md`.
+- **Applied:** A backslash escapes either delimiter: `\|` is a literal pipe, `\:`
+  a colon that is not a label separator, `\\` a literal backslash. Splitting
+  happens on the raw text and escapes are resolved afterwards, so a delimiter can
+  never survive into a rendered entry. `splitSpiritEntriesRaw` does the split,
+  `firstUnescapedIndex` finds the label colon, `unescapeSpiritText` resolves.
+  Documented under `speaker_spirits` in `docs/DATA.md`. Verified safe against the
+  shipped data first: **no cell anywhere in `data.js` contains a backslash**, and
+  every shipped spirit still parses to the same services.
+
+---
+
+# Round two
+
+Raised while implementing the rulings above. Both are OPEN.
+
+## JC-024: Decks, programs, rigs, drones and vehicles bought in play still land in the chargen arrays
+- **Status:** OPEN
+- **Where:** `static/sheet.js` — `shDecking` (deck and program buys), `shRigging`
+  (rig, drone and vehicle buys)
+- **Observed:** JC-010 moved play purchases of weapons and armor into
+  `play.purchases`, joining gear, augments, spells, amp powers and hacking
+  levels. Five categories were left behind: buying a deck in play pushes onto
+  `CHAR.decks`, a program onto `CHAR.programs`, and rigs/drones/vehicles onto
+  their chargen arrays. So the exact behaviour JC-010 described — Back to Chargen
+  charging a play purchase against the creation budget, and
+  `revertToChargenEnd()` not removing it — is still live for those five.
+- **Question:** Should these five follow weapons and armor into
+  `play.purchases`?
+- **Options:** A) Yes — finish the job, so `play.purchases` holds everything
+  bought after Finalize. B) No, and say why these five differ. C) Yes for
+  decks/programs (personal kit) but not rigs/drones/vehicles (assets, arguably
+  the group's).
+- **Raised by:** noticed while applying JC-010
 - **RULING (owner only):** _
-- **Follow-up on ruling:** (C) makes the constraint enforceable at commit time,
-  which is where the existing data conventions are already checked.
+- **Follow-up on ruling:** (A) is the same shape of change as JC-010 — add the
+  arrays to `defaultCharacter().play.purchases`, append them in
+  `applyPlayAdvances`, and read the union in the Decking and Rigging tabs. The
+  deck and rig **active** selectors key on name, so they need no change. Mods
+  fitted to a play-bought deck or rig already live on the entry itself.
+
+## JC-025: No host in the shipped data can mount a Smartlink
+- **Status:** OPEN
+- **Where:** `static/data.js` `augments` (Smartlink is `Type: "Headware"`);
+  `armor` / `misc_gear` `Mount Types`
+- **Observed:** JC-009's ruling describes a Smartlink "installed as an augment
+  attached to a Helmet or Arwin Goggles", active only while that host is
+  equipped. But Smartlink's Type in the data is **Headware**, not Eyeware. Arwin
+  Goggles accept `Eyeware` only, and issue #28 specifies the Helmet as accepting
+  Eyeware, Earware and exactly two Headware items — Commlink and Subvocal Mic.
+  So neither host will mount a Smartlink, and JC-009's case (3) is currently
+  unreachable. Power Armor (`Mount Types: Any`) is the only host that takes one.
+- **Question:** Which is right — the Type, or the mount lists?
+- **Options:** A) Add `Smartlink` to the Helmet's and Arwin Goggles' mount lists
+  (one token each; the grammar already takes augment names). B) Re-type
+  Smartlink as Eyeware, which makes both hosts accept it via their category and
+  also subjects it to the one-Eyeware-augment-without-Cybertechtronic-Eyes rule.
+  C) JC-009 case (3) was hypothetical — leave the data alone and note that only
+  Power Armor mounts one.
+- **Raised by:** noticed while applying issue #28 alongside JC-009
+- **RULING (owner only):** _
+- **Follow-up on ruling:** (A) is a one-cell data edit per host and needs a
+  `CACHE_VERSION` bump. (B) changes what an existing character's Smartlink
+  interacts with — `"More than 1 Eyeware augment requires Cybertechtronic Eyes"`
+  would start counting it — so it needs a P02 re-run. The engine side of JC-009
+  is already correct under any of the three.

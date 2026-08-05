@@ -27,17 +27,25 @@ The conventions are documented in `docs/DATA.md` under `speaker_spirits`.
 - **Expected:** `["Alpha: does a thing", "Beta: does another"]`
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P10-002: A pipe inside prose creates a spurious entry
+### P10-002: An unescaped pipe splits; an escaped one doesn't
 - **Type:** correctness
 - **Check:**
 
-      splitSpiritEntries("Gains +2 | loses 1 when tired")
+      [splitSpiritEntries("Gains +2 | loses 1 when tired"), splitSpiritEntries("Gains +2 \\| loses 1 when tired"), splitSpiritEntries("black\\|white | Beta")]
 
-- **Expected:** `["Gains +2", "loses 1 when tired"]`
-- **Note:** That was one sentence, and it became two list items. The split is on
-  a bare `|` with no escaping — a pipe can never appear in spirit prose. Confirm
-  `docs/DATA.md` says so; if it does not, that is a documentation gap worth
-  recording.
+- **Expected:**
+
+      [["Gains +2", "loses 1 when tired"],
+       ["Gains +2 | loses 1 when tired"],
+       ["black|white", "Beta"]]
+
+- **Note:** JC-023, ruled **B**. A bare `|` still splits — that is the delimiter
+  and the shipped data relies on it — but `\|` is now a literal pipe, so one
+  sentence can stay one entry. Splitting happens on the raw text and escapes are
+  resolved afterwards, so a delimiter can never survive into a rendered entry.
+  Documented under `speaker_spirits` in `docs/DATA.md`. Note the doubled
+  backslashes above are JavaScript string escaping — in `data.js` the cell holds
+  a single `\|`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---
@@ -53,17 +61,22 @@ The conventions are documented in `docs/DATA.md` under `speaker_spirits`.
 - **Expected:** `[{ "name": "Blessing", "text": "grants +2 Brawn" }]`
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P10-004: A colon inside the first 40 characters is mistaken for a label
+### P10-004: An early colon is a label unless escaped
 - **Type:** correctness
 - **Check:**
 
-      parseSpiritServices("Meet at 10:00 sharp and the spirit appears")
+      [parseSpiritServices("Meet at 10:00 sharp and the spirit appears"), parseSpiritServices("Meet at 10\\:00 sharp and the spirit appears")]
 
-- **Expected:** `[{ "name": "Meet at 10", "text": "00 sharp and the spirit appears" }]`
-- **Note:** A time, a ratio, or any early colon silently becomes a service name
-  and the text is truncated at it. The 40-character window is the only guard.
-  This is a real mis-render with no error — record it as a **FAIL** if any
-  shipped spirit text trips it, and as a documented limitation otherwise.
+- **Expected:**
+
+      [[{ "name": "Meet at 10", "text": "00 sharp and the spirit appears" }],
+       [{ "name": "", "text": "Meet at 10:00 sharp and the spirit appears" }]]
+
+- **Note:** JC-023, ruled **B**. The 40-character window is unchanged, so a bare
+  early colon is still read as a label — that is what makes `Blessing: …` work
+  in P10-003. `\:` now opts out, so a time or a ratio can be written as prose.
+  The window is measured on the **raw** entry, so an escape adds one character to
+  that count; it only matters for a label already at the limit.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P10-005: Prose with no colon becomes an unnamed entry
@@ -171,7 +184,13 @@ The conventions are documented in `docs/DATA.md` under `speaker_spirits`.
 
 ## Wrapping up
 
-**P10-002, P10-004, P10-010 and P10-011** document silent failures. Whether they
-matter depends entirely on the shipped data, which is what P10-006, P10-009 and
-P10-012 measure — those three are the cases that turn "this could break" into
-"this is broken today". Run them even if you are short on time.
+**P10-010 and P10-011** document silent failures. Whether they matter depends
+entirely on the shipped data, which is what P10-006, P10-009 and P10-012 measure
+— those three are the cases that turn "this could break" into "this is broken
+today". Run them even if you are short on time.
+
+P10-002 and P10-004 used to be on that list; JC-023 gave both delimiters a
+backslash escape, so prose can now contain either. P10-006 and P10-009 still
+matter for a different reason: the escape was only safe to introduce because **no
+cell anywhere in `data.js` contains a backslash**. If one ever does, it will be
+eaten. `check_data.py` does not test for this.

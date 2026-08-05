@@ -92,27 +92,44 @@ Load the fixture and install the measurement helper once:
 
 - **Expected (guideline):** interactive controls should be at least **44 px**
   tall for comfortable touch, and no smaller than **32 px**.
-- **Observed today at every tested viewport** (834 × 1194, 1194 × 834,
-  1024 × 1366 — the numbers are identical because the controls are sized in
-  fixed pixels and do not respond to viewport):
+- **First check the media query is actually engaged** — this is the whole case:
+
+      matchMedia("(pointer: coarse)").matches
+
+  If that is `false`, you are measuring the desktop layout and the numbers below
+  will not reproduce. A tablet-sized *viewport* is not enough; the browser has to
+  report a coarse pointer. Resizing alone often doesn't do it — use the device
+  emulation, or run it on a real tablet.
+
+- **Observed with a coarse pointer** (375 × 812, the only configuration the
+  automation harness can emulate — re-measure at the five tablet viewports and
+  record what you get):
 
   | Tab | Visible buttons | Smallest height | Under 32 px | Under 44 px |
   |---|---|---|---|---|
-  | Overview | 65 | **11 px** | 47 | 64 |
-  | Gear | 63 | **11 px** | 48 | 62 |
-  | Kismet | 64 | **14 px** | 48 | 63 |
+  | Overview | 65 | 16 px | 4 | 64 |
+  | Gear | 61 | 16 px | 6 | 58 |
+  | Kismet | 64 | 32 px | **0** | 63 |
+  | Stats (chargen) | 119 | 32 px | **0** | 119 |
 
-  On the chargen side the Stats tab shows **107 of 108** buttons under 32 px,
-  with a minimum height of 22 px.
+  Every remaining sub-32 control is a `.sh-reorder-btn` — the ▲/▼ arrows, which
+  are 16 px **each** because they are a stacked pair occupying 32 px together.
+  Confirm that with:
 
-- **Note:** This is the headline usability finding of the pass, and it is a
-  **design judgement, not a bug** — the app is dense by intention and the small
-  controls are mostly stepper `–`/`+` pairs. Mark **JUDGEMENT** and file a JC
-  covering: should stepper hit areas be enlarged on touch pointers (e.g. via
-  `@media (pointer: coarse)`) without changing the desktop layout?
+      [...document.querySelectorAll("#sheet button")].filter(x => { const r = x.getBoundingClientRect(); return r.height > 0 && r.height < 32; }).map(x => x.className || "(none)")
 
-  Record the numbers you observe rather than copying the table above — if they
-  have changed, that is the interesting part.
+  Anything other than `sh-reorder-btn` in that output is a control the
+  coarse-pointer block has missed.
+
+- **Note:** JC-017, ruled **B**. Before the ruling this pass measured 47 of 65
+  under 32 px on the Overview and **107 of 108** on chargen Stats, with a
+  minimum of 11 px — but those numbers were taken with a tablet viewport and a
+  *fine* pointer, so the `@media(pointer:coarse)` block that existed then wasn't
+  active either. The block was extended to raise everything clickable to a 32 px
+  floor; desktop density is untouched, which is the point of ruling B over C.
+
+  The 44 px column stays high and that is expected: 32 px is the floor the
+  ruling bought, not 44.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P13-005: Controls do not overlap
@@ -193,8 +210,8 @@ Load the fixture and install the measurement helper once:
 Report a table of the five viewports against P13-001, P13-004 and P13-008 — those
 three answer "can this be used on a tablet at all". The rest add detail.
 
-**P13-004 is expected JUDGEMENT** with substantial numbers behind it: most
-controls in the app are well under any touch guideline, uniformly across every
-viewport, because they are sized in fixed pixels. That is a deliberate density
-choice and the owner should rule on whether touch deserves a coarse-pointer
-override. Everything else should PASS on a healthy build.
+**P13-004 should now PASS**, and it is the case most likely to fail for a boring
+reason: if `matchMedia("(pointer: coarse)").matches` is `false` you measured the
+desktop layout, which is unchanged by design. Check that first and mark
+**BLOCKED** rather than FAIL if you can't get a coarse pointer. Everything else
+should PASS on a healthy build.

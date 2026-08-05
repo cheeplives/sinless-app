@@ -379,6 +379,82 @@ sync, which is what lets the two be told apart.
 
 ---
 
+## Parting with kit in play
+
+The other half of the JC-024 line. A play purchase is never written into a
+chargen array; a chargen item sold or lost in play is never spliced *out* of
+one. The index goes into `play.disposed`, `applyPlayAdvances` filters it from
+the finalized sheet, and the creation record is left exactly as built.
+
+### P06-018: Selling chargen kit leaves the creation budget alone
+- **Type:** leak
+- **Steps:** load `kitchen-sink-final.json` (already finalized).
+- **Check:**
+
+      (async () => { CHAR.finalized = true; ensurePlay(); CHAR.play.disposed = {}; await recalc(); const before = (() => { const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; return RULES.calculate(c).budget.remaining; })(); disposedList("weapons").push(0); logCash("Sold " + CHAR.weapons[0].name + " (chargen kit)", 1000, { kind: "dispose_chargen", category: "weapons", at: 0 }); await recalc(); const c = JSON.parse(JSON.stringify(CHAR)); c.finalized = false; const k = RULES.calculate(c); return { before, remaining: k.budget.remaining, chargenWeapons: k.weapons.map(w => w.Weapon), playWeapons: (CALC.weapons || []).map(w => w.Weapon), chargenArray: CHAR.weapons.map(w => w.name), errors: k.errors }; })()
+
+- **Expected:**
+
+      { "before": 33902, "remaining": 33902,
+        "chargenWeapons": ["Kalishnikov A-80", "Katana"],
+        "playWeapons": ["Katana"],
+        "chargenArray": ["Kalishnikov A-80", "Katana"],
+        "errors": [] }
+
+- **Note:** This is P06-011 pointed the other way, and the bug it was written
+  for. Until 2026-08-05 every ✕ on the play sheet spliced the owning array, so
+  selling chargen kit handed its cost back to the creation budget — sell a
+  weapon in play, go Back to Chargen, spend the money again. `remaining` moving
+  at all means that is live once more. `chargenArray` is the tell: the chargen
+  record must be untouched even though the sheet no longer lists the weapon.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-019: Sell, lose and cancel through the dialog
+- **Type:** correctness
+- **Steps:** continue from P06-018 (do not reload), then reset with
+  `CHAR.play.disposed = {}; CHAR.play.cash_log = []; await recalc();`.
+- **Check:**
+
+      (async () => { const open = async re => { sheetTab = "gear"; renderSheet(); const row = [...document.querySelectorAll("#sheet table tr")].find(r => re.test(r.textContent) && r.querySelector(".row-del")); row.querySelector(".row-del").click(); await new Promise(r => setTimeout(r, 60)); return document.querySelector(".mount-modal"); }; const press = async (m, label) => { [...m.querySelectorAll("button")].find(b => b.textContent.trim() === label).click(); await new Promise(r => setTimeout(r, 120)); }; const cash0 = CHAR.play.cash; let m = await open(/Kalishnikov/); const shown = { heading: m.querySelector("h3").textContent, pct: m.querySelectorAll("input")[0].value, amount: m.querySelectorAll("input")[1].value }; await press(m, "Cancel"); const afterCancel = { cash: CHAR.play.cash, log: CHAR.play.cash_log.length }; m = await open(/Kalishnikov/); m.querySelectorAll("input")[1].value = "500"; await press(m, "Sell"); const afterSell = { cash: CHAR.play.cash, top: CHAR.play.cash_log[0] }; m = await open(/Katana/); await press(m, "Lost / discarded"); const afterLost = { cash: CHAR.play.cash, top: CHAR.play.cash_log[0] }; return { cash0, shown, afterCancel, afterSell, afterLost, disposed: CHAR.play.disposed }; })()
+
+- **Expected:** `shown` is `{ heading: "Part with Kalishnikov A-80?", pct: "50",
+  amount: "375" }` — half of the ㄓ749 it cost. Cancel changes nothing. The sale
+  adds the hand-typed **500** and logs
+  `{ delta: 500, label: "Sold Kalishnikov A-80 (chargen kit)", undo: { kind:
+  "dispose_chargen", category: "weapons", at: 0 } }`. The loss logs the same
+  shape with `delta: 0` and label `"Lost Katana (chargen kit)"`. `disposed`
+  ends `{ weapons: [0, 1] }`.
+- **Note:** The percentage is a starting point, not a rule — the amount field
+  wins, because what a fence pays is the table's call. Every disposal is logged
+  whether or not money moved, which is the whole point: a zero-delta row is how
+  "it burned in the car" stays visible. Escape and clicking the backdrop are
+  Cancel.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-020: Undo and Revert both hand the kit back
+- **Type:** correctness
+- **Steps:** continue from P06-019.
+- **Check:**
+
+      (async () => { const realConfirm = window.confirm, realAlert = window.alert; window.confirm = () => true; window.alert = () => {}; await undoCashSpend(CHAR.play.cash_log[0]); const afterUndo = { disposed: JSON.parse(JSON.stringify(CHAR.play.disposed)), onSheet: (CALC.weapons || []).map(w => w.Weapon) }; await revertToChargenEnd(); window.confirm = realConfirm; window.alert = realAlert; return { afterUndo, afterRevert: { disposed: CHAR.play.disposed, onSheet: (CALC.weapons || []).map(w => w.Weapon), log: CHAR.play.cash_log.length } }; })()
+
+- **Expected:**
+
+      { "afterUndo":   { "disposed": { "weapons": [0] }, "onSheet": ["Katana"] },
+        "afterRevert": { "disposed": {}, "log": 0,
+                         "onSheet": ["Kalishnikov A-80", "Katana"] } }
+
+  The undo takes back the most recent entry — the lost Katana — leaving the
+  sold Kalishnikov disposed. Revert then clears the play layer entirely and
+  both weapons come back.
+- **Note:** Undoing a *sale* also takes the money back out — `undoCashSpend`
+  does the cash half, and a loss logged `delta: 0` so undoing one only returns
+  the item. Revert is the bigger hammer: it is the only thing that makes a
+  disposal permanent-in-reverse.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
 ## Wrapping up
 
 Every case should PASS. P06-001, P06-005, P06-009, P06-010 and P06-011 were all
@@ -389,6 +465,13 @@ P06-001b.
 P06-011 is the load-bearing one. If `budget.remaining` moves when you buy
 something in play, the chargen/play split has broken and every "my cash is wrong
 after going back to chargen" report is live again.
+
+P06-018 to P06-020 are its mirror image, added the same day. P06-011 proves a
+play *purchase* can't reach the creation budget; P06-018 proves a play
+*disposal* can't either. Before that, every ✕ on the play sheet spliced the
+chargen array and refunded the item's cost to the creation budget — verified at
+ㄓ1,498 for a weapon, ㄓ20,000 for gear, ㄓ2,500 for an augment whose own button
+promised no refund.
 
 P06-015 to P06-017 are the lifestyle set, added 2026-08-05 after a real
 character (Jimmy Chan) turned up showing 4 prepaid months against a chargen

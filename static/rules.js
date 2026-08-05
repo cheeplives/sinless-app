@@ -529,6 +529,13 @@ function defaultCharacter() {
       ritual_advances: {},
       zp_advances: 0,
       spell_force_advances: {},
+      // Chargen kit sold or lost during play, as { category: [index, …] } into
+      // the CHARGEN arrays. The same hard line as `purchases`, running the
+      // other way: play never splices a chargen array, it records that the item
+      // is gone. So the creation budget still counts what was bought at
+      // creation, Back to Chargen shows the character as built, and Revert —
+      // which drops the whole play layer — hands everything back.
+      disposed: {},
       // Everything bought after Finalize. There is a hard line between the
       // chargen record and anything that happens once Finalize is pressed:
       // nothing bought in play ever touches the arrays above. That is what lets
@@ -3456,6 +3463,19 @@ function applyPlayAdvances(character) {
     character.ritual_skills[name] = Math.min(PLAY_SKILL_RANK_CAP,
       toInt(asNumber(character.ritual_skills[name] || 0)) + advance(plus));
   }
+  // Chargen kit sold or lost in play drops out HERE, before the purchases are
+  // appended, so the recorded indices still line up with the chargen arrays.
+  // Only the finalized sheet loses it: `calculate` runs this on a copy and only
+  // when finalized, so the creation budget goes on counting what was bought at
+  // creation and Back to Chargen still shows the character as built.
+  const disposed = play.disposed || {};
+  for (const [category, indices] of Object.entries(disposed)) {
+    if (!Array.isArray(character[category]) || !Array.isArray(indices)) continue;
+    const gone = new Set(indices.map(i => toInt(asNumber(i, -1))));
+    if (!gone.size) continue;
+    character[category] = character[category].filter((_, i) => !gone.has(i));
+  }
+
   // Play purchases append AFTER the chargen entries, so index N of the
   // character's array is index N of the matching CALC array either way. This is
   // the only place the two halves are ever joined; everything upstream keeps

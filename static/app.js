@@ -640,7 +640,7 @@ async function finalizeCharacter() {
   ensurePlay();
   syncChargenLifestyles();   // carry chargen lifestyle(s) into play, even on re-finalize
   // snapshot of the worn-armor flags at the moment of finalize, for revert
-  CHAR.play.armor_worn = CHAR.armor.map(a => a.active !== false);
+  CHAR.play.armor_worn = wornSnapshotOf(CHAR.armor);
   let rollNote = "";
   if (!CHAR.play.cash_rolled) {   // only on the first finalize, never re-rolled
     const dice = [0, 0, 0, 0].map(() => 1 + Math.floor(Math.random() * 6));

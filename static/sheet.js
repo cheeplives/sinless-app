@@ -165,26 +165,40 @@ function ensurePlay() {
  *
  * `ownedSplit` tags each entry with the array it lives in, so removing and
  * reordering hit the right one. Read-only consumers want the flat `all*`
- * versions. */
-function ownedSplit(chargen, bought) {
-  return [...chargen.map((ref, i) => ({ ref, arr: chargen, i, inPlay: false })),
-          ...bought.map((ref, i) => ({ ref, arr: bought, i, inPlay: true }))];
+ * versions.
+ *
+ * Chargen kit sold or lost in play is filtered out here, matching what
+ * `applyPlayAdvances` drops from the finalized character — the two have to
+ * agree exactly or the index-straight-across contract breaks. The mapping runs
+ * BEFORE the filter, so `i` stays the item's true index in the chargen array
+ * and `play.disposed` keeps meaning what it says. */
+function ownedSplit(category, chargen, bought) {
+  const gone = new Set((CHAR.play.disposed || {})[category] || []);
+  return [...chargen.map((ref, i) => ({ ref, arr: chargen, i, inPlay: false, category }))
+            .filter(e => !gone.has(e.i)),
+          ...bought.map((ref, i) => ({ ref, arr: bought, i, inPlay: true, category }))];
 }
-function ownedWeapons()  { return ownedSplit(CHAR.weapons, CHAR.play.purchases.weapons); }
-function ownedArmor()    { return ownedSplit(CHAR.armor, CHAR.play.purchases.armor); }
-function ownedDecks()    { return ownedSplit(CHAR.decks, CHAR.play.purchases.decks); }
-function ownedRigs()     { return ownedSplit(CHAR.rigs, CHAR.play.purchases.rigs); }
-function ownedDrones()   { return ownedSplit(CHAR.drones, CHAR.play.purchases.drones); }
-function ownedVehicles() { return ownedSplit(CHAR.vehicles, CHAR.play.purchases.vehicles); }
-function ownedPrograms() { return ownedSplit(CHAR.programs, CHAR.play.purchases.programs); }
+function ownedWeapons()  { return ownedSplit("weapons", CHAR.weapons, CHAR.play.purchases.weapons); }
+function ownedArmor()    { return ownedSplit("armor", CHAR.armor, CHAR.play.purchases.armor); }
+function ownedDecks()    { return ownedSplit("decks", CHAR.decks, CHAR.play.purchases.decks); }
+function ownedRigs()     { return ownedSplit("rigs", CHAR.rigs, CHAR.play.purchases.rigs); }
+function ownedDrones()   { return ownedSplit("drones", CHAR.drones, CHAR.play.purchases.drones); }
+function ownedVehicles() { return ownedSplit("vehicles", CHAR.vehicles, CHAR.play.purchases.vehicles); }
+function ownedPrograms() { return ownedSplit("programs", CHAR.programs, CHAR.play.purchases.programs); }
 
-function allWeapons()  { return [...CHAR.weapons, ...CHAR.play.purchases.weapons]; }
-function allArmor()    { return [...CHAR.armor, ...CHAR.play.purchases.armor]; }
-function allDecks()    { return [...CHAR.decks, ...CHAR.play.purchases.decks]; }
-function allPrograms() { return [...CHAR.programs, ...CHAR.play.purchases.programs]; }
-function allRigs()     { return [...CHAR.rigs, ...CHAR.play.purchases.rigs]; }
-function allDrones()   { return [...CHAR.drones, ...CHAR.play.purchases.drones]; }
-function allVehicles() { return [...CHAR.vehicles, ...CHAR.play.purchases.vehicles]; }
+/* Flat views for read-only consumers. Same filtering — anything that reads
+ * these is looking at what the character HAS, and a sold weapon isn't it. */
+function keptChargen(category, list) {
+  const gone = new Set((CHAR.play.disposed || {})[category] || []);
+  return gone.size ? list.filter((_, i) => !gone.has(i)) : list;
+}
+function allWeapons()  { return [...keptChargen("weapons", CHAR.weapons), ...CHAR.play.purchases.weapons]; }
+function allArmor()    { return [...keptChargen("armor", CHAR.armor), ...CHAR.play.purchases.armor]; }
+function allDecks()    { return [...keptChargen("decks", CHAR.decks), ...CHAR.play.purchases.decks]; }
+function allPrograms() { return [...keptChargen("programs", CHAR.programs), ...CHAR.play.purchases.programs]; }
+function allRigs()     { return [...keptChargen("rigs", CHAR.rigs), ...CHAR.play.purchases.rigs]; }
+function allDrones()   { return [...keptChargen("drones", CHAR.drones), ...CHAR.play.purchases.drones]; }
+function allVehicles() { return [...keptChargen("vehicles", CHAR.vehicles), ...CHAR.play.purchases.vehicles]; }
 function allUnits(table) { return table === "drones" ? allDrones() : allVehicles(); }
 
 function schedulePlaySave() {
@@ -332,6 +346,22 @@ const CASH_UNDO = {
     ls.months -= 1;
     return true;
   },
+  // Undoing a disposal puts the item back and takes the sale money away again
+  // (undoCashSpend does the cash half). A loss logs delta 0, so undoing one
+  // just returns the item.
+  dispose_chargen: u => {
+    const list = (CHAR.play.disposed || {})[u.category] || [];
+    const i = list.indexOf(u.at);
+    if (i < 0) return false;
+    list.splice(i, 1);
+    return true;
+  },
+  dispose_play: u => {
+    const list = (CHAR.play.purchases || {})[u.category];
+    if (!Array.isArray(list) || u.entry === undefined) return false;
+    list.splice(Math.max(0, Math.min(list.length, u.at)), 0, deepCopyEntry(u.entry));
+    return true;
+  },
   // Unpaid month changes: the counter, a chargen correction, the one-time
   // resync. No cash moved either way, so undo just puts the count back.
   lifestyle_adjust: u => {
@@ -360,6 +390,148 @@ async function undoCashSpend(entry) {
   CHAR.play.cash -= entry.delta;   // delta is negative, so this refunds it
   log.splice(idx, 1);
   await playChangedRecalc();
+}
+
+/* ---------------------------------------------- disposing of kit during play
+ *
+ * Parting with something in play is either a SALE (cash back at whatever the
+ * fence pays) or a LOSS (destroyed, confiscated, left in a burning car).
+ * Both land in the Activity ledger; only the first moves money.
+ *
+ * Where the item goes depends on which side of Finalize it came from, and this
+ * is the other half of the JC-024 line:
+ *
+ *   - Bought in play  → spliced out of play.purchases, where it lived.
+ *   - Chargen kit     → the chargen array is NOT touched. The index is recorded
+ *                       in play.disposed and the engine filters it out of the
+ *                       finalized sheet. The creation budget still counts it —
+ *                       it was bought with creation cash and that money is
+ *                       spent — so Back to Chargen shows the character exactly
+ *                       as built, and re-finalizing takes the item away again.
+ *                       Revert drops the whole play layer, so it comes back.
+ *
+ * Before this, every ✕ spliced the owning array. On a chargen item that handed
+ * its cost back to the creation budget: sell a weapon in play, go Back to
+ * Chargen, and the money was there to spend again.
+ */
+const DEFAULT_RESALE_PCT = 50;
+// The chargen arrays a disposal can be recorded against.
+const DISPOSABLE_CATEGORIES = ["weapons", "armor", "gear", "augments", "decks",
+  "programs", "rigs", "drones", "vehicles"];
+
+/* Sell / lose / cancel. Resolves to null (cancelled), { sold: false }, or
+ * { sold: true, amount }. The percentage is a starting point, not a rule — the
+ * amount is editable, because what a fence pays is a table's call, not ours.
+ * The last percentage used sticks for the session, so a table running 25%
+ * doesn't retype it on every sale. */
+let lastResalePct = DEFAULT_RESALE_PCT;
+function promptDisposal(name, value) {
+  return new Promise(resolve => {
+    const base = Math.max(0, Math.round(+value || 0));
+    const backdrop = el("div", { class: "mount-modal-backdrop" });
+    const done = val => {
+      document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(val);
+    };
+    const onKey = e => { if (e.key === "Escape") done(null); };
+
+    const amountOf = pct => Math.round(base * (Math.max(0, Math.min(100, pct)) / 100));
+    const pctInput = el("input", { type: "number", min: "0", max: "100", step: "5",
+      value: String(lastResalePct), style: "width:74px" });
+    const amtInput = el("input", { type: "number", min: "0", step: "1",
+      value: String(amountOf(lastResalePct)), style: "width:110px" });
+    const sellBtn = el("button", { class: "btn-add" }, "Sell");
+    const syncFromPct = () => { amtInput.value = String(amountOf(+pctInput.value || 0)); };
+    pctInput.addEventListener("input", syncFromPct);
+
+    sellBtn.onclick = () => {
+      lastResalePct = Math.max(0, Math.min(100, +pctInput.value || 0));
+      done({ sold: true, amount: Math.max(0, Math.round(+amtInput.value || 0)) });
+    };
+
+    const modal = el("div", { class: "card mount-modal", style: "max-width:420px" },
+      el("h3", {}, `Part with ${name}?`),
+      el("p", { class: "hint" },
+        base ? `Bought for ${fmt(base)}. Sell it on, or write it off as lost.`
+             : "No recorded value for this item — set the sale price yourself, "
+               + "or write it off as lost."),
+      el("div", { class: "stat-line" },
+        el("span", {}, "Sell at "), pctInput, el("span", {}, "% "),
+        el("span", { class: "sub" }, "→ "), amtInput,
+        el("span", { class: "sub" }, ` ${RULES.currencyName()}`)),
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:14px" },
+        sellBtn,
+        el("button", { class: "btn", onclick: () => done({ sold: false }) }, "Lost / discarded"),
+        el("button", { class: "btn ghost", onclick: () => done(null) }, "Cancel")));
+    backdrop.append(modal);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) done(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(backdrop);
+    amtInput.focus(); amtInput.select();
+  });
+}
+
+function disposedList(category) {
+  const d = CHAR.play.disposed = CHAR.play.disposed || {};
+  return (d[category] = d[category] || []);
+}
+function isDisposed(category, index) {
+  return ((CHAR.play.disposed || {})[category] || []).includes(index);
+}
+function disposalLabel(name, result, fromChargen) {
+  const how = result.sold ? "Sold" : "Lost";
+  return `${how} ${name}${fromChargen ? " (chargen kit)" : ""}`;
+}
+
+/* The one entry point every ✕ on the play sheet goes through. `arr` is the
+ * array the row is backed by and `index` its position in it; `inPlay` says
+ * which side of Finalize it came from. Returns true when something happened. */
+async function disposeOfItem({ category, arr, index, inPlay, name, value }) {
+  const result = await promptDisposal(name, value);
+  if (!result) return false;
+  const undo = inPlay
+    ? { kind: "dispose_play", category, entry: deepCopyEntry(arr[index]), at: index }
+    : { kind: "dispose_chargen", category, at: index };
+  if (inPlay) arr.splice(index, 1);
+  else disposedList(category).push(index);
+  logCash(disposalLabel(name, result, !inPlay), result.sold ? result.amount : 0, undo);
+  await playChangedRecalc();
+  return true;
+}
+function deepCopyEntry(entry) {
+  return (entry && typeof entry === "object") ? JSON.parse(JSON.stringify(entry)) : entry;
+}
+
+/* Which chargen armor was being worn at Finalize, for Revert to put back.
+ *
+ * Stored as { name: worn } rather than a positional array. The old array was
+ * indexed against CHAR.armor, so anything that changed that list's shape slid
+ * every flag along by one and Revert dressed the character in the wrong pieces.
+ * Names are stable, and two copies of the same armor are interchangeable for
+ * this purpose — they differ only in fitted Extras, which Revert doesn't touch.
+ * The legacy array shape is still read, so characters saved before this keep
+ * working. */
+function wornSnapshotOf(armorList) {
+  const out = {};
+  (armorList || []).forEach(a => { out[a.name] = a.active !== false; });
+  return out;
+}
+function restoreWornSnapshot(snapshot) {
+  if (!snapshot) return;
+  const byName = Array.isArray(snapshot)
+    ? wornSnapshotOfLegacy(snapshot)      // pre-2026-08-05 positional array
+    : snapshot;
+  CHAR.play.armor_worn = byName;
+  CHAR.armor.forEach(a => {
+    if (a.name in byName) a.active = byName[a.name] !== false;
+  });
+}
+/* A positional array can only be read back positionally — it carries no names.
+ * Best effort against the CURRENT list; wrong if the list changed shape, which
+ * is exactly the bug this replaced. Runs once, then the object form takes over. */
+function wornSnapshotOfLegacy(arr) {
+  const out = {};
+  CHAR.armor.forEach((a, i) => { if (i < arr.length) out[a.name] = arr[i] !== false; });
+  return out;
 }
 
 function chargenLifestyles() {
@@ -490,10 +662,7 @@ async function revertToChargenEnd() {
   CHAR.play.cash = keepStart;
   if (rollEntry) CHAR.play.cash_log = [rollEntry];
   if (keepGhost) CHAR.play.ghost_rating = keepGhost;
-  if (Array.isArray(wornSnapshot)) {   // worn flags as they were at finalize
-    CHAR.play.armor_worn = wornSnapshot;
-    CHAR.armor.forEach((a, i) => { a.active = wornSnapshot[i] !== false; });
-  }
+  restoreWornSnapshot(wornSnapshot);
   seedLifestyles();
   await playChangedRecalc();
   alert("Character reverted to their post-chargen state.");
@@ -1269,10 +1438,24 @@ function loadoutMove(items, i, dir) {
 // the element itself rather than layering a stored order over several stores.
 // `after` re-renders: playChanged for name-keyed lists, playChangedRecalc where
 // a CALC array is index-aligned to the one being moved (armor).
+/* Reordering swaps two entries in place. When the array is a CHARGEN one, any
+ * disposal recorded against those two positions has to swap with them —
+ * play.disposed holds indices, and a stale index points at whatever moved into
+ * the slot. Play purchase arrays carry no disposal records, so they just swap. */
 function arrayMove(arr, i, dir, after = playChanged) {
   const j = i + dir;
   if (j < 0 || j >= arr.length) return;
   [arr[i], arr[j]] = [arr[j], arr[i]];
+  // Identity, not name: only the character's own chargen array for that
+  // category carries disposal records against it.
+  const category = DISPOSABLE_CATEGORIES.find(c => CHAR[c] === arr);
+  const list = category && (CHAR.play.disposed || {})[category];
+  if (Array.isArray(list)) {
+    for (let k = 0; k < list.length; k++) {
+      if (list[k] === i) list[k] = j;
+      else if (list[k] === j) list[k] = i;
+    }
+  }
   after();
 }
 
@@ -3272,7 +3455,7 @@ function shGear(body) {
     const t = el("table");
     t.append(el("tr", {}, el("th", {}, "Weapon"), el("th", {}, "Stats"),
       el("th", {}, "Equip"), el("th", {}, "")));
-    weaponEntries.forEach(({ ref: w, arr, i: wi }) => {
+    weaponEntries.forEach(({ ref: w, arr, i: wi, inPlay, category }) => {
       const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
       const canMod = !NO_WEAPON_MOD_TYPES.includes(r.Type);
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
@@ -3293,10 +3476,8 @@ function shGear(body) {
             onchange: async e => { w.equipped = e.target.checked; await playChangedRecalc(); } }),
           shMinStrControl(w, r)),
         el("td", {}, el("button", { class: "row-del", title: "Sell / remove weapon",
-          onclick: async () => {
-            if (!confirm(`Remove ${w.name}?`)) return;
-            arr.splice(wi, 1); await playChangedRecalc();
-          } }, "✕"))));
+          onclick: () => disposeOfItem({ category, arr, index: wi, inPlay, name: w.name,
+            value: Math.round((+r.Cost || 0) * mult) }) }, "✕"))));
       const upgBoxes = weaponUpgradeSlots(w, r, mult);
       if (canMod || upgBoxes.length) {
         const strip = canMod ? weaponModSlots(w, mult, w.name)
@@ -3339,7 +3520,7 @@ function shGear(body) {
     const t = el("table");
     t.append(el("tr", {}, el("th", {}, "Armor"), el("th", { class: "num" }, "B / I"),
       el("th", {}, "Extras"), el("th", {}, "Worn"), el("th", {}, "")));
-    armorEntries.forEach(({ ref: a, arr, i: localIndex }, ai) => {
+    armorEntries.forEach(({ ref: a, arr, i: localIndex, inPlay, category }, ai) => {
       const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
       const baseCost = +r.Cost || 0;
       // Extras are cost multipliers; the marginal charge is base cost × (mult − 1).
@@ -3400,10 +3581,8 @@ function shGear(body) {
             await playChangedRecalc();
           } })),
         el("td", {}, el("button", { class: "row-del", title: "Sell / remove armor",
-          onclick: async () => {
-            if (!confirm(`Remove ${a.name}?`)) return;
-            arr.splice(localIndex, 1); await playChangedRecalc();
-          } }, "✕"))));
+          onclick: () => disposeOfItem({ category, arr, index: localIndex, inPlay,
+            name: a.name, value: arow.cost ?? Math.round(baseCost * armorMult) }) }, "✕"))));
     });
     armorCard.append(t);
   } else {
@@ -3416,22 +3595,19 @@ function shGear(body) {
   // Two backing stores rendered as one table (chargen kit, then bought-in-play).
   // Reordering stays inside an item's own array — moving across the boundary
   // would silently relabel a purchase — so the handles stop at each block's edge.
-  const gearEntries = [
-    ...CHAR.gear.map(g => ({ ref: g, inPlay: false, arr: CHAR.gear })),
-    ...play.purchases.gear.map(g => ({ ref: g, inPlay: true, arr: play.purchases.gear }))];
+  const gearEntries = ownedSplit("gear", CHAR.gear, play.purchases.gear);
   const gt = el("table");
   gt.append(el("tr", {}, el("th", {}, "Item"), el("th", { class: "num" }, "Qty"),
     el("th", { class: "num" }, "Weight"),
     el("th", {}, "Effect"), el("th", {}, "Carried"), el("th", {}, "")));
   let gearWeightCarried = 0, gearWeightOwned = 0;
-  gearEntries.forEach(({ ref: g, inPlay, arr }) => {
+  gearEntries.forEach(({ ref: g, inPlay, arr, i: gi }) => {
     const r = DATA.tables.misc_gear.find(x => x.Item === g.name) || {};
     // Focus/Fetish/Spirit Bag links (chosen in chargen) now show — and stay
     // editable — on the sheet (issue #14). gearLinkSelect returns null otherwise.
     const ro = !!(activeTabObj() && activeTabObj().readonly);
     const linkSel = (!ro && typeof gearLinkSelect === "function")
       ? gearLinkSelect(g, playChangedRecalc) : null;
-    const gi = arr.indexOf(g);
     // Ammo counts in uses rather than pieces: its Qty stepper is the rounds you
     // own, and the Carried spinner is how many of those are on you.
     const isAmmo = (r.Class || "").startsWith("Ammo");
@@ -3472,14 +3648,9 @@ function shGear(body) {
               setCarriedQty(g, e.target.checked ? owned : 0);
               await playChangedRecalc();
             } })]),
-      el("td", {}, el("button", { class: "row-del", title: "Remove item",
-        onclick: async () => {
-          if (!confirm(`Remove ${g.name}?`)) return;
-          const arr = inPlay ? CHAR.play.purchases.gear : CHAR.gear;
-          const idx = arr.indexOf(g);
-          if (idx >= 0) arr.splice(idx, 1);
-          await playChangedRecalc();
-        } }, "✕"))));
+      el("td", {}, el("button", { class: "row-del", title: "Sell / remove item",
+        onclick: () => disposeOfItem({ category: "gear", arr, index: gi, inPlay,
+          name: g.name, value: Math.round((+r.Cost || 0) * gearMult * owned) }) }, "✕"))));
   });
   if (!gearEntries.length)
     gt.append(el("tr", {}, el("td", { class: "sub", colspan: "6" }, "No gear.")));
@@ -3614,9 +3785,7 @@ function shAugments(body) {
   const mult = CALC.budget.gear_cost_multiplier || 1;
   const z = CALC.zoetics;
 
-  const augEntries = [
-    ...CHAR.augments.map(a => ({ ref: a, inPlay: false })),
-    ...play.purchases.augments.map(a => ({ ref: a, inPlay: true }))];
+  const augEntries = ownedSplit("augments", CHAR.augments, play.purchases.augments);
   // Slotted Skillsofts grant their bonus; how many can be slotted at once is
   // capped by the number of Chipjacks installed.
   const ownedAugsAll = [...CHAR.augments, ...play.purchases.augments];
@@ -3661,7 +3830,7 @@ function shAugments(body) {
     const ia = AUG_TYPE_ORDER.indexOf(a), ib = AUG_TYPE_ORDER.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
   });
-  const augmentRow = ({ ref: a, inPlay }) => {
+  const augmentRow = ({ ref: a, inPlay, arr, i: augIndex }) => {
     const r = DATA.tables.augments.find(x => x.Name === a.name) || {};
     // Cybertechtronic augments are surcharged; Bioware is grown to fit (face value).
     const augMult = RULES.surchargeFor(r.Type === "Bioware" ? "bioware" : "cyberware", mult);
@@ -3790,14 +3959,12 @@ function shAugments(body) {
       el("td", {}, slottedCell),
       el("td", { class: "sub" }, effectText,
         descriptionExpander(r.Description, `augments:${a.name}`)),
+      // Cyberware comes out surgically: there is no resale market for a used
+      // arm, so the dialog opens with nothing offered. A table that wants to
+      // allow a chop-shop sale can still type a number in.
       el("td", {}, el("button", { class: "row-del", title: "Remove (surgical removal — not refunded)",
-        onclick: async () => {
-          if (!confirm(`Remove ${a.name}? Surgical removal is not refunded.`)) return;
-          const arr = inPlay ? CHAR.play.purchases.augments : CHAR.augments;
-          const idx = arr.indexOf(a);
-          if (idx >= 0) arr.splice(idx, 1);
-          await playChangedRecalc();
-        } }, "✕")));
+        onclick: () => disposeOfItem({ category: "augments", arr, index: augIndex, inPlay,
+          name: a.name, value: 0 }) }, "✕")));
   };
   if (!augEntries.length) {
     body.append(el("div", { class: "card sh-card" },
@@ -4397,7 +4564,7 @@ function shDecking(body) {
   const deckBuySection = el("div", { class: "card sh-card", id: "deck-buy" },
     el("h3", {}, "Buy decks & programs"));
   const deckCard = el("div", { class: "card sh-card" }, el("h3", {}, "Cyberdecks"));
-  deckEntries.forEach(({ ref: d, arr: deckArr, i: deckIndex }, di) => {
+  deckEntries.forEach(({ ref: d, arr: deckArr, i: deckIndex, inPlay, category }, di) => {
     const r = DATA.tables.decks.find(x => x.Name === d.name) || {};
     const isActive = d.name === dk.active_deck;
     d.mods = d.mods || [];
@@ -4430,11 +4597,12 @@ function shDecking(body) {
               })),
         el("div", { class: "sh-unit-add" }, el("b", {}, "Mods"), modEditor)),
       el("button", { class: "row-del", title: "Sell / remove deck",
-        onclick: () => {
-          if (!confirm(`Remove ${d.name}? Fitted mods are lost.`)) return;
-          deckArr.splice(deckIndex, 1);
+        onclick: async () => {
+          const row = DATA.tables.decks.find(x => x.Name === d.name) || {};
+          if (!await disposeOfItem({ category, arr: deckArr, index: deckIndex, inPlay,
+            name: d.name, value: Math.round((+row.Cost || 0) * mult) })) return;
           if (dk.active_deck === d.name) { dk.active_deck = ""; dk.loaded = []; }
-          playChangedRecalc();
+          await playChangedRecalc();
         } }, "✕")));
   });
   if (!decks.length) deckCard.append(el("p", { class: "hint" }, "No decks owned."));
@@ -4500,7 +4668,7 @@ function shDecking(body) {
   // gear-ZR rule reads the same predicate, so the two can't disagree about what
   // being loaded means.
   const programEntries = ownedPrograms();
-  programEntries.forEach(({ ref: name, arr: progArr, i: progIndex }) => {
+  programEntries.forEach(({ ref: name, arr: progArr, i: progIndex, inPlay, category }) => {
     const r = DATA.tables.programs.find(x => x.Name === name) || {};
     const io = r["I/O"] || "—";
     const loadable = RULES.programNeedsThread(r);
@@ -4522,12 +4690,13 @@ function shDecking(body) {
               playChanged();
             }, loaded ? "" : "accent")
           : el("span", { class: "chip", title: `I/O ${io}: runs without occupying a thread` }, "no load"),
-        el("button", { class: "row-del", title: "Remove program",
-          onclick: () => {
-            if (!confirm(`Remove program ${name}?`)) return;
-            progArr.splice(progIndex, 1);
+        el("button", { class: "row-del", title: "Sell / remove program",
+          onclick: async () => {
+            const pr = DATA.tables.programs.find(x => x.Name === name) || {};
+            if (!await disposeOfItem({ category, arr: progArr, index: progIndex, inPlay,
+              name, value: Math.round((+pr.Cost || 0) * mult) })) return;
             dk.loaded = dk.loaded.filter(n => n !== name);
-            playChangedRecalc();
+            await playChangedRecalc();
           } }, "✕"))));
   });
   if (!programEntries.length) progCard.append(el("p", { class: "hint" }, "No programs owned."));
@@ -4929,7 +5098,7 @@ function shRigging(body) {
 
   // --- VCRs
   const rigCard = el("div", { class: "card sh-card" }, el("h3", {}, "Vehicle Control Rigs"));
-  rigEntries.forEach(({ ref: r, arr: rigArr, i: rigIndex }, ri) => {
+  rigEntries.forEach(({ ref: r, arr: rigArr, i: rigIndex, inPlay, category }, ri) => {
     const st = RULES.rigStats(r, DATA.tables);
     const isActive = r.name === rg.active_rig;
     r.mods = r.mods || [];
@@ -4960,11 +5129,12 @@ function shRigging(body) {
             : counterBtn("Set Active", () => { rg.active_rig = r.name; playChanged(); })),
         el("div", { class: "sh-unit-add" }, el("b", {}, "Mods"), modEditor)),
       el("button", { class: "row-del", title: "Sell / remove VCR",
-        onclick: () => {
-          if (!confirm(`Remove ${r.name}? Fitted mods are lost.`)) return;
-          rigArr.splice(rigIndex, 1);
+        onclick: async () => {
+          const row = DATA.tables.rigs.find(x => x["Rig Type"] === r.name) || {};
+          if (!await disposeOfItem({ category, arr: rigArr, index: rigIndex, inPlay,
+            name: r.name, value: Math.round((+row.Cost || 0) * rigMult) })) return;
           if (rg.active_rig === r.name) rg.active_rig = "";
-          playChangedRecalc();
+          await playChangedRecalc();
         } }, "✕")));
   });
   if (rigs.length)
@@ -5012,7 +5182,7 @@ function shRigging(body) {
     const mult = 1;   // fitted weapons & mods — never surcharged
     const unitReadonly = !!(activeTabObj() && activeTabObj().readonly);
     const card = el("div", { class: "card sh-card" }, el("h3", {}, cfg.title));
-    entries.forEach(({ ref: u, arr: unitArr, i: localIndex }, i) => {
+    entries.forEach(({ ref: u, arr: unitArr, i: localIndex, inPlay, category }, i) => {
       const r = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === u.name) || {};
       const summary = (calcArr || [])[i] || {};
       const key = `${cfg.table}:${i}`;
@@ -5170,15 +5340,17 @@ function shRigging(body) {
           el("div", { class: "sub" }, el("b", {}, "Add unit mod"), addMod)));
 
       const removeBtn = el("button", { class: "row-del", title: "Sell / remove unit",
-        onclick: () => {
-          if (!confirm(`Remove ${u.label || u.name}?`)) return;
-          unitArr.splice(localIndex, 1);
+        onclick: async () => {
+          // The unit's own resale value uses the unit multiplier, not the
+          // fitted-weapon `mult` (which is deliberately 1 in this scope).
+          if (!await disposeOfItem({ category, arr: unitArr, index: localIndex, inPlay,
+            name: u.label || u.name, value: Math.round((+r.Cost || 0) * baseMult) })) return;
           // Per-unit play state is keyed by position in the JOINED list, so
-          // removing a unit has to shift every later unit's slot down —
-          // otherwise its damage tracks (and the linked flag) land on the wrong
-          // vehicle. `entries.length - 1` is that list's length after the splice.
+          // losing a unit has to shift every later unit's slot down — otherwise
+          // its damage tracks (and the linked flag) land on the wrong vehicle.
+          // `entries.length - 1` is that list's length once this one is gone.
           shiftUnitStateDown(cfg.table, i, entries.length - 1);
-          playChangedRecalc();
+          await playChangedRecalc();
         } }, "✕");
 
       card.append(el("div", { class: "sh-unit" },

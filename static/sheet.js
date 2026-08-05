@@ -1633,16 +1633,18 @@ function shOverview(body) {
           const md = mode ? RULES.firingMode(mode) : { dice: 0, ammo: 0, name: "" };
           // What's loaded shifts the numbers the line reports, so resolve it
           // before building the stats rather than annotating afterwards. A
-          // grenade launcher takes its Damage and Pen wholesale from the
-          // chambered grenade -- its own Damage column just says "By Grenade".
+          // grenade launcher takes its Damage, Pen and Barrier wholesale from
+          // the chambered grenade -- its own Damage column just says "By
+          // Grenade" and it carries no Barrier rating of its own.
           const baseAcc = calcRow.Accuracy ?? r.Accuracy ?? 0;
           // Thrown weapons skip the melee damage pass, so a Knife would print
           // "½ Str" rather than the number it resolves to.
           let baseDmg = calcRow.Damage ?? r.Damage ?? "—";
           if (RULES.isStrengthDamage(baseDmg) && RULES.meleeDamageIsComputable(baseDmg))
             baseDmg = RULES.meleeDamage(r, CALC.attributes.Strength.final);
-          const base = { acc: baseAcc, damage: baseDmg, pen: r.Pen || 0 };
           const isLauncher = r.Type === "GrenadeLauncher";
+          const base = { acc: baseAcc, damage: baseDmg, pen: r.Pen || 0,
+                         bar: String(calcRow.Bar ?? r.Bar ?? "") || (isLauncher ? "—" : "") };
           // Melee, thrown and energy weapons load nothing, so they must not pick
           // up the default Standard round.
           const canLoad = !["Melee", "Thrown", "Energy"].includes(r.Type);
@@ -1652,7 +1654,8 @@ function shOverview(body) {
           const munName = isLauncher ? gren.name : ammo.name;
           const munNotes = isLauncher ? gren.notes : ammo.notes;
           const shot = isLauncher
-            ? (gren.row ? { acc: baseAcc, damage: gren.row.Damage || "—", pen: gren.row.Pen || 0 }
+            ? (gren.row ? { acc: baseAcc, damage: gren.row.Damage || "—", pen: gren.row.Pen || 0,
+                            bar: String(gren.row.Bar ?? "") || "—" }
                         : { ...base })
             : (ammo.row ? RULES.applyAmmoStats(base, ammo.mods) : { ...base });
           // Gun-Kata 2 buys an extra bullet: +1 die for 1 more round. Opt-in per
@@ -1677,6 +1680,9 @@ function shOverview(body) {
               " · ",
               r.Type === "Melee" ? `Reach ${r.Reach || 0}` : statBit("Acc", "acc"),
               " · ", statBit("DMG", "damage"), " · ", statBit("Pen", "pen"),
+              // Omitted where the weapon has no Barrier rating at all, so a
+              // melee line doesn't gain a meaningless "Barrier 0".
+              base.bar ? " · " : null, base.bar ? statBit("Barrier", "bar") : null,
               ` · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
               + ((calcRow.Ammo ?? r.Ammo) ? ` · Mag ${calcRow.Ammo ?? r.Ammo}` : "")
               + (r.Hardening ? ` · Hardening ${r.Hardening}` : "")
@@ -1790,6 +1796,7 @@ function shOverview(body) {
         const stats = g.kind === "weapon" && w
           ? [`${w.Type || ""}`, weaponSkillDice(w.Weapon, w.Type, w.Accuracy),
              ` · Acc ${w.Accuracy || 0} · DMG ${w.Damage || "—"} · Pen ${w.Pen || 0}`
+             + barrierBit(w, w.Bar)
              + ` · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`]
           : ["Extra limb (free mount)"];
         tt.append(el("tr", {},
@@ -3006,7 +3013,8 @@ function shGear(body) {
       items: rows.map(r => ({ name: r.Weapon, cost: Math.round((+r.Cost || 0) * mult),
         sub: (r.Type === "Melee" ? `Reach ${r.Reach || 0}` : `Acc ${r.Accuracy || 0}`)
           + ` · DMG ${r.Type === "Melee" ? RULES.meleeDamage(r, CALC.attributes.Strength.final) : (r.Damage || "—")}`
-          + ` · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · wt ${r.Weight || 0}` })),
+          + ` · Pen ${r.Pen || 0}` + barrierBit(r, r.Bar)
+          + ` · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · wt ${r.Weight || 0}` })),
     }));
   const cyberguns = equippedCyberguns();
   if (CHAR.weapons.length || cyberguns.length) {
@@ -3025,7 +3033,7 @@ function shGear(body) {
           el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type, w.name)),
           shMountEditor(w, r, w.equipped !== false)),
         el("td", { class: "sub" },
-          `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
+          `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
           ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
         el("td", {}, el("input", { type: "checkbox", ...(w.equipped !== false ? { checked: 1 } : {}),
           onchange: async e => { w.equipped = e.target.checked; await playChangedRecalc(); } })),
@@ -5177,9 +5185,11 @@ function buildMarkdown() {
       const smart = (calcRow.smart ?? w.smart) ? " (smart)" : "";
       const isMelee = r.Type === "Melee";
       const ammo = calcRow.Ammo ?? r.Ammo;
+      const bar = String(calcRow.Bar ?? r.Bar ?? "");
       const stats = [`DMG ${calcRow.Damage ?? r.Damage ?? "—"}`,
                      isMelee ? `Reach ${r.Reach || 0}` : `Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}`,
                      `Pen ${r.Pen || 0}`,
+                     (bar || r.Type === "GrenadeLauncher") ? `Barrier ${bar || "—"}` : null,
                      `Conceal ${r.Conceal || 0}`,
                      (!isMelee && ammo) ? `Ammo ${ammo}` : null,
                      (!isMelee && r["Firing modes"]) ? r["Firing modes"] : null].filter(Boolean).join(" · ");

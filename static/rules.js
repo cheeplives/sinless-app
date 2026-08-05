@@ -1761,17 +1761,19 @@ function weaponFiringModes(row) {
 /* ---- ammunition --------------------------------------------------------------
  * Ammo effects are prose in the gear table ("Pen +1, Barrier +1", "+2 Acc, +3
  * Dmg, Pen = 1 Range = S"), so the numbers a weapon line can actually show --
- * Accuracy, Damage, Pen -- are parsed out and everything else is kept verbatim
- * as a note. Both orderings appear in the data, and Pen is sometimes SET rather
- * than adjusted ("Pen = 0" for Gel), which is not the same as an adjustment and
- * has to win over the weapon's own value. */
+ * Accuracy, Damage, Pen, Barrier -- are parsed out and everything else is kept
+ * verbatim as a note. Both orderings appear in the data, and Pen is sometimes
+ * SET rather than adjusted ("Pen = 0" for Gel), which is not the same as an
+ * adjustment and has to win over the weapon's own value. The data column is
+ * "Bar" but the prose says "Barrier", so both spellings map to the same key. */
 const AMMO_STAT_KEYS = {
   acc: "acc", accuracy: "acc",
   dmg: "damage", damage: "damage",
   pen: "pen", penetration: "pen",
+  bar: "bar", barrier: "bar",
 };
 function ammoStatMods(effectText) {
-  const out = { acc: 0, damage: 0, pen: 0, set: {}, notes: [] };
+  const out = { acc: 0, damage: 0, pen: 0, bar: 0, set: {}, notes: [] };
   const statOf = w => AMMO_STAT_KEYS[String(w || "").toLowerCase()];
   for (const rawPart of String(effectText || "").split(",")) {
     const part = rawPart.trim();
@@ -1814,7 +1816,7 @@ function applyAmmoStats(base, mods) {
     return `${parseInt(m[1], 10) + d}${m[2]}`;
   };
   return { acc: one("acc", base.acc), damage: one("damage", base.damage),
-           pen: one("pen", base.pen) };
+           pen: one("pen", base.pen), bar: one("bar", base.bar) };
 }
 
 /* ---- ammo compatibility -----------------------------------------------------
@@ -2192,7 +2194,7 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength) {
     totalWeight += asNumber(row.Weight) * qty;
     const item = {};
     for (const col of ["Type", "Weapon", "Accuracy", "Reach", "Damage", "Firing modes",
-                       "Ammo", "Pen", "Conceal", "Weight", "Hardening", "Notes"]) {
+                       "Ammo", "Pen", "Bar", "Conceal", "Weight", "Hardening", "Notes"]) {
       item[col] = row[col] !== undefined ? row[col] : "";
     }
     if (row.Type === "Melee" && meleeDamageIsComputable(row.Damage))

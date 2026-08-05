@@ -137,6 +137,7 @@ const HOMEBREW_CONFIG = {
     { key: "Firing modes", hint: "e.g. SS, BF, FA" },
     { key: "Ammo", hint: "magazine size" },
     { key: "Pen", hint: "armor penetration" },
+    { key: "Bar", hint: "Barrier rating 0-5 — blank if it doesn't apply" },
     { key: "Conceal", hint: "number" },
     { key: "Weight", hint: "number" },
     { key: "Hardening", hint: "number" },

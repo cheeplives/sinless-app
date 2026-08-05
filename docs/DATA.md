@@ -155,7 +155,7 @@ call graphs.
 | `vehicle_mods` | 6 | `Vehicle Mod` | Vehicle modifications | rules, app, sheet |
 | `vehicles` | 23 | `Vehicle` | Vehicles; `Body`, `Handling`, `Cargo` | rules, app, sheet |
 | `weapon_mods` | 18 | `Modification` | Weapon mods by `Slot` | rules, app, sheet, homebrew |
-| `weapons` | 106 | `Weapon` | Weapons by `Type`; `Accuracy`, `Damage`, `Pen` | rules, app, sheet, homebrew |
+| `weapons` | 106 | `Weapon` | Weapons by `Type`; `Accuracy`, `Damage`, `Pen`, `Bar` | rules, app, sheet, homebrew |
 
 16 of these are **homebrew-eligible** (users can add rows, and packs can be
 promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
@@ -187,6 +187,16 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
   cohort, and the sheet titles the panel *Statblock — <that name>* (`Bacchanal`,
   `Cisseis the Menad`, `Mound of Skulls`). `Miasma` and `Stormwing` have no
   statblock at all and say so in `Special`.
+- **`weapons`** — `Bar` is the **Barrier** rating, 0–5, for shooting through
+  cover. It is on every row so `promote_homebrew.base_columns()` (which reads
+  row 0 only) can't drop it, but a **blank means the stat doesn't apply** — melee
+  and thrown weapons other than grenades — and prints nothing rather than a
+  misleading `0`. Grenade launchers are blank too because they take Barrier from
+  the chambered grenade, the way they already take `Damage` and `Pen`; their line
+  shows an em dash until something is loaded. Ammo can adjust it: the prose says
+  *Barrier* (`AP` is `"Pen +1, Barrier +1"`) while the column says `Bar`, and
+  `AMMO_STAT_KEYS` in `rules.js` maps both spellings to the same key. Formatting
+  for every stat line goes through `barrierBit()` in `app.js`.
 - **`weapon_mods`** — `Laser Sight` and `Flashlight` each appear **twice**, once
   per `Slot` (Overbarrel / Underbarrel). Identity is really `Slot`+`Modification`,
   but `findRow(data.weapon_mods, "Modification", …)` (`rules.js:1659`) returns the

@@ -2025,6 +2025,18 @@ const WEAPON_TYPE_LABELS = {
   Rifle: "Rifles", Shotgun: "Shotguns", GrenadeLauncher: "Grenade Launchers",
   Heavy: "Heavy Weapons", Energy: "Energy Weapons",
 };
+/* Barrier ("Bar" in the data) is the 0-5 rating for shooting through cover.
+   A blank means the stat doesn't apply — melee, thrown and the weapons that
+   simply have no rating — so it prints nothing rather than a misleading 0.
+   Grenade launchers are the exception: they carry no rating of their own and
+   take the chambered grenade's, so they always show the stat, as an em dash
+   while empty. Returns a ready-to-concatenate " · Barrier N" or "". Shared
+   with sheet.js so the chargen and play stat lines agree. */
+function barrierBit(row, value) {
+  const v = value == null ? "" : String(value);
+  if (!v && (row || {}).Type !== "GrenadeLauncher") return "";
+  return ` · Barrier ${v || "—"}`;
+}
 function tabWeapons(p) {
   p.append(el("h2", {}, "Weapons ", chip("cash")));
   p.append(el("p", { class: "hint" },
@@ -2044,8 +2056,8 @@ function tabWeapons(p) {
           w => w.name === r.Requires && w.equipped !== false),
         reason: r.Requires ? `Requires an equipped ${r.Requires}.` : null,
         sub: (r.Type === "Melee"
-          ? `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Reach ${r.Reach || 0} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${RULES.meleeDamage(r, CALC.attributes.Strength.final)}`
-          : `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Acc ${r.Accuracy || 0} \u00b7 ${r["Firing modes"] || ""} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${r.Damage}`),
+          ? `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Reach ${r.Reach || 0} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${RULES.meleeDamage(r, CALC.attributes.Strength.final)}`
+          : `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Acc ${r.Accuracy || 0} \u00b7 ${r["Firing modes"] || ""} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${r.Damage}`),
       })),
     }));
   p.append(listEditor({
@@ -2074,7 +2086,7 @@ function tabWeapons(p) {
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" },
-            `${r.Type} \u00b7 Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}${calcRow.smartlink ? " (smart)" : ""} \u00b7 DMG ${calcRow.Damage ?? r.Damage} \u00b7 ${r["Firing modes"] || "melee"} \u00b7 Pen ${r.Pen || 0} \u00b7 Conceal ${r.Conceal || 0} \u00b7 ZR ${r.ZR || 0} \u00b7 Weight ${r.Weight || 0}`
+            `${r.Type} \u00b7 Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}${calcRow.smartlink ? " (smart)" : ""} \u00b7 DMG ${calcRow.Damage ?? r.Damage} \u00b7 ${r["Firing modes"] || "melee"} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 ZR ${r.ZR || 0} \u00b7 Weight ${r.Weight || 0}`
             + (isThrown ? ` \u00b7 \u00d7${it.qty || 1}` : "")),
           canMod ? fittedCategoryEditor({
             id: `wmods-${i}-${it.name}`,
@@ -2292,6 +2304,7 @@ function fittedEditor(it, weaponTables, guard) {
     const r = found.row;
     if (!found.isWeapon) return r.ModeEffect || r.Effect || "";
     return `Acc ${r.Accuracy || 0} \u00b7 DMG ${r.Damage || "\u2014"} \u00b7 Pen ${r.Pen || 0}`
+      + barrierBit(r, r.Bar)
       + (r.Ammo ? ` \u00b7 Ammo ${r.Ammo}` : "")
       + (r.ModeEffect ? ` \u00b7 ${r.ModeEffect}` : "");
   };

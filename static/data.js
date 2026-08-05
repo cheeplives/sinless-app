@@ -430,7 +430,7 @@ const DATA_BUNDLE ={
 {"Style":"Way of the Tank","Level":"3","Effect":"Complex Melee Strike ignores Armor"},
 {"Style":"Shibumi","Level":"3","Effect":"Ignore blindness/visual impairment. +2d to Soak"},
 {"Style":"Gun-Kata","Level":"4","Effect":"Treated as armed in melee. Can SS in melee."},
-{"Style":"Weirding Way","Level":"4","Effect":"+2d to Dodge (replace level 1)"},
+{"Style":"Weirding Way","Level":"4","Effect":"Gain additional +1d to dodge"},
 {"Style":"Way of the Tank","Level":"4","Effect":"EM Punch: +3/+6 dmg (organic/electronic). Take 6 stun (soakable)"},
 {"Style":"Shibumi","Level":"4","Effect":"+4d to Soak"},
 {"Style":"Gun-Kata","Level":"5","Effect":"Always High Cover (-2d)"},

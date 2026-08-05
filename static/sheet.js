@@ -151,6 +151,7 @@ function ensurePlay() {
   // repairs can log what they change. Both are guarded — each runs at most once.
   reconcileLifestyles();
   ensureKit();
+  ensureCreationBudget();
   return CHAR.play;
 }
 /* The hard line between chargen and play (JC-010, JC-024).
@@ -460,6 +461,23 @@ function ensureKit() {
   play.disposed = {}; play.fitted_mods = []; play.disposed_mods = [];
   play.unit_overrides = {};
   return play.kit;
+}
+
+/* What creation cost, priced from the chargen record — never from the kit, so
+ * it answers "what did this build cost" rather than "what is this character
+ * carrying". Taken at every Finalize, and once on load for a character
+ * finalized before the freeze existed. */
+function snapshotCreationBudget() {
+  const c = JSON.parse(JSON.stringify(CHAR));
+  c.finalized = false;
+  const b = RULES.calculate(c).budget;
+  return { starting_cash: b.starting_cash, categories: b.categories,
+           spent: b.spent, remaining: b.remaining };
+}
+function ensureCreationBudget() {
+  const play = CHAR.play;
+  if (play.creation_budget || !CHAR.finalized) return;
+  play.creation_budget = snapshotCreationBudget();
 }
 
 /* Re-finalize. The kit is play's, so an unrelated trip through chargen must not

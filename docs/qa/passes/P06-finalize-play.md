@@ -490,6 +490,40 @@ path by which play could reach into the creation record.
   idempotent, since `ensurePlay` runs on every load.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-023: The creation budget freezes at Finalize
+- **Type:** correctness
+- **Steps:** reload `kitchen-sink-final.json`.
+- **Check:**
+
+      (async () => { CHAR.finalized = true; ensurePlay(); CHAR.play.kit = kitFromChargen(); CHAR.play.creation_budget = snapshotCreationBudget(); await recalc(); const b = () => [CALC.budget.spent, CALC.budget.remaining]; const out = { atFinalize: b() }; CHAR.play.kit.weapons.splice(0, 1); await recalc(); out.afterSale = b(); const w = DATA.tables.weapons.find(x => (+x.Cost || 0) > 2000); CHAR.play.purchases.weapons.push({ name: w.Weapon, mods: [], equipped: true }); await recalc(); out.afterPurchase = b(); CHAR.play.kit.weapons[0].mods = ["Gyro-mount"]; await recalc(); out.afterMod = b(); CHAR.finalized = false; CHAR.weapons.push({ name: "Katana", mods: [], equipped: true }); await recalc(); out.chargenIsLive = b(); CHAR.finalized = true; await recalc(); out.stillFrozen = b(); CHAR.play.creation_budget = snapshotCreationBudget(); await recalc(); out.afterRefinalize = b(); return out; })()
+
+- **Expected:**
+
+      { "atFinalize":      [26098, 33902],
+        "afterSale":       [26098, 33902],
+        "afterPurchase":   [26098, 33902],
+        "afterMod":        [26098, 33902],
+        "chargenIsLive":   [27598, 32402],
+        "stillFrozen":     [26098, 33902],
+        "afterRefinalize": [27598, 32402] }
+
+- **Note:** A finalized character's budget line is a record of what the build
+  cost, not a running total of what they're carrying — selling a rifle at the
+  table shouldn't make creation look cheaper. It used to track the current kit
+  in both directions.
+
+  `chargenIsLive` is the half that keeps this honest: back in chargen the
+  figures must move again, or the creation budget has stopped working. And the
+  freeze is re-taken at every Finalize, not just the first, so a genuine edit to
+  the build is picked up (`afterRefinalize`).
+
+  Only the cash figures freeze. `gear_cost_multiplier` and
+  `armor_cost_multiplier` stay live — they come from heritage and price what
+  play buys today.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
 ## Wrapping up
 
 Every case should PASS. P06-001, P06-005, P06-009, P06-010 and P06-011 were all

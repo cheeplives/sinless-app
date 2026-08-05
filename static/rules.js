@@ -558,6 +558,15 @@ function defaultCharacter() {
       // Play's own copy of the description, so editing it at the table doesn't
       // rewrite the chargen record. null falls back to the chargen text.
       description: null,
+      // What creation cost, frozen at Finalize: { starting_cash, categories,
+      // spent, remaining }. A finalized character's budget line is a record of
+      // what the build cost, not a running total of what they are carrying —
+      // selling a rifle in play shouldn't make the creation budget look
+      // cheaper. Re-taken on every finalize, since the build may legitimately
+      // have changed. null on a character finalized before 2026-08-05;
+      // ensureCreationBudget() fills it once. The two cost multipliers are NOT
+      // frozen — they come from heritage and price what play buys today.
+      creation_budget: null,
       // What the chargen record looked like when `kit` was last synced, so a
       // re-finalize can tell "the player changed this in play" from "the owner
       // edited the build". Same rule as lifestyles: chargen wins, but only
@@ -3170,7 +3179,7 @@ function derivePoolNotes(heritage, augments, amp, martialArt) {
 /**
  * Parse the cumulative unlocked levels of a martial art for the effects that map
  * to a tracked numeric stat, so they can be applied (not just shown as text):
- *   - Dodge dice  (Weirding Way +1d→+2d)  — escalating tiers *replace*, take best
+ *   - Dodge dice  (Weirding Way +1d, +1d)  — tiers ADD
  *   - Soak dice   (Shibumi +1d→+6d)       — escalating tiers *replace*, take best
  *   - Movement    (Weirding Way +2m base)  — additive metres
  *   - Recoil      (Gun-Kata "Ignore Recoil") — flag
@@ -3191,8 +3200,13 @@ function martialArtStatMods(levels) {
       mods.cover.push({ ...coverGrant,
         source: `${lvl.Style || "Martial art"} L${lvl.Level}` });
     }
+    // Dodge tiers ADD. Weirding Way reads +1d at L1 and another +1d at L4, for
+    // +2d total. It used to say "+2d to Dodge (replace level 1)" and be taken as
+    // a max — same answer, but the data had to be written as a running total,
+    // which stops working the moment a third tier or a second dodge-granting
+    // style appears. Conditional dodge ("+4d vs 1 Tgt") stays flavour text.
     let m = eff.match(/([+-]?\d+)\s*d\b[^.]*?\bdodge\b/i);
-    if (m && !/\b(vs|if)\b/i.test(eff)) mods.dodge_bonus = Math.max(mods.dodge_bonus, toInt(m[1]));
+    if (m && !/\b(vs|if)\b/i.test(eff)) mods.dodge_bonus += toInt(m[1]);
     m = eff.match(/([+-]?\d+)\s*d\b[^.]*?\bsoak\b/i);
     if (m) mods.soak_bonus = Math.max(mods.soak_bonus, toInt(m[1]));
     m = eff.match(/([+-]?\d+)\s*m\b[^.]*?mov/i);
@@ -3819,6 +3833,22 @@ function calculate(character) {
   if (cashRemaining < 0) {
     errors.push(`Cash overspent by ㄓ${Math.round(-cashRemaining).toLocaleString("en-US")}.`);
   }
+  /* The creation budget is a record of what the BUILD cost. Live figures while
+   * a character is in chargen; frozen at the last Finalize once they're in
+   * play, so selling a rifle at the table doesn't make creation look cheaper.
+   * A pre-2026-08-05 character has no snapshot and reads live until
+   * ensureCreationBudget() takes one. */
+  const creationBudgetFigures = () => {
+    const frozen = finalized && (character.play || {}).creation_budget;
+    if (frozen && typeof frozen === "object") {
+      return { starting_cash: asNumber(frozen.starting_cash),
+               categories: frozen.categories || {},
+               spent: asNumber(frozen.spent),
+               remaining: asNumber(frozen.remaining) };
+    }
+    return { starting_cash: priorities.starting_cash, categories: cashCategories,
+             spent: cashSpent, remaining: cashRemaining };
+  };
   // In play the creation budget stops meaning anything — purchases are paid out
   // of play.cash, which the sheet lets you overdraw past a confirm. That, not
   // `cashRemaining`, is the balance that has to add up at the table.
@@ -3998,8 +4028,10 @@ function calculate(character) {
     vehicles: vehicles.vehicles,
     martial_art: martialArt,        // aggregate (combined styles) — combat consumers
     martial_arts: martialArtsList,  // per-style list — UI display / editing
-    budget: { starting_cash: priorities.starting_cash, categories: cashCategories,
-              spent: cashSpent, remaining: cashRemaining,
+    // Frozen at Finalize for a finalized character (see play.creation_budget) —
+    // what the build cost, not what the kit is worth today. The multipliers
+    // stay live: they price what play buys now.
+    budget: { ...creationBudgetFigures(),
               gear_cost_multiplier: gearCostMultiplier,
               armor_cost_multiplier: armorCostMultiplier },
     warnings: finalized ? playWarnings : warnings,

@@ -642,6 +642,9 @@ async function finalizeCharacter() {
   // Hand the build over to play. First finalize copies it; a re-finalize keeps
   // what play has and carries across only what actually changed in chargen.
   if (!CHAR.play.kit) ensureKit(); else reconcileKit();
+  // Freeze what the build cost. Re-taken every finalize, because a trip back
+  // through chargen may legitimately have changed it.
+  CHAR.play.creation_budget = snapshotCreationBudget();
   let rollNote = "";
   if (!CHAR.play.cash_rolled) {   // only on the first finalize, never re-rolled
     const dice = [0, 0, 0, 0].map(() => 1 + Math.floor(Math.random() * 6));

@@ -230,6 +230,33 @@ The currency glyph in error messages is `ㄓ` (U+3113). Copy it verbatim.
   all three sit on skills with no ranks, and each is now an error.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P01-017: Martial-art dodge tiers add; soak tiers take the best
+- **Type:** correctness
+- **Check:**
+
+      (() => { const build = (style, rank) => { const c = RULES.defaultCharacter(); c.name = "MA"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.martial_arts = [{ style, rank }]; return RULES.calculate(c).combat; }; return { weirdingDodge: [1, 3, 4, 6].map(r => build("Weirding Way", r).dodge_bonus), tankDodge: build("Way of the Tank", 5).dodge_bonus, shibumiSoak: build("Shibumi", 6).soak_bonus }; })()
+
+- **Expected:** `{ "weirdingDodge": [1, 1, 2, 2], "tankDodge": 0, "shibumiSoak": 6 }`
+- **Note:** Three different rules in one place, and they are deliberately not
+  the same.
+
+  **Dodge adds.** Weirding Way grants +1d at L1 and another +1d at L4, for +2d.
+  Until 2026-08-05 the L4 row read `"+2d to Dodge (replace level 1)"` and the
+  parser took the highest tier — same answer, but the data had to be written as
+  a running total, which breaks the moment a third tier or a second
+  dodge-granting style exists. The row now reads `"Gain additional +1d to
+  dodge"` and the parser sums. **Both halves had to change together:** the new
+  wording under the old max rule would have given +1d.
+
+  **Conditional dodge is flavour text.** Way of the Tank L2 is `"+4d to Dodge vs
+  1 Tgt"`, and the `vs`/`if` guard keeps it out of the flat bonus — `tankDodge`
+  must be `0`.
+
+  **Soak still takes the best.** Shibumi escalates 1→2→4→6 as a replacement
+  ladder, so a rank-6 character has +6d, not the +13d a sum would give. If
+  `shibumiSoak` comes back `13`, the soak line has been made additive too.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

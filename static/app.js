@@ -746,6 +746,28 @@ function carriedToggle(entry, onChange) {
     el("span", {}, "Carried"));
 }
 
+/* Minimum Strength selector for a bow — the one stat you choose when you buy
+ * one, and the one that sets its damage, price and rarity (RULES.bowRating).
+ * Returns null for anything that isn't a bow, so call sites can pass the result
+ * straight into el().
+ *
+ * The stepper stops at the character's own Strength: you can't draw a bow
+ * heavier than you are, so offering the choice would only be offering a
+ * mistake. A bow already rated above it — Strength dropped after the purchase,
+ * or the character was imported — keeps its rating rather than being quietly
+ * downgraded, and the engine warns instead. */
+function minStrControl(entry, row, onChange) {
+  const bow = RULES.bowRating(row, entry);
+  if (!bow) return null;
+  const strength = CALC.attributes.Strength.final;
+  const ceiling = Math.max(1, strength, bow.minStr);
+  return el("label", { class: "opt",
+      title: `Damage ${bow.damage} · ${fmt(bow.cost)} · Rarity ${bow.rarity}`
+        + (strength < bow.minStr ? ` — needs Strength ${bow.minStr}, this character has ${strength}` : "") },
+    el("span", { style: strength < bow.minStr ? "color:var(--bad)" : "" }, "Min STR "),
+    stepper(() => bow.minStr, v => { entry.min_str = v; onChange(); }, 1, ceiling));
+}
+
 function stepper(get, set, min = 0, max = 99) {
   const clamp = n => Math.max(min, Math.min(max, n));
   const sv = el("span", { class: "sv", title: "Click to type a value",
@@ -2104,7 +2126,12 @@ const WEAPON_TYPE_LABELS = {
   PistolMed: "Medium Pistols", PistolHvy: "Heavy Pistols", SMG: "SMGs",
   Rifle: "Rifles", Shotgun: "Shotguns", GrenadeLauncher: "Grenade Launchers",
   Heavy: "Heavy Weapons", Energy: "Energy Weapons",
+  Projectile: "Bows & Crossbows",
 };
+/* Weapon types with no mod slots: the weapon_mods table is barrels, silencers,
+   magazines and sights for firearms. Shared with sheet.js so the chargen and
+   play rows agree about which weapons show a mod strip. */
+const NO_WEAPON_MOD_TYPES = ["Melee", "Thrown", "GrenadeLauncher", "Heavy", "Energy", "Projectile"];
 /* Barrier ("Bar" in the data) is the 0-5 rating for shooting through cover.
    A blank means the stat doesn't apply — melee, thrown and the weapons that
    simply have no rating — so it prints nothing rather than a misleading 0.
@@ -2129,13 +2156,20 @@ function tabWeapons(p) {
     .map(([type, rows]) => ({
       label: WEAPON_TYPE_LABELS[type] || type,
       items: rows.map(r => ({
-        name: r.Weapon, cost: +r.Cost,
+        name: r.Weapon,
+        // A bow has no price of its own — it's priced per point of Minimum
+        // Strength, which is chosen on the row once it's bought.
+        cost: RULES.bowRating(r, {}) ? 0 : +r.Cost,
         // Some weapons require another weapon already equipped (e.g. the
         // Militech M31-a1G under-barrel launcher needs its host rifle).
         disabled: Boolean(r.Requires) && !CHAR.weapons.some(
           w => w.name === r.Requires && w.equipped !== false),
         reason: r.Requires ? `Requires an equipped ${r.Requires}.` : null,
-        sub: (r.Type === "Melee"
+        sub: (RULES.bowRating(r, {})
+          ? `${fmt(+r.StrCost)} per point of Min STR · Damage = Min STR +${r.StrDmg} · `
+            + `Rarity = Min STR ÷ 2 · ZR ${r.ZR || 0} · Acc ${r.Accuracy || 0} · `
+            + `Weight ${r.Weight || 0} · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0}`
+          : r.Type === "Melee"
           ? `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Reach ${r.Reach || 0} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${RULES.meleeDamage(r, CALC.attributes.Strength.final)}`
           : `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Acc ${r.Accuracy || 0} \u00b7 ${r["Firing modes"] || ""} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${r.Damage}`),
       })),
@@ -2145,8 +2179,13 @@ function tabWeapons(p) {
     picker: categoryBrowser({ id: "weapons", groups: weaponGroups,
       onAdd: n => {
         const r = DATA.tables.weapons.find(x => x.Weapon === n) || {};
-        CHAR.weapons.push({ name: n, smart: Boolean(r["Integrated Smart"]),
-          mods: [], equipped: true, qty: 1 });
+        const entry = { name: n, smart: Boolean(r["Integrated Smart"]),
+          mods: [], equipped: true, qty: 1 };
+        // A bow is rated to a draw weight. Default it to the heaviest this
+        // character can actually draw — that's the one they'd buy — and let the
+        // Min STR stepper on the row take it down if they want it cheaper.
+        if (RULES.bowRating(r, {})) entry.min_str = Math.max(1, CALC.attributes.Strength.final);
+        CHAR.weapons.push(entry);
       } }),
     onRemove: i => CHAR.weapons.splice(i, 1),
     render: (it, i, del) => {
@@ -2154,10 +2193,15 @@ function tabWeapons(p) {
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === it.name) || {};
       const isMelee = r.Type === "Melee";
       const isThrown = r.Type === "Thrown";
-      // Melee, Thrown, Grenade Launchers, Heavy and Energy weapons can't take mods.
-      const canMod = !["Melee", "Thrown", "GrenadeLauncher", "Heavy", "Energy"].includes(r.Type);
+      // Only firearms take the mod slots — the mod table is barrels, silencers
+      // and magazines. Melee, Thrown, Grenade Launchers, Heavy, Energy and
+      // Projectile (bows and crossbows) have nothing to fit them to.
+      const canMod = !NO_WEAPON_MOD_TYPES.includes(r.Type);
       // Stripped guns have their circuits removed — nothing left to smart-link.
-      const canSmart = !isMelee && !isThrown && !/\(Stripped\)$/.test(it.name);
+      // Smartlink needs a gun with circuitry to talk to: not a blade, not a
+      // thrown weapon, not a bow, and not one whose electronics were stripped.
+      const canSmart = !isMelee && !isThrown && r.Type !== "Projectile"
+        && !/\(Stripped\)$/.test(it.name);
       // Integrated-smart weapons are always Smart (no cost bump): keep the
       // saved flag in sync (covers characters made before the data flag) and
       // lock the checkbox on.
@@ -2201,6 +2245,7 @@ function tabWeapons(p) {
           isThrown ? el("label", { class: "opt" },
             el("span", {}, "Qty "),
             stepper(() => it.qty || 1, v => { it.qty = v; }, 1, 99)) : null,
+          minStrControl(it, r, refresh),
           canSmart ? el("label", { class: "opt" },
             el("input", { type: "checkbox", ...(it.smart ? { checked: 1 } : {}),
               ...(integratedSmart ? { disabled: 1 } : {}),

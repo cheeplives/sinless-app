@@ -265,12 +265,72 @@ actually testing.
 
 ---
 
+## Bows and crossbows
+
+### P02-014: A bow's damage, price and rarity all come from its Minimum Strength
+- **Type:** correctness
+- **Check:**
+
+      (() => { const mk = (name, minStr) => { const c = RULES.defaultCharacter(); c.priorities={heritage:1,magic:2,attributes:3,skills:0,resources:4}; c.heritage.type="Human"; c.lifestyles=[{name:"Squatter",months:1}]; c.attributes.Strength=10; c.weapons=[{name,smart:false,mods:[],equipped:true,qty:1,min_str:minStr}]; const w = RULES.calculate(c).weapons[0]; return { dmg: w.Damage, rarity: w.Rarity, cost: w.cost }; }; return { recurve4: mk("Self / Recurve bow", 4), recurve8: mk("Self / Recurve bow", 8), compound5: mk("Compound Bow", 5) }; })()
+
+- **Expected:**
+
+      { "recurve4":  { "dmg": "5", "rarity": "2", "cost": 600 },
+        "recurve8":  { "dmg": "9", "rarity": "4", "cost": 1200 },
+        "compound5": { "dmg": "7", "rarity": "2", "cost": 1500 } }
+
+- **Note:** Damage is Min STR + `StrDmg` (1 for a self/recurve, 2 for a
+  compound), cost is `StrCost` × Min STR (150 and 300), rarity is Min STR ÷ 2
+  rounded down. The character's own Strength is 10 throughout and changes none of
+  it — a bow's rating belongs to the bow, not the archer. The data rows carry
+  blank `Cost`, `Damage` and `Rarity` precisely so there is no second source for
+  these to disagree with.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P02-015: Projectile weapons roll Archery, and a bow too heavy to draw warns
+- **Type:** correctness
+- **Check:**
+
+      (() => { const c = RULES.defaultCharacter(); c.priorities={heritage:1,magic:2,attributes:3,skills:0,resources:4}; c.heritage.type="Human"; c.lifestyles=[{name:"Squatter",months:1}]; c.attributes.Strength=4; c.weapons=[{name:"Compound Bow",smart:false,mods:[],equipped:true,qty:1,min_str:9},{name:"Heavy Crossbow",smart:false,mods:[],equipped:true,qty:1}]; const k = RULES.calculate(c); return { skill: RULES.weaponSkillName("Compound Bow","Projectile"), crossbowDmg: k.weapons[1].Damage, crossbowCost: k.weapons[1].cost, warnings: k.warnings }; })()
+
+- **Expected:**
+
+      { "skill": "Archery", "crossbowDmg": "9", "crossbowCost": 1000,
+        "warnings": ["Compound Bow: needs Strength 9 to draw — this character has 4."] }
+
+- **Note:** `Archery` was in the skill list from the beginning but nothing rolled
+  it until the Projectile type existed. The crossbow is the control: it is a
+  fixed weapon and takes its damage and price straight from its row, so only
+  bows are STR-rated. The shortfall is a **warning**, not an error — Strength
+  moves in play — and it is play-relevant (JC-012), so it survives Finalize.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P02-016: Arrows and bullets never cross over
+- **Type:** correctness
+- **Check:**
+
+      (() => { const bow = DATA.tables.weapons.find(w => w.Weapon === "Compound Bow"); const rifle = DATA.tables.weapons.find(w => w.Type === "Rifle"); const g = n => DATA.tables.misc_gear.find(x => x.Item === n); const fits = (a, w) => RULES.ammoFitsWeapon(g(a), w); return { broadheadOnBow: fits("Broadhead", bow), broadheadOnRifle: fits("Broadhead", rifle), apOnBow: fits("AP", bow), apOnRifle: fits("AP", rifle) }; })()
+
+- **Expected:**
+
+      { "broadheadOnBow": true, "broadheadOnRifle": false,
+        "apOnBow": false, "apOnRifle": true }
+
+- **Note:** The split is symmetric and keyed on the ammo's `Class` rather than a
+  rule per round. It has to be: `ammoFitsWeapon` defaults **unlisted ammo to
+  "fits"**, so without the check every conventional round would chamber in a
+  crossbow. Note the projectile `Explosive Tip` is named that way because a
+  conventional `Explosive` round already exists and row identity is by name.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
 ## Wrapping up
 
 Every case should PASS. P02-002, P02-003, P02-005 and P02-007 used to be
 JUDGEMENT; JC-004, JC-005, JC-007 and JC-008 were all ruled on, and each of those
 cases is now a correctness case for the ruled behaviour, joined by the new
-P02-002b and P02-005b.
+P02-002b and P02-005b. P02-014 to P02-016 cover the Projectile weapon type.
 
 If P02-001 or P02-006 fails, the equipped/active filtering has broken and that is
 a real regression — the whole "leak" premise of this pass depends on those two

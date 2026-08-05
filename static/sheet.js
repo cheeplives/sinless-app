@@ -83,6 +83,7 @@ const WEAPON_SKILL_BY_TYPE = {
   GrenadeLauncher: "Heavy Weapons",
   Heavy: "Heavy Weapons",
   Energy: "Energy Weapons",
+  Projectile: "Archery",
 };
 /* The ±1 a skill's specialization contributes for one specific weapon. Thin
    wrapper so the Overview dice chip and the Gear tab roll hint agree. */
@@ -2974,6 +2975,22 @@ function shCarriedStepper(entry, onChange) {
     btn(1, "+", "Carry one more"));
 }
 
+/* A bow's Minimum Strength, shown on its row in play. Re-rating a bow in play
+ * is really re-buying it, so this is a read-out rather than a stepper: it says
+ * what the bow needs and goes red when the character can no longer draw it,
+ * which is exactly the case that appears mid-campaign when Strength drops.
+ * Returns null for anything that isn't a bow. */
+function shMinStrControl(entry, row) {
+  const bow = RULES.bowRating(row, entry);
+  if (!bow) return null;
+  const strength = CALC.attributes.Strength.final;
+  const short = strength < bow.minStr;
+  return el("span", { class: "sub", style: "margin-left:8px" + (short ? ";color:var(--bad)" : ""),
+    title: short ? `Needs Strength ${bow.minStr} to draw — this character has ${strength}`
+                 : `Rated to Strength ${bow.minStr}` },
+    `Min STR ${bow.minStr}${short ? " ⚠" : ""}`);
+}
+
 /* Plain Carried yes/no for a deck, drone or vehicle — the same flag misc gear
  * uses, minus the quantity. Only carried gear contributes Zoetic Rating. */
 function shCarriedToggle(entry) {
@@ -3167,11 +3184,20 @@ function shGear(body) {
     DATA.tables.weapons.reduce((acc, r) => (((acc[r.Type] ??= []).push(r)), acc), {}))
     .map(([type, rows]) => ({
       label: WEAPON_TYPE_LABELS[type] || type,
-      items: rows.map(r => ({ name: r.Weapon, cost: Math.round((+r.Cost || 0) * mult),
-        sub: (r.Type === "Melee" ? `Reach ${r.Reach || 0}` : `Acc ${r.Accuracy || 0}`)
-          + ` · DMG ${r.Type === "Melee" ? RULES.meleeDamage(r, CALC.attributes.Strength.final) : (r.Damage || "—")}`
-          + ` · Pen ${r.Pen || 0}` + barrierBit(r, r.Bar)
-          + ` · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · wt ${r.Weight || 0}` })),
+      // A bow is priced and rated by the Strength it takes to draw. Buying one
+      // in play rates it to this character's Strength — the heaviest they can
+      // actually use — and prices it accordingly, so the browser shows what
+      // this buyer would pay rather than a base cost the row doesn't have.
+      items: rows.map(r => {
+        const bow = RULES.bowRating(r, { min_str: CALC.attributes.Strength.final });
+        return { name: r.Weapon,
+          cost: Math.round((bow ? bow.cost : (+r.Cost || 0)) * mult),
+          sub: (r.Type === "Melee" ? `Reach ${r.Reach || 0}` : `Acc ${r.Accuracy || 0}`)
+            + ` · DMG ${r.Type === "Melee" ? RULES.meleeDamage(r, CALC.attributes.Strength.final)
+                       : bow ? `${bow.damage} (Min STR ${bow.minStr})` : (r.Damage || "—")}`
+            + ` · Pen ${r.Pen || 0}` + barrierBit(r, r.Bar)
+            + ` · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · wt ${r.Weight || 0}` };
+      }),
     }));
   const cyberguns = equippedCyberguns();
   const weaponEntries = ownedWeapons();
@@ -3181,7 +3207,7 @@ function shGear(body) {
       el("th", {}, "Equip"), el("th", {}, "")));
     weaponEntries.forEach(({ ref: w, arr, i: wi }) => {
       const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
-      const canMod = !["Melee", "Thrown", "GrenadeLauncher", "Heavy", "Energy"].includes(r.Type);
+      const canMod = !NO_WEAPON_MOD_TYPES.includes(r.Type);
       const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
       t.append(el("tr", {},
         el("td", {},
@@ -3195,8 +3221,10 @@ function shGear(body) {
         el("td", { class: "sub" },
           `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
           ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
-        el("td", {}, el("input", { type: "checkbox", ...(w.equipped !== false ? { checked: 1 } : {}),
-          onchange: async e => { w.equipped = e.target.checked; await playChangedRecalc(); } })),
+        el("td", {},
+          el("input", { type: "checkbox", ...(w.equipped !== false ? { checked: 1 } : {}),
+            onchange: async e => { w.equipped = e.target.checked; await playChangedRecalc(); } }),
+          shMinStrControl(w, r)),
         el("td", {}, el("button", { class: "row-del", title: "Sell / remove weapon",
           onclick: async () => {
             if (!confirm(`Remove ${w.name}?`)) return;
@@ -3456,11 +3484,15 @@ function shGear(body) {
     rerender: renderSheet, afterAdd: () => playChangedRecalc(),
     onAdd: name => {
       const r = DATA.tables.weapons.find(x => x.Weapon === name) || {};
-      const cost = Math.round((+r.Cost || 0) * mult);
+      const bow = RULES.bowRating(r, { min_str: CALC.attributes.Strength.final });
+      const cost = Math.round((bow ? bow.cost : (+r.Cost || 0)) * mult);
       if (!overdrawOK(name, cost)) return;
-      CHAR.play.purchases.weapons.push({ name, smart: Boolean(r["Integrated Smart"]),
-        mods: [], equipped: true, qty: 1 });
-      logCash(`Bought ${name}`, -cost, { kind: "weapon", name });
+      const entry = { name, smart: Boolean(r["Integrated Smart"]),
+        mods: [], equipped: true, qty: 1 };
+      if (bow) entry.min_str = bow.minStr;
+      CHAR.play.purchases.weapons.push(entry);
+      logCash(`Bought ${name}${bow ? ` (Min STR ${bow.minStr})` : ""}`, -cost,
+        { kind: "weapon", name });
     } }));
   buyBlock("Armor", categoryBrowser({ id: "sh-buy-armor", groups: armorBuyGroups,
     rerender: renderSheet, afterAdd: () => playChangedRecalc(),

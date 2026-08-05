@@ -1838,6 +1838,7 @@ const WEAPON_TYPE_SKILL = {
   Cybergun: "Firearms",
   Heavy: "Heavy Weapons", GrenadeLauncher: "Heavy Weapons",
   Energy: "Energy Weapons",
+  Projectile: "Archery",
   Natural: "Unarmed Combat",
 };
 
@@ -2020,9 +2021,19 @@ const AMMO_FITS = {
 function ammoIsMountOnly(item) {
   return Object.prototype.hasOwnProperty.call(UNIT_AMMO_FITS, String(item || ""));
 }
+/* Arrows and bolts are their own ammunition class, and the split is total in
+ * both directions: a bow takes nothing but projectile rounds, and no firearm
+ * takes an arrow. One symmetric test rather than a rule per round — the default
+ * for unlisted ammo is "fits", so without this every conventional round would
+ * chamber in a crossbow. */
+const PROJECTILE_AMMO_CLASS = "Ammo (Projectile)";
+const PROJECTILE_WEAPON_TYPE = "Projectile";
 function ammoFitsWeapon(ammoRow, weaponRow) {
   const item = String((ammoRow && ammoRow.Item) || "");
   if (ammoIsMountOnly(item)) return false;
+  const isProjectileRound = (ammoRow && ammoRow.Class) === PROJECTILE_AMMO_CLASS;
+  const isProjectileWeapon = (weaponRow && weaponRow.Type) === PROJECTILE_WEAPON_TYPE;
+  if (isProjectileRound !== isProjectileWeapon) return false;
   const rule = AMMO_FITS[item];
   return rule ? !!rule(weaponRow || {}) : true;
 }
@@ -2321,8 +2332,38 @@ function assignWeaponModSlots(modNames, modsTable) {
   return { assigned, overflow };
 }
 
+/* ---- bows --------------------------------------------------------------------
+ * A crossbow is a fixed weapon like any other. A bow isn't: it's built to a
+ * draw weight, and the Strength needed to draw it decides everything about it.
+ * That number is chosen when the bow is bought and lives on the character's
+ * entry as `min_str`, the way `smart` and `quality` do — it belongs to the item
+ * the character owns, not to the character. A Strength 18 archer with a
+ * minimum-4 bow still only gets what a minimum-4 bow does.
+ *
+ * Two data columns mark a row as STR-rated, both blank on everything else:
+ *   StrCost — price per point of Minimum Strength
+ *   StrDmg  — added to Minimum Strength for damage
+ * Rarity is Minimum Strength ÷ 2, rounded down, for every bow.
+ *
+ * Returns null for anything that isn't STR-rated, so callers can use it as the
+ * "is this a bow" test as well.
+ */
+const BOW_MIN_STR_FLOOR = 1;
+function bowRating(row, entry) {
+  const perPoint = asNumber((row || {}).StrCost);
+  if (!(perPoint > 0)) return null;
+  const minStr = Math.max(BOW_MIN_STR_FLOOR,
+    Math.min(ATTRIBUTE_LEVEL_MAX, toInt(asNumber((entry || {}).min_str, BOW_MIN_STR_FLOOR))));
+  return {
+    minStr,
+    cost: perPoint * minStr,
+    damage: minStr + toInt(asNumber(row.StrDmg)),
+    rarity: Math.floor(minStr / 2),
+  };
+}
+
 function priceWeapons(character, data, gearCostMultiplier, warnings, strength, errors,
-                      activeAugmentNames) {
+                      activeAugmentNames, playWarnings) {
   const priced = [];
   let totalCost = 0.0, totalWeight = 0.0;
   // Smartlink grants +1 Accuracy die to any smart-capable gun. It comes three
@@ -2338,7 +2379,11 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
     if (!row) continue;
     // Thrown weapons stack (buy several of the same); everything else is one.
     const qty = row.Type === "Thrown" ? Math.max(1, toInt(asNumber(entry.qty, 1))) : 1;
-    const baseCost = asNumber(row.Cost);
+    // A bow is rated by the Strength needed to draw it, chosen when it's bought
+    // and kept on the entry. That one number sets its damage, its price and how
+    // hard it is to find, so the data row carries none of the three.
+    const bow = bowRating(row, entry);
+    const baseCost = bow ? bow.cost : asNumber(row.Cost);
     // Integrated-smart weapons (data column "Integrated Smart") are always
     // smart at no extra cost; only opt-in smart pays the multiplier.
     const integratedSmart = Boolean(row["Integrated Smart"]);
@@ -2383,6 +2428,20 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
     }
     if (row.Type === "Melee" && meleeDamageIsComputable(row.Damage))
       item.Damage = meleeDamage(row, strength);
+    if (bow) {
+      item.Damage = String(bow.damage);
+      item.Rarity = String(bow.rarity);
+      item.min_str = bow.minStr;
+      // Drawing a bow you're not strong enough for isn't a creation mistake —
+      // Strength moves in play — so it warns rather than blocking, and the
+      // warning is play-relevant (JC-012): it describes what you're carrying.
+      if (strength < bow.minStr) {
+        const message = `${entry.name}: needs Strength ${bow.minStr} to draw — `
+          + `this character has ${strength}.`;
+        warnings.push(message);
+        if (playWarnings) playWarnings.push(message);
+      }
+    }
     item.smart = Boolean(entry.smart) || integratedSmart;
     // Accuracy: base + fitted-mod AccMod (Laser Sight / Red dot +1, Silencer −2)
     // + Smartlink (+1 on smart guns). Melee weapons carry no Accuracy value.
@@ -3529,7 +3588,7 @@ function calculate(character) {
   const activeAugmentNames = new Set(augments.rows.map(([row]) => row.Name));
   const weapons = priceWeapons(character, data,
     surchargeFor("weapon", gearCostMultiplier), warnings, finalAttributes.Strength, errors,
-    activeAugmentNames);
+    activeAugmentNames, playWarnings);
   const armor = priceArmor(character, data,
     surchargeFor("armor", gearCostMultiplier) * armorCostMultiplier, warnings);
   // What you have on right now stays worth flagging in play, so these three go
@@ -3840,7 +3899,7 @@ return {
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
-  meleeDamageIsComputable, assignWeaponModSlots,
+  meleeDamageIsComputable, assignWeaponModSlots, bowRating,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage, augmentTier, augmentStacks,

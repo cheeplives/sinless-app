@@ -225,6 +225,36 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
   cohort, and the sheet titles the panel *Statblock — <that name>* (`Bacchanal`,
   `Cisseis the Menad`, `Mound of Skulls`). `Miasma` and `Stormwing` have no
   statblock at all and say so in `Special`.
+- **`weapons`** — the `Type` column decides which skill a weapon rolls
+  (`WEAPON_TYPE_SKILL` in `rules.js`, mirrored by `WEAPON_SKILL_BY_TYPE` in
+  `sheet.js`; `WEAPON_NAME_SKILL` overrides it for the handful of rows that
+  don't follow their type). **`Projectile`** is bows and crossbows and rolls
+  **Archery**. Only firearm types take weapon mods and only firearm types can be
+  smart-linked — `NO_WEAPON_MOD_TYPES` in `app.js` is the list.
+- **`weapons` — STR-rated bows.** A crossbow is a fixed weapon like any other. A
+  bow is built to a draw weight, and the Strength needed to draw it decides
+  everything about it, so two columns mark a row as STR-rated (blank on every
+  other row):
+
+  | Column | Meaning |
+  |---|---|
+  | `StrCost` | price per point of Minimum Strength. Non-empty is what makes a row STR-rated |
+  | `StrDmg` | added to Minimum Strength for damage |
+
+  `Cost`, `Damage` and `Rarity` are left **blank** on those rows — all three are
+  derived. Rarity is Minimum Strength ÷ 2, rounded down, for every bow.
+
+  The Minimum Strength itself is chosen when the bow is bought and lives on the
+  character's weapon entry as `min_str`, the way `smart` and `quality` do: it
+  belongs to the item the character owns, not to the character. A Strength 18
+  archer holding a minimum-4 bow still only gets what a minimum-4 bow does.
+  `RULES.bowRating(row, entry)` resolves all of it and returns null for anything
+  that isn't STR-rated, so it doubles as the "is this a bow" test.
+- **`misc_gear` — `Ammo (Projectile)`** is arrows and bolts. The split from
+  conventional ammunition is total in both directions: a bow chambers nothing
+  else, and no firearm takes an arrow (`ammoFitsWeapon`). Note the class exists
+  because the names would otherwise collide — there is already a conventional
+  `Explosive` round, so the arrow is `Explosive Tip`.
 - **`weapons`** — `Bar` is the **Barrier** rating, 0–5, for shooting through
   cover. It is on every row so `promote_homebrew.base_columns()` (which reads
   row 0 only) can't drop it, but a **blank means the stat doesn't apply** — melee

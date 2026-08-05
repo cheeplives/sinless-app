@@ -133,6 +133,8 @@ const HOMEBREW_CONFIG = {
     { key: "Reach", hint: "Melee reach or “Ranged”" },
     { key: "Damage", hint: "e.g. 8; for Melee this is the base added to a share of Strength" },
     { key: "STR Mult", hint: "Melee only, share of Strength added — default 0.5, e.g. 1 for full STR" },
+    { key: "StrCost", hint: "Bows only — cost per point of Minimum Strength. Setting it makes the weapon STR-rated: leave Cost, Damage and Rarity blank" },
+    { key: "StrDmg", hint: "Bows only — added to Minimum Strength for damage" },
     { key: "Damage Bonus", hint: "Melee only, e.g. +2d6" },
     { key: "Firing modes", hint: "e.g. SS, BF, FA" },
     { key: "Ammo", hint: "magazine size" },

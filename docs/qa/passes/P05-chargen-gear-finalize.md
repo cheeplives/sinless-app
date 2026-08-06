@@ -190,6 +190,32 @@ lifestyle, which P05-008 fixes.
 
 ---
 
+### P05-013: Removing the last deck refunds the Hacking program rating
+- **Type:** leak
+- **Steps:** none — the Check builds its own character and clicks the real ✕.
+- **Check:**
+
+      (async () => { const setup = rating => { CHAR = RULES.defaultCharacter(); CHAR.name = "Hack refund"; CHAR.priorities = { heritage: 4, magic: 5, attributes: 2, skills: 3, resources: 1 }; CHAR.heritage.type = "Human"; CHAR.lifestyles = [{ name: "Squatter", months: 1 }]; CHAR.hacking_rating = rating; }; const cat = () => CALC.budget.categories["Decks and Programs"]; const kill = async re => { const row = [...document.querySelectorAll("#panel table tr")].find(r => re.test(r.textContent) && r.querySelector(".row-del")); if (!row) return "no row"; row.querySelector(".row-del").click(); await new Promise(r => setTimeout(r, 220)); await recalc(); return "ok"; }; const out = {}; setup(6); CHAR.decks = [{ name: "MasterDeck", mods: [] }]; activeTab = "decks"; await recalc(); renderTabs(); renderPanel(); out.before = { cat: cat(), rating: CHAR.hacking_rating }; await kill(/MasterDeck/); out.afterLastDeck = { cat: cat(), rating: CHAR.hacking_rating, cashLeft: CALC.budget.remaining }; setup(6); CHAR.decks = [{ name: "MasterDeck", mods: [] }, { name: "Shingo Activa", mods: [] }]; activeTab = "decks"; await recalc(); renderTabs(); renderPanel(); await kill(/MasterDeck/); out.stillOneDeck = { rating: CHAR.hacking_rating, decks: CHAR.decks.length }; return out; })()
+
+- **Expected:**
+
+      { "before":         { "cat": 44000, "rating": 6 },
+        "afterLastDeck":  { "cat": 0, "rating": 0, "cashLeft": 60000 },
+        "stillOneDeck":   { "rating": 6, "decks": 1 } }
+
+- **Note:** The rating is a separate ㄓ5,000/level line from the deck itself, so
+  losing the last deck used to leave it standing and still billed — a reported
+  ㄓ30,000 (6 levels) sitting in the Cost Breakdown under a hint that read "No
+  decks owned — no rating required".
+
+  `stillOneDeck` is the guard on the other side: removing one deck of two must
+  **not** touch the rating, because the remaining deck still needs it. Fitted
+  mods were never part of this — they live on the deck object and have always
+  gone with it, which is worth knowing when a report blames them.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
 ## Clean up
 
 ```js

@@ -2349,7 +2349,15 @@ function tabDecks(p) {
         sub: `MCP ${r.MCP} \u00b7 Hardening ${r.Hardening} \u00b7 Threads ${r.Threads} \u00b7 Core ${r.Core} \u00b7 ${r.Mods} mod slot(s) \u00b7 I/O ${r.IO}`,
       })),
     }], onAdd: n => CHAR.decks.push({ name: n, mods: [] }) }),
-    onRemove: i => CHAR.decks.splice(i, 1),
+    // Fitted mods live on the deck object, so they go with it. The Hacking
+    // program rating does not — it is a separate ㄓ5,000/level line, and losing
+    // your last deck used to leave it standing and still billed, under a hint
+    // reading "No decks owned — no rating required". A rating with nothing to
+    // run it on is dead cash, so the last deck out refunds it.
+    onRemove: i => {
+      CHAR.decks.splice(i, 1);
+      if (!CHAR.decks.length) CHAR.hacking_rating = 0;
+    },
     render: (it, i, del) => {
       const r = DATA.tables.decks.find(x => x.Name === it.name) || {};
       return el("tr", {},

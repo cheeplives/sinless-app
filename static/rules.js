@@ -227,7 +227,9 @@ const HOUSE_RULE_DEFS = [
   { id: "zr", label: "Zoetic Rating", default: "classic",
     options: [
       { value: "classic", label: "Classic",
-        help: "Per-augment ZR; cyber eyes/ears absorb 0.5, each cyberlimb 1.0." },
+        help: "Per-augment ZR; cyber eyes/ears absorb 0.5, each cyberlimb 1.0. "
+          + "Cyberarms and cyberlegs cost double — ㄓ75,000 chromed, ㄓ100,000 "
+          + "synthetic — to offset how much ZR they soak up." },
       { value: "houserule", label: "ZR Casting Penalty",
         help: "Gear/weapon ZR doesn't touch ZP — it's −1d per full point on casting rolls (Channeling/Conjuring/Sorcery). Cyber ZR reduces ZP directly (may go negative; Synthetics exempt). At ZP ≤ 0 only Rituals work." },
     ] },
@@ -1135,10 +1137,31 @@ function augmentQualityMultiplier(row, entry) {
     .find(q => q.Quality === entry.quality);
   return tier ? asNumber(tier.Multiplier, 1) : 1;
 }
+/* Classic ZR prices cyberlimbs at double. Under the Classic rule each limb
+ * absorbs 1.0 ZR, which makes chrome a bargain; doubling the price is the
+ * counterweight. The ZR Casting Penalty rule leaves limbs at list price.
+ *
+ * Applied to the base, so quality and α-grade scale from the doubled figure —
+ * a more expensive limb costs more to upgrade, which is the point. It covers
+ * the RC (remote-controllable) variants too: "all cyberlimbs cost double" with
+ * no exceptions, so the premium for remote control survives instead of
+ * collapsing into the base price. Keyed off `Type`, so a homebrew limb picks it
+ * up automatically.
+ *
+ *   Chromed   ㄓ37,500 → ㄓ75,000        Synthetic     ㄓ50,000  → ㄓ100,000
+ *   Chromed RC ㄓ75,000 → ㄓ150,000      Synthetic RC ㄓ100,000 → ㄓ200,000
+ */
+const CLASSIC_ZR_LIMB_COST_MULTIPLIER = 2;
+function classicZrLimbMultiplier(row) {
+  return (houseRule("zr") === "classic" && AUGMENT_LIMB_TYPES.has((row || {}).Type || ""))
+    ? CLASSIC_ZR_LIMB_COST_MULTIPLIER : 1;
+}
+
 function augmentEffCost(row, entry) {
   // Quality scales the base price first; α-grade then applies on top of the
   // quality-adjusted cost (issue #19).
-  const base = asNumber(row.Cost) * augmentQualityMultiplier(row, entry);
+  const base = asNumber(row.Cost) * augmentQualityMultiplier(row, entry)
+    * classicZrLimbMultiplier(row);
   // Doubles the cost, but the increase is at least 1000 so cheap augments
   // still pay a real premium for bleeding-edge grade.
   let cost = (entry && entry.alpha) ? base + Math.max(base, 1000) : base;

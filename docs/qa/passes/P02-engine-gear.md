@@ -373,6 +373,46 @@ actually testing.
   `ensurePlay()` and `restoreView()`, so it fires on essentially every load.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-019: Classic ZR doubles cyberlimb prices
+- **Type:** correctness
+- **Steps:** none — the Check builds a character per price it needs.
+- **Check:**
+
+      (() => { const price = (zr, name, entry = {}) => { const c = RULES.defaultCharacter(); c.house_rules = { ...c.house_rules, zr }; c.name = "Limb"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.augments = [{ name, count: 1, target: "", slotted: false, alpha: false, ...entry }]; return RULES.calculate(c).budget.categories["Augments"]; }; const pair = (n, e) => [price("classic", n, e), price("houserule", n, e)]; return { chromed: pair("Right Arm Replacement-Chromed"), synthetic: pair("Right Arm Replacement-Synthetic"), chromedRC: pair("Left Leg Replacement-Chromed, RC"), syntheticRC: pair("Left Leg Replacement-Synthetic, RC"), chromedAlpha: pair("Right Arm Replacement-Chromed", { alpha: true }), smartlink: pair("Smartlink"), wired: pair("Wired Reflexes 1"), omnikit: pair("Arm Omni-kit") }; })()
+
+- **Expected:** each pair is `[classic, houserule]`.
+
+      { "chromed":      [75000, 37500],
+        "synthetic":    [100000, 50000],
+        "chromedRC":    [150000, 75000],
+        "syntheticRC":  [200000, 100000],
+        "chromedAlpha": [150000, 75000],
+        "smartlink":    [2500, 2500],
+        "wired":        [60000, 60000],
+        "omnikit":      [150000, 150000] }
+
+- **Note:** Under Classic ZR each cyberlimb absorbs 1.0 ZR, which makes chrome a
+  bargain; doubling the price is the counterweight. The ZR Casting Penalty rule
+  leaves limbs at list price, which is what the second number in each pair is
+  for — **`smartlink` and `wired` are the controls**: if they move, the
+  multiplier has escaped past `AUGMENT_LIMB_TYPES` and is repricing every
+  augment.
+
+  `chromedAlpha` checks that α-grade scales from the *doubled* base
+  (75,000 + max(75,000, 1000) = 150,000), not from list price. The RC pairs
+  matter because ㄓ75,000 / ㄓ100,000 are the RC variants' own list prices —
+  double only the plain limbs and a remote-controllable arm ends up costing the
+  same as a plain one.
+
+  **`omnikit` is deliberately unchanged.** "Arm Omni-kit" is `Type: Cyberlimbs`,
+  not one of the four limb types, so it is not a limb replacement and does not
+  double. If that is wrong, the fix is its `Type`, not the rule.
+
+  No fixture owns a cyberlimb, so a two-engine sweep will report zero drift
+  through any change to this — see the note in [`../README.md`](../README.md).
+  This case is the coverage.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

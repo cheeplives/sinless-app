@@ -4174,7 +4174,9 @@ function shAugments(body) {
         }
         return {
           name: r.Name,
-          cost: Math.round((+r.Cost || 0)
+          // augmentEffCost, not the raw row: it carries the Classic-ZR
+          // cyberlimb doubling, so the quote matches what the engine prices.
+          cost: Math.round(RULES.augmentEffCost(r, {})
             * RULES.surchargeFor(r.Type === "Bioware" ? "bioware" : "cyberware", mult)),
           sub: `ZR ${r.ZR || 0} · BI ${r.BI || 0}${dmg !== "" ? " · DMG " + dmg : ""}`
             + (r.Rarity ? ` · Rarity ${r.Rarity}` : "")
@@ -4307,7 +4309,10 @@ async function buyAugment(name, mult) {
     if (guns >= arms) { alert(`Can't install another Cybergun: one per cyberarm (${guns}/${arms}).`); return; }
   }
   // Bioware is grown to fit and never carries the small-heritage surcharge.
-  const cost = Math.round(r.Cost
+  // Priced through augmentEffCost so a Classic-ZR cyberlimb is charged at the
+  // doubled rate the chargen budget uses -- reading r.Cost straight made
+  // limbs half price when bought in play.
+  const cost = Math.round(RULES.augmentEffCost(r, {})
     * RULES.surchargeFor(r.Type === "Bioware" ? "bioware" : "cyberware", mult));
   const z = CALC.zoetics;
   const newBI = z.body_index + (+r.BI || 0);

@@ -72,8 +72,7 @@ function rollDiceInText(text) {
     });
 }
 
-const HACKING_RATING_COST = 5000;    // per level; deck needs rating ≥ ½ MCP (min 1)
-const HACKING_RATING_MAX = 6;
+// Hacking programs are priced in the programs table now (Hacking N = 5,000 × N).
 const SPELL_FORCE_MAX = 6;           // spells are learned/advanced to Force 6 at most
 
 /* Weapon Type -> the skill you roll to use it (everything else is Firearms) */
@@ -151,7 +150,8 @@ function ensurePlay() {
   // repairs can log what they change. Both are guarded — each runs at most once.
   reconcileLifestyles();
   ensureKit();
-  ensureCreationBudget();
+  migrateHackingProgram();
+  ensureCreationBudget();     // after the migration, so the freeze prices it
   return CHAR.play;
 }
 /* The hard line between chargen and play (JC-010, JC-024).
@@ -340,12 +340,6 @@ const CASH_UNDO = {
     CHAR.play.decking.loaded = (CHAR.play.decking.loaded || []).filter(n => n !== u.name);
     return true;
   },
-  hacking_level: () => {
-    const p = CHAR.play.purchases;
-    if (!(p.hacking_levels > 0)) return false;
-    p.hacking_levels -= 1;
-    return true;
-  },
   weapon_mod:  u => removeFromSublist(ownedWeapons(), u.host, "mods", u.name),
   armor_extra: u => removeFromSublist(ownedArmor(), u.host, "extras", u.name),
   deck_mod:    u => removeFromSublist(ownedDecks(), u.host, "mods", u.name),
@@ -461,6 +455,37 @@ function ensureKit() {
   play.disposed = {}; play.fitted_mods = []; play.disposed_mods = [];
   play.unit_overrides = {};
   return play.kit;
+}
+
+/* Characters built before the Hacking program existed carry a `hacking_rating`
+ * scalar instead, plus any levels bought in play. Grant the equivalent program
+ * once and slot it into every deck they own.
+ *
+ * Cost-neutral by construction: they paid ㄓ5,000 per level and "Hacking N"
+ * costs ㄓ5,000 × N, so the budget doesn't move. The same copy goes in every
+ * deck because that is what a character-wide rating meant — one program, moved
+ * between decks as needed.
+ *
+ * Runs against the chargen record (which is what the old scalar priced) and
+ * against the kit, so the play sheet and the build agree. */
+function migrateHackingProgram() {
+  const play = CHAR.play;
+  const legacy = Math.max(0, Math.min(6,
+    (+CHAR.hacking_rating || 0) + (+(play.purchases || {}).hacking_levels || 0)));
+  if (!CHAR.hacking_rating && !((play.purchases || {}).hacking_levels)) return;
+  const program = legacy ? `Hacking ${legacy}` : "";
+  const grant = (programs, decks) => {
+    if (program && !programs.includes(program)) programs.push(program);
+    for (const d of decks) if (d && !d.hacking) d.hacking = program;
+  };
+  grant(CHAR.programs = CHAR.programs || [], CHAR.decks || []);
+  if (play.kit) grant(play.kit.programs = play.kit.programs || [], play.kit.decks || []);
+  CHAR.hacking_rating = 0;
+  if (play.purchases) play.purchases.hacking_levels = 0;
+  if (program && play.cash_log) {
+    logCash(`Hacking rating ${legacy} became ${program}, slotted into `
+      + `${(CHAR.decks || []).length || (play.kit ? (play.kit.decks || []).length : 0)} deck(s)`, 0);
+  }
 }
 
 /* What creation cost, priced from the chargen record — never from the kit, so
@@ -4759,37 +4784,40 @@ function shDecking(body) {
       } })));
   body.append(deckCard);
 
-  // --- hacking program: deck needs rating ≥ ½ MCP (round down, min 1)
-  const baseRating = CHAR.hacking_rating || 0;
-  const boughtLevels = CHAR.play.purchases.hacking_levels || 0;
-  const rating = baseRating + boughtLevels;
-  const required = active ? Math.max(1, Math.floor(+active.MCP / 2)) : 0;
-  const meets = !active || rating >= required;
-  const levelCost = Math.round(HACKING_RATING_COST * mult);
+  // --- hacking program: the deck's operating system, slotted per deck. Costs
+  // no thread and no I/O; a deck without one doesn't run at all.
+  const activeEntry = deckEntries.find(e => e.ref.name === (active && active.Name));
+  const required = active ? RULES.deckHackingRequired(active) : 0;
+  const slotted = activeEntry ? (activeEntry.ref.hacking || "") : "";
+  const ownedHacking = allPrograms().filter(RULES.isHackingProgram);
+  const rating = RULES.hackingProgramRating(slotted);
+  const meets = !active || (slotted && ownedHacking.includes(slotted) && rating >= required);
   const hackBox = el("div", { class: "sh-hackbox" },
     el("div", { class: "sh-card-head" },
       el("h4", { class: "sh-h4", style: "margin:0" }, "Hacking Program"),
       el("span", { class: "chip" + (meets ? " ok" : " neg") },
-        active ? `rating ${rating} / required ${required}` : `rating ${rating}`)),
+        !active ? "no active deck"
+          : !slotted ? "none slotted"
+          : `${slotted} / required ${required}`)),
     el("p", { class: "hint" },
-      "The loaded Hacking program must be rated at least ½ the active deck's MCP (round down, min 1)"
+      "A deck runs on the Hacking program slotted into it — buy one below and pick it "
+      + "here. It must be rated at least ½ the deck's MCP (round down, min 1)"
       + (active ? ` — min ${required} for ${active.Name} (MCP ${active.MCP})` : "")
-      + `, plus any levels bought on top. Each level costs ${fmt(levelCost)} (max ${HACKING_RATING_MAX}).`),
-    statLine("Program rating", String(rating)
-      + (boughtLevels ? ` (${baseRating} at chargen + ${boughtLevels} in play)` : "")),
-    el("div", { class: "add-row" },
-      el("button", {
-        class: "btn-add", disabled: rating >= HACKING_RATING_MAX ? "1" : null,
-        onclick: async () => {
-          if (CHAR.play.cash < levelCost
-              && !confirm(`A rating level costs ${fmt(levelCost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`))
-            return;
-          CHAR.play.purchases.hacking_levels = boughtLevels + 1;
-          logCash(`Hacking program rating ${rating} → ${rating + 1}`, -levelCost,
-            { kind: "hacking_level" });
-          await playChangedRecalc();
-        },
-      }, rating >= HACKING_RATING_MAX ? "At max (6)" : `Buy +1 rating (${fmt(levelCost)})`)));
+      + ". It uses no thread and no I/O, and moves between decks freely."),
+    activeEntry
+      ? el("div", { class: "add-row" },
+          el("span", { class: "sub" }, "Slotted "),
+          (() => {
+            const sel = el("select", { onchange: async e => {
+              activeEntry.ref.hacking = e.target.value; await playChangedRecalc(); } },
+              el("option", { value: "" },
+                ownedHacking.length ? "— no Hacking program —" : "— none owned —"),
+              ...ownedHacking.map(n => el("option", { value: n },
+                `${n}${RULES.hackingProgramRating(n) < required ? " (under ½ MCP)" : ""}`)));
+            sel.value = slotted;
+            return sel;
+          })())
+      : el("p", { class: "hint" }, "Set a deck active to slot its Hacking program."));
 
   const threads = active ? +active.Threads : 0;
   const progCard = el("div", { class: "card sh-card" },
@@ -4841,7 +4869,11 @@ function shDecking(body) {
   const progByType = {};
   DATA.tables.programs.forEach(pr =>
     (progByType[pr.Attack || "Program"] ??= []).push(pr));
-  const progGroups = Object.entries(progByType).sort(([a], [b]) => a.localeCompare(b))
+  // Hacking leads the list — it's what makes a deck run, not a tool run on it.
+  const progGroups = Object.entries(progByType)
+    .sort(([a], [b]) => (a === RULES.HACKING_PROGRAM_CATEGORY ? -1 : 0)
+                      - (b === RULES.HACKING_PROGRAM_CATEGORY ? -1 : 0)
+                      || a.localeCompare(b))
     .map(([label, rows]) => ({
       label,
       items: rows.map(pr => ({
@@ -5897,10 +5929,9 @@ function buildMarkdown() {
   if (mdDecks.length || mdPrograms.length) {
     L.push("## Decking");
     L.push("");
-    mdDecks.forEach(d => L.push(`- Deck: **${d.name}**${(d.mods || []).length ? ` (${d.mods.join(", ")})` : ""}`));
+    mdDecks.forEach(d => L.push(`- Deck: **${d.name}**${(d.mods || []).length ? ` (${d.mods.join(", ")})` : ""}`
+      + (d.hacking ? ` — running ${d.hacking}` : " — **no Hacking program slotted**")));
     if (mdPrograms.length) L.push("- Programs: " + mdPrograms.join(" · "));
-    const hackingRating = (CHAR.hacking_rating || 0) + (play.purchases.hacking_levels || 0);
-    if (hackingRating) L.push(`- Hacking program rating: ${hackingRating}`);
     L.push("");
   }
   if (mdRigs.length || mdDrones.length || mdVehicles.length) {

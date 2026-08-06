@@ -372,6 +372,22 @@ function isEWProgram(name) {
  * simply on whenever the deck is. The Decking tab's Load button and the gear-ZR
  * rule both key off this, so they can't disagree about what "loaded" means. */
 const PROGRAM_NO_THREAD_IO = new Set(["N/A", "No"]);
+/* The Hacking family is "Hacking N", rated by the trailing number, the same
+ * convention Acid Burn and the other rated families use. Its own category in
+ * the programs table keeps it out of the Attack/Control/Utility browsers — it
+ * isn't a tool you run, it's what makes the deck run. */
+const HACKING_PROGRAM_CATEGORY = "Hacking";
+const HACKING_PROGRAM_RE = /^Hacking\s+(\d+)$/i;
+function isHackingProgram(name) { return HACKING_PROGRAM_RE.test(String(name || "").trim()); }
+function hackingProgramRating(name) {
+  const m = HACKING_PROGRAM_RE.exec(String(name || "").trim());
+  return m ? toInt(m[1]) : 0;
+}
+/* What a deck needs to run properly: ½ MCP, rounded down, minimum 1. */
+function deckHackingRequired(deckRow) {
+  return Math.max(1, Math.floor(toInt(asNumber((deckRow || {}).MCP)) / 2));
+}
+
 function programNeedsThread(row) {
   return !PROGRAM_NO_THREAD_IO.has(String((row || {})["I/O"] || "").trim());
 }
@@ -493,6 +509,8 @@ function defaultCharacter() {
     armor: [],
     decks: [],
     programs: [],
+    // Legacy: replaced by a Hacking program slotted into each deck. Read once
+    // by migrateHackingProgram() in sheet.js, then cleared.
     hacking_rating: 0,
     rigs: [],
     drones: [],
@@ -595,7 +613,7 @@ function defaultCharacter() {
         rigs: [],
         drones: [],
         vehicles: [],
-        hacking_levels: 0,
+        hacking_levels: 0,   // legacy, folded into the granted Hacking program
       },
       decking: { active_deck: "", loaded: [] },
       rigging: { active_rig: "", units: {} },
@@ -2686,11 +2704,30 @@ function priceArmor(character, data, gearCostMultiplier, warnings) {
  * (cargo left over, Body ÷ 3 weapons, drone loaded weight) stays advisory and
  * pushes a warning for the GM to adjudicate. */
 function priceDecking(character, data, gearCostMultiplier, warnings, errors) {
-  const hackingRating = Math.max(0, toInt(asNumber(character.hacking_rating)));
+  // A deck runs on a Hacking program slotted into it — its operating system,
+  // not a tool loaded on top, so it costs no thread and no I/O. The program is
+  // owned like any other and named by `deck.hacking`, which lets a character
+  // with Hacking 2 and Hacking 4 put the right one in the right deck. No
+  // program slotted means the deck does not run at all (an error); one rated
+  // under ½ MCP runs badly (a warning), the same split JC-003 draws everywhere.
+  const owned = new Set(character.programs || []);
   let deckCost = 0.0;
   for (const entry of character.decks) {
     const row = findRow(data.decks, "Name", entry.name);
     if (!row) continue;
+    const requiredHacking = deckHackingRequired(row);
+    const slotted = entry.hacking || "";
+    const slottedRating = hackingProgramRating(slotted);
+    if (!slotted) {
+      errors.push(`${entry.name}: no Hacking program slotted — the deck will not `
+                  + `run. It needs one rated ${requiredHacking} or better.`);
+    } else if (!owned.has(slotted)) {
+      errors.push(`${entry.name}: the slotted ${slotted} isn't owned — `
+                  + "buy it or slot a Hacking program you have.");
+    } else if (slottedRating < requiredHacking) {
+      warnings.push(`${entry.name}: ${slotted} is under ½ MCP — needs rating `
+                    + `${requiredHacking} for MCP ${row.MCP}.`);
+    }
     let cost = asNumber(row.Cost);
     const slotCapacity = toInt(asNumber(row.Mods));
     let slotsUsed = 0;
@@ -2705,21 +2742,15 @@ function priceDecking(character, data, gearCostMultiplier, warnings, errors) {
       errors.push(`${entry.name}: deck mod slots exceeded `
                   + `(${slotsUsed}/${slotCapacity}).`);
     }
-    const requiredHacking = Math.max(1, Math.floor(toInt(asNumber(row.MCP)) / 2));
-    if (hackingRating < requiredHacking) {
-      warnings.push(
-        `${entry.name}: needs a Hacking program rating of `
-        + `${requiredHacking} (½ MCP) — currently ${hackingRating}.`);
-    }
     deckCost += round2(cost * gearCostMultiplier);
   }
 
+  // Hacking programs are ordinary programs now, so they are priced with the
+  // rest — no separate per-level line.
   const programCost = round2(sumBy(character.programs, name =>
     asNumber((findRow(data.programs, "Name", name) || {}).Cost)) * gearCostMultiplier);
-  const hackingCost = round2(hackingRating * HACKING_RATING_COST * gearCostMultiplier);
 
-  return { cost: deckCost + programCost + hackingCost,
-           hacking_rating: hackingRating, hacking_cost: hackingCost };
+  return { cost: deckCost + programCost };
 }
 
 /**
@@ -3530,8 +3561,6 @@ function applyPlayAdvances(character) {
   character.vehicles.push(...(purchases.vehicles || []));
   character.magic.amp_powers.push(...(purchases.amp_powers || []));
   character.magic.spells.push(...(purchases.spells || []));
-  character.hacking_rating = Math.min(HACKING_RATING_MAX,
-    toInt(asNumber(character.hacking_rating)) + advance(purchases.hacking_levels));
   for (const [name, plus] of Object.entries(play.spell_force_advances || {})) {
     for (const spell of character.magic.spells) {
       if (spell.name === name) {
@@ -4057,6 +4086,7 @@ return {
   ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_FITS,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
+  HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
   SPEAKER_BOND_MAX, speakerBondCount,
   KIT_CATEGORIES, applyPlayAdvances,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,

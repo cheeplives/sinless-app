@@ -111,6 +111,34 @@ Not declared anywhere in code, but consistent across tables:
 | `Mount Types` / `Mount ZP` | armor, misc_gear, weapons | mount compatibility (added by `tools/add_mount_columns.py`) — see below |
 | `Description` | 5 tables | long-form flavour/rules text |
 
+### Rated program families, and Hacking
+
+Ten program families are rated by a trailing number in the **name**, not a
+separate column — `Acid Burn 1` … `Acid Burn 6`, `De-rez`, `Decoy`,
+`Electric Strike` and the rest. Cost is the base × the rating. There is no
+rating field to parse: the number in the name *is* the rating.
+
+`Hacking 1` … `Hacking 6` (ㄓ5,000 × rating) follow that convention but are a
+category of their own in the `Attack` column — value `"Hacking"`, alongside
+`Attack` / `Control` / `Util` — so they group separately in both buy browsers.
+A Hacking program is a deck's **operating system**:
+
+- A deck names the one slotted into it in `deck.hacking`. **No program slotted
+  is an error** — the deck doesn't run at all. One rated under ½ the deck's MCP
+  (round down, min 1) is a **warning**: it runs badly. That split is JC-003's.
+- `I/O: N/A`, so it costs no thread and no I/O. It is what makes the deck run,
+  not a tool run on top of it.
+- It moves between decks freely, and a character can own several ratings and
+  match each to the deck that needs it. Nothing stops one copy being named by
+  two decks — the reading is that you carry one chip and swap it.
+
+`rules.js` exposes `isHackingProgram`, `hackingProgramRating` and
+`deckHackingRequired`; the family is matched by `/^Hacking\s+(\d+)$/i`, so a
+homebrew program called "Hacking 7" would be picked up as rating 7.
+
+Before 2026-08-05 this was `character.hacking_rating`, a character-wide scalar
+priced per level and attached to no deck.
+
 ### Gear mounts
 
 A row with a non-empty `Mount Types` can host augments (`Power Armor`, `Arwin

@@ -2337,6 +2337,32 @@ function tabWeapons(p) {
   }));
 }
 
+/* Which Hacking program is slotted into this deck — its operating system.
+ * Lists only the ones the character owns, so buy the program first, then slot
+ * it; a character with Hacking 2 and Hacking 4 can put the right one in each
+ * deck. Shared by chargen and the play sheet so both read the same. */
+function hackingSlotSelect(deck, deckRow, onChange) {
+  const owned = (CHAR.programs || []).filter(RULES.isHackingProgram)
+    .sort((a, b) => RULES.hackingProgramRating(a) - RULES.hackingProgramRating(b));
+  const required = RULES.deckHackingRequired(deckRow);
+  const slotted = deck.hacking || "";
+  const rating = RULES.hackingProgramRating(slotted);
+  const state = !slotted ? "bad" : (!owned.includes(slotted) ? "bad"
+    : (rating < required ? "warn" : "ok"));
+  const sel = el("select", {
+    title: `This deck needs a Hacking program rated ${required} (½ MCP ${deckRow.MCP || 0})`,
+    onchange: e => { deck.hacking = e.target.value; onChange(); } },
+    el("option", { value: "" }, owned.length ? "— no Hacking program —" : "— none owned —"),
+    ...owned.map(n => el("option", { value: n },
+      `${n}${RULES.hackingProgramRating(n) < required ? " (under ½ MCP)" : ""}`)));
+  sel.value = slotted;
+  const note = state === "ok" ? null
+    : el("span", { class: "sub", style: "color:var(--bad)" },
+        state === "warn" ? ` needs ${required}` : " deck won't run");
+  return el("div", { class: "sub", style: "margin-top:4px" },
+    el("b", {}, "Hacking program "), sel, note);
+}
+
 /* ------------------------------------------------ 8. decks & programs */
 function tabDecks(p) {
   p.append(el("h2", {}, "Decks ", chip("cash")));
@@ -2349,15 +2375,11 @@ function tabDecks(p) {
         sub: `MCP ${r.MCP} \u00b7 Hardening ${r.Hardening} \u00b7 Threads ${r.Threads} \u00b7 Core ${r.Core} \u00b7 ${r.Mods} mod slot(s) \u00b7 I/O ${r.IO}`,
       })),
     }], onAdd: n => CHAR.decks.push({ name: n, mods: [] }) }),
-    // Fitted mods live on the deck object, so they go with it. The Hacking
-    // program rating does not — it is a separate ㄓ5,000/level line, and losing
-    // your last deck used to leave it standing and still billed, under a hint
-    // reading "No decks owned — no rating required". A rating with nothing to
-    // run it on is dead cash, so the last deck out refunds it.
-    onRemove: i => {
-      CHAR.decks.splice(i, 1);
-      if (!CHAR.decks.length) CHAR.hacking_rating = 0;
-    },
+    // Fitted mods and the slotted Hacking program name live on the deck object,
+    // so they go with it. The program itself is owned separately and stays —
+    // it's a chip you can put in another deck, and it appears in the Programs
+    // list below where it can be sold like anything else.
+    onRemove: i => CHAR.decks.splice(i, 1),
     render: (it, i, del) => {
       const r = DATA.tables.decks.find(x => x.Name === it.name) || {};
       return el("tr", {},
@@ -2373,41 +2395,41 @@ function tabDecks(p) {
             effectOf: name =>
               (DATA.tables.deck_mods.find(m => m["Deck Mod"] === name) || {}).Effect || "",
           }),
+          hackingSlotSelect(it, r, refresh),
           carriedToggle(it, refresh)),
         el("td", { class: "num" }, fmt(r.Cost)),
         el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
     },
   }));
 
-  // Hacking program rating \u2014 required at \u00bd MCP, \u31135,000/level
+  // What each owned deck needs, and whether its slotted program covers it. The
+  // program itself is bought below with the rest, and slotted on the deck row.
   const hackCard = el("div", { class: "card", style: "max-width:640px" });
-  hackCard.append(el("h3", {}, "Hacking Program \u2014 \u3113" + (5000).toLocaleString() + " per rating level"));
+  hackCard.append(el("h3", {}, "Hacking Programs"));
   hackCard.append(el("p", { class: "hint" },
-    "A deck needs a Hacking program rated at least \u00bd its MCP (round down, min 1). "
-    + "Effective Hacking skill = \u00bd MCP, max 6."));
-  const reqLines = el("div");
-  const renderReqs = () => {
-    reqLines.innerHTML = "";
-    for (const d of CHAR.decks) {
-      const r = DATA.tables.decks.find(x => x.Name === d.name);
-      if (!r) continue;
-      const req = Math.max(1, Math.floor(+r.MCP / 2));
-      const ok = (CHAR.hacking_rating || 0) >= req;
-      reqLines.append(el("div", { class: "stat-line" },
-        `${d.name} (MCP ${r.MCP}) requires rating ${req}`,
-        el("b", { style: ok ? "color:var(--ok)" : "color:var(--bad)" }, ok ? "OK" : "short")));
-    }
-    if (!CHAR.decks.length)
-      reqLines.append(el("p", { class: "hint" }, "No decks owned \u2014 no rating required."));
-  };
-  renderReqs();
-  hackCard.append(el("div", { class: "stat-line" }, "Hacking program rating ",
-    stepper(() => CHAR.hacking_rating || 0,
-      v => { CHAR.hacking_rating = v; renderReqs(); }, 0, 6)), reqLines);
+    "A deck runs on a Hacking program slotted into it \u2014 buy one below, then pick it "
+    + "on the deck. It must be rated at least \u00bd the deck's MCP (round down, min 1); "
+    + "without one the deck doesn't run at all. It costs no thread and no I/O, and can "
+    + "be moved between decks. Effective Hacking skill = \u00bd MCP, max 6."));
+  for (const d of CHAR.decks) {
+    const r = DATA.tables.decks.find(x => x.Name === d.name);
+    if (!r) continue;
+    const req = RULES.deckHackingRequired(r);
+    const rating = RULES.hackingProgramRating(d.hacking);
+    const owned = (CHAR.programs || []).includes(d.hacking);
+    const ok = d.hacking && owned && rating >= req;
+    hackCard.append(el("div", { class: "stat-line" },
+      `${d.name} (MCP ${r.MCP}) requires rating ${req}`,
+      el("b", { style: ok ? "color:var(--ok)" : "color:var(--bad)" },
+        !d.hacking ? "none slotted" : !owned ? "not owned" : ok ? d.hacking : `${d.hacking} \u2014 short`)));
+  }
+  if (!CHAR.decks.length)
+    hackCard.append(el("p", { class: "hint" }, "No decks owned \u2014 none required."));
   p.append(hackCard);
 
   p.append(el("h2", {}, "Programs"));
-  const progGroups = ["Attack", "Control", "Util"].map(cls => ({
+  // Hacking leads: it's what makes a deck run, not one more tool to run on it.
+  const progGroups = [RULES.HACKING_PROGRAM_CATEGORY, "Attack", "Control", "Util"].map(cls => ({
     label: cls === "Util" ? "Utility" : cls,
     items: DATA.tables.programs.filter(r => (r.Attack || "Util") === cls).map(r => ({
       name: r.Name, cost: +r.Cost,

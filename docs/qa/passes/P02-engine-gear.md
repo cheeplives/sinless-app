@@ -323,6 +323,56 @@ actually testing.
   conventional `Explosive` round already exists and row identity is by name.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-017: A deck runs on the Hacking program slotted into it
+- **Type:** correctness
+- **Steps:** none — the Check builds its own characters.
+- **Check:**
+
+      (() => { const mk = () => { const c = RULES.defaultCharacter(); c.name = "Decker"; c.priorities = { heritage: 4, magic: 5, attributes: 2, skills: 3, resources: 1 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; return c; }; const run = c => { const k = RULES.calculate(c); return { cat: k.budget.categories["Decks and Programs"], err: k.errors.filter(e => /Hacking/i.test(e)), warn: k.warnings.filter(w => /Hacking/i.test(w)) }; }; const out = {}; let c = mk(); c.decks = [{ name: "MasterDeck", mods: [] }]; out.none = run(c); c = mk(); c.decks = [{ name: "MasterDeck", mods: [], hacking: "Hacking 4" }]; out.notOwned = run(c); c = mk(); c.decks = [{ name: "Semi Point Razor", mods: [], hacking: "Hacking 2" }]; c.programs = ["Hacking 2"]; out.under = run(c); c = mk(); c.decks = [{ name: "Semi Point Razor", mods: [], hacking: "Hacking 3" }]; c.programs = ["Hacking 3"]; out.ok = run(c); c = mk(); c.decks = [{ name: "MasterDeck", mods: [], hacking: "Hacking 2" }, { name: "Semi Point Razor", mods: [], hacking: "Hacking 4" }]; c.programs = ["Hacking 2", "Hacking 4"]; out.matched = run(c); return out; })()
+
+- **Expected:**
+
+      { "none":     { "cat": 14000,  "err": ["MasterDeck: no Hacking program slotted — the deck will not run. It needs one rated 1 or better."], "warn": [] },
+        "notOwned": { "cat": 14000,  "err": ["MasterDeck: the slotted Hacking 4 isn't owned — buy it or slot a Hacking program you have."], "warn": [] },
+        "under":    { "cat": 135000, "err": [], "warn": ["Semi Point Razor: Hacking 2 is under ½ MCP — needs rating 3 for MCP 6."] },
+        "ok":       { "cat": 140000, "err": [], "warn": [] },
+        "matched":  { "cat": 169000, "err": [], "warn": [] } }
+
+- **Note:** `matched` is the point of the whole model — one character owning
+  Hacking 2 and Hacking 4 with each slotted into the deck that needs it. Before
+  2026-08-05 the rating was a character-wide scalar (`character.hacking_rating`)
+  at ㄓ5,000/level that no deck could be matched to, and losing your last deck
+  left it billed with nothing to run on.
+
+  The error/warning split follows JC-003: **no program at all** is binding — the
+  deck does not run, so it is an error — while **under ½ MCP** is degraded
+  performance and stays a warning. Hacking programs cost no thread and no I/O
+  (`I/O: N/A`); they are the deck's operating system, not a tool run on top,
+  which is why `cat` for `ok` is just the deck plus ㄓ15,000 for Hacking 3.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P02-018: A pre-2026-08-05 hacking rating migrates cost-neutrally
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (async () => { CHAR = RULES.defaultCharacter(); CHAR.name = "Legacy decker"; CHAR.priorities = { heritage: 4, magic: 5, attributes: 2, skills: 3, resources: 1 }; CHAR.heritage.type = "Human"; CHAR.lifestyles = [{ name: "Squatter", months: 1 }]; CHAR.decks = [{ name: "MasterDeck", mods: [] }, { name: "Shingo Activa", mods: [] }]; CHAR.hacking_rating = 6; await recalc(); migrateHackingProgram(); await recalc(); const first = JSON.stringify({ p: CHAR.programs, d: CHAR.decks }); migrateHackingProgram(); migrateHackingProgram(); return { programs: CHAR.programs, decks: CHAR.decks.map(d => `${d.name}→${d.hacking}`), rating: CHAR.hacking_rating, spent: CALC.budget.spent, errors: CALC.errors.filter(e => /Hacking/i.test(e)), stable: JSON.stringify({ p: CHAR.programs, d: CHAR.decks }) === first }; })()
+
+- **Expected:**
+
+      { "programs": ["Hacking 6"],
+        "decks": ["MasterDeck→Hacking 6", "Shingo Activa→Hacking 6"],
+        "rating": 0, "spent": 114000, "errors": [], "stable": true }
+
+- **Note:** Cost-neutral by construction — the character paid ㄓ5,000 × 6 for
+  the old scalar and "Hacking 6" costs ㄓ30,000, so `spent` matches what the
+  pre-change engine returned for the same character to the woolong. The one
+  copy is slotted into **both** decks, because that is what a character-wide
+  rating meant; the model allows it, on the reading that you carry one chip and
+  move it. `stable` guards idempotence — the migration runs from both
+  `ensurePlay()` and `restoreView()`, so it fires on essentially every load.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

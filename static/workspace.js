@@ -66,6 +66,9 @@ function restoreView(tab) {
   activeTab = v.activeTab || "priorities";
   sheetTab = v.sheetTab || "overview";
   expandedPool = v.expandedPool || null;
+  // One-shot upgrades that must run for chargen characters too, which never
+  // reach ensurePlay(). Both are guarded and idempotent.
+  if (typeof migrateHackingProgram === "function") migrateHackingProgram();
 }
 
 function activeTabObj() { return WORKSPACE.tabs[WORKSPACE.active] || null; }

@@ -189,6 +189,72 @@ Load a fixture into chargen with this, substituting the filename:
 
 ---
 
+## Amps, rituals and the currency rule
+
+Three subsystems that had no coverage at all until 2026-08-05 — no fixture owns
+an Amp power or a ritual skill, and the `woolongs` currency rule was untested
+anywhere in the suite.
+
+### P04-012: Amp powers cost half their listed ZP
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (() => { const mk = names => { const c = RULES.defaultCharacter(); c.name = "Amp probe"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.priorities = { magic: 4, attributes: 3, skills: 2, resources: 1, heritage: 0 }; c.heritage.type = "Human"; c.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: names.map(n => ({ name: n, target: "", times: 1 })), archmage_bind: false }; const k = RULES.calculate(c); return { spent: k.zoetics.amp_zp_spent, remaining: k.zoetics.zp_remaining, offline: k.zoetics.amp_offline, errors: k.errors }; }; return { budget: RULES.calculate(Object.assign(RULES.defaultCharacter(), { priorities: { magic: 4, attributes: 3, skills: 2, resources: 1, heritage: 0 } })).zoetics.zp, none: mk([]), two: mk(["Astral Resistance", "Attribute Boost"]), four: mk(["Adrenaline Boost", "Aspect of the Chelonian", "Astral Resistance", "Attribute Boost"]) }; })()
+
+- **Expected:**
+
+      { "budget": 6,
+        "none": { "spent": 0,   "remaining": 6,   "offline": false, "errors": [] },
+        "two":  { "spent": 1.5, "remaining": 4.5, "offline": false, "errors": [] },
+        "four": { "spent": 5.5, "remaining": 0.5, "offline": false, "errors": [] } }
+
+- **Note:** The halving is the point. Astral Resistance (ZP 2) and Attribute
+  Boost (ZP 1) list at 3 between them and cost **1.5**; the four-power set lists
+  at 11 and costs **5.5**. If `two` reads `3`, the discount has been lost and
+  every Amp in play just got half as powerful.
+
+  `offline` stays false throughout — a magic type only goes offline when ZP
+  actually runs out, which 11 listed points does not manage against a budget
+  of 6.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P04-013: Ritual skills are accepted and carry no creation cost
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (() => { const c = RULES.defaultCharacter(); c.name = "Ritual probe"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.priorities = { magic: 4, attributes: 3, skills: 2, resources: 1, heritage: 0 }; c.heritage.type = "Human"; c.ritual_skills = { "Raise Ward": 3, "Break Ward": 1 }; const k = RULES.calculate(c); const known = (DATA.tables.rituals || []).map(r => r.Name); return { stored: k.ritual_skills, errors: k.errors, warnings: k.warnings, bothAreRealRituals: ["Raise Ward", "Break Ward"].every(n => known.includes(n)) }; })()
+
+- **Expected:** `stored` echoes `{ "Raise Ward": 3, "Break Ward": 1 }`,
+  `errors` and `warnings` are `[]`, and `bothAreRealRituals` is `true`.
+- **Note:** Ritual skills are keyed by name against the `rituals` table and are
+  advanced in play through `play.ritual_advances`, which P08 checks is
+  persisted. This case is the chargen half — mostly a guard that the map
+  survives `calculate` intact, since a rename in the `rituals` table would
+  silently orphan every stored ritual. `bothAreRealRituals` is what catches
+  that.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P04-014: The currency house rule renames money everywhere
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (() => { const name = cur => { const c = RULES.defaultCharacter(); c.house_rules = { ...c.house_rules, currency: cur }; RULES.calculate(c); return RULES.currencyName(); }; return { zuzus: name("zuzus"), woolongs: name("woolongs"), backAgain: name("zuzus") }; })()
+
+- **Expected:** `{ "zuzus": "Zuzus", "woolongs": "Woolongs", "backAgain": "Zuzus" }`
+- **Note:** The only house rule with no coverage before 2026-08-05. It is
+  cosmetic but wide — `currencyName()` feeds every cash label in both UIs, the
+  Activity ledger and the markdown export.
+
+  `backAgain` is the real assertion: `activeHouseRules` is module-level state
+  set by whichever `calculate` ran last, so this case also proves the rule
+  follows the character rather than sticking globally after one is opened.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
 ## Wrapping up
 
 Expected JUDGEMENT: **P04-008**. P04-004 was ruled on (JC-020) and is now a

@@ -1,0 +1,254 @@
+{
+  "name": "QA Rigger",
+  "player": "QA",
+  "description": "Drone jockey on the ZR Casting Penalty rule. Advanced VCR, three linked units.",
+  "notes": "",
+  "house_rules": {
+    "zr": "houserule",
+    "priorities": "classic",
+    "currency": "zuzus",
+    "ew": "classic",
+    "engineering": "classic"
+  },
+  "priorities": {
+    "attributes": 4,
+    "skills": 3,
+    "resources": 2,
+    "heritage": 1,
+    "magic": 0
+  },
+  "heritage": {
+    "type": "Human",
+    "uplift_type": "",
+    "features": [],
+    "blessing_plus3": "",
+    "blessing_plus1": "",
+    "specialization_pool": "",
+    "heavy_torso_mounts": [
+      "",
+      ""
+    ],
+    "no_head_mount": "",
+    "snake_attack": "bite"
+  },
+  "attributes": {
+    "Strength": 3,
+    "Body": 4,
+    "Reaction": 6,
+    "Intelligence": 5,
+    "Willpower": 3,
+    "Charisma": 2
+  },
+  "cha_pool_choice": "Brawn",
+  "skills": {
+    "Drive": 4,
+    "Gunnery": 4,
+    "Unarmed Combat": 4,
+    "Athletics": 2,
+    "Firearms": 2
+  },
+  "skill_specializations": {},
+  "ritual_skills": {},
+  "knowledge_skills": [],
+  "etiquettes": {
+    "Street": 2
+  },
+  "martial_arts": [
+    {
+      "style": "Weirding Way",
+      "rank": 4
+    }
+  ],
+  "magic": {
+    "chosen_type": "Amp",
+    "school": "",
+    "spells": [],
+    "amp_powers": [],
+    "archmage_bind": false
+  },
+  "speaker": {
+    "relationships": [],
+    "bonds": 0,
+    "infusions": []
+  },
+  "augments": [
+    {
+      "name": "Datajack",
+      "count": 1,
+      "target": "",
+      "slotted": false,
+      "alpha": false
+    }
+  ],
+  "weapons": [
+    {
+      "name": "Federated Arms 454 DA \"Super Chief\"",
+      "mods": [
+        "Laser Sight"
+      ],
+      "equipped": true
+    }
+  ],
+  "armor": [
+    {
+      "name": "Armor Jacket",
+      "style": "",
+      "material": "",
+      "extras": [],
+      "active": true
+    }
+  ],
+  "decks": [],
+  "programs": [],
+  "hacking_rating": 0,
+  "rigs": [
+    {
+      "name": "Advanced VCR",
+      "mods": [
+        "Input Validation",
+        "Bonus Link"
+      ]
+    }
+  ],
+  "drones": [
+    {
+      "name": "Roto-Drone",
+      "label": "Kestrel",
+      "weapons": [
+        "Underbarrel mounted grenade launcher (40mm)"
+      ],
+      "mods": [
+        {
+          "name": "Extended Magazine",
+          "weapon": 0
+        },
+        {
+          "name": "Armor"
+        }
+      ],
+      "condition": "Pristine"
+    },
+    {
+      "name": "Orb",
+      "label": "Peeper",
+      "weapons": [],
+      "mods": [
+        {
+          "name": "Hardening"
+        }
+      ],
+      "condition": "Pristine"
+    }
+  ],
+  "vehicles": [
+    {
+      "name": "Battle Cycle",
+      "label": "",
+      "weapons": [],
+      "mods": [
+        {
+          "name": "Armor"
+        }
+      ],
+      "condition": "Pristine"
+    }
+  ],
+  "gear": [
+    {
+      "name": "Trauma Kit",
+      "qty": 1
+    }
+  ],
+  "lifestyle": {
+    "name": "",
+    "months": 0
+  },
+  "lifestyles": [
+    {
+      "name": "Squatter",
+      "months": 2
+    }
+  ],
+  "finalized": true,
+  "play": {
+    "cash": 1700,
+    "cash_rolled": true,
+    "starting_cash": 1700,
+    "cash_log": [
+      {
+        "label": "Starting cash roll 4d6×100: [5, 4, 3, 5]",
+        "delta": 1700
+      }
+    ],
+    "lifestyles": [
+      {
+        "name": "Squatter",
+        "months": 2,
+        "active": true
+      }
+    ],
+    "lifestyles_seeded": true,
+    "lifestyles_baseline": {
+      "Squatter": 2
+    },
+    "lifestyles_reconciled": true,
+    "kismet": 1,
+    "kismet_earned": 1,
+    "kismet_log": [],
+    "boons_spent": 0,
+    "major_boons_spent": 0,
+    "physical_damage": 0,
+    "stun_damage": 0,
+    "initiative": 0,
+    "dodge_dice": 0,
+    "replicant_lifespan_months": null,
+    "pool_used": {},
+    "effects": [],
+    "modifiers": [],
+    "notes": "",
+    "attribute_advances": {},
+    "skill_advances": {},
+    "martial_art_advances": {},
+    "ritual_advances": {},
+    "zp_advances": 0,
+    "spell_force_advances": {},
+    "purchases": {
+      "gear": [],
+      "augments": [],
+      "amp_powers": [],
+      "spells": [],
+      "weapons": [],
+      "armor": [],
+      "decks": [],
+      "programs": [],
+      "rigs": [],
+      "drones": [],
+      "vehicles": [],
+      "hacking_levels": 0
+    },
+    "decking": {
+      "active_deck": "",
+      "loaded": []
+    },
+    "rigging": {
+      "active_rig": "Advanced VCR",
+      "units": {
+        "drones:0": {
+          "inertia": 0,
+          "physical": 2,
+          "integrity": 0
+        }
+      },
+      "linked": {
+        "drones:0": true,
+        "vehicles:0": true
+      }
+    },
+    "pool_boost": {},
+    "pool_kismet": {},
+    "images": [],
+    "infusion_spirits": {},
+    "bond_slots": [],
+    "ghost_rating": 2
+  }
+}

@@ -413,6 +413,56 @@ actually testing.
   This case is the coverage.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-020: Armor material, style and extras combine additively, not multiplicatively
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (() => { const mk = a => { const c = RULES.defaultCharacter(); c.name = "Armor probe"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.priorities = { attributes: 4, skills: 3, resources: 2, heritage: 1, magic: 0 }; c.heritage.type = "Human"; c.armor = [{ name: "Armored Coat", style: "", material: "", extras: [], active: true, ...a }]; return RULES.calculate(c).budget.categories["Weapons/Armor"]; }; return { plain: mk({}), cheap: mk({ material: "Cheap" }), good: mk({ material: "Good" }), business: mk({ style: "Business wear" }), polylog: mk({ extras: ["PolyLog Material"] }), stacked: mk({ material: "Good", style: "Business wear", extras: ["PolyLog Material"] }) }; })()
+
+- **Expected:**
+
+      { "plain": 1800, "cheap": 1350, "good": 2700,
+        "business": 5400, "polylog": 5400, "stacked": 9900 }
+
+- **Note:** Armored Coat is ㄓ1,800 and is one of the few `Style: Y` rows, which
+  is what makes styles and extras available at all — most armor is `Style: N`
+  and ignores them.
+
+  Each modifier alone behaves as its table multiplier: Cheap ×0.75, Good ×1.5,
+  Business wear ×3, PolyLog ×3. **Stacked, they do not multiply.** ×1.5 × ×3 ×
+  ×3 would be ㄓ24,300; the engine gives ㄓ9,900, which is
+  `1 + (0.5 + 2 + 2) = 5.5×`. Every modifier contributes its excess over 1 and
+  the excesses are summed.
+
+  That is the whole reason this case exists — multiplicative is the natural
+  assumption, and a `9900 → 24300` reading means someone "fixed" it.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P02-021: The heritage surcharge applies to four categories, not all nine
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (() => { const cats = ["gear","weapon","armor","cyberware","bioware","deck","rig","vehicle","drone"]; const at = m => Object.fromEntries(cats.map(k => [k, RULES.surchargeFor(k, m)])); return { atOne: at(1), atOneAndAHalf: at(1.5) }; })()
+
+- **Expected:**
+
+      { "atOne":          { "gear":1, "weapon":1, "armor":1, "cyberware":1, "bioware":1,
+                            "deck":1, "rig":1, "vehicle":1, "drone":1 },
+        "atOneAndAHalf":  { "gear":1, "weapon":1.5, "armor":1.5, "cyberware":1.5, "bioware":1,
+                            "deck":1, "rig":1, "vehicle":1.5, "drone":1 } }
+
+- **Note:** Small heritages pay a gear-cost multiplier, but it does **not** hit
+  everything. Only **weapons, armor, cyberware and vehicles** are surcharged —
+  things sized to a body. Gear, bioware (grown to fit), decks, rigs and drones
+  pay face value.
+
+  `surchargeFor` is the single definition, and both UIs price their buy screens
+  through it. The `atOne` row is the control: with no surcharge every category
+  must read exactly 1, or a multiplier is leaking in from somewhere else.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

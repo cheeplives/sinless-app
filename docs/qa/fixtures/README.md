@@ -1,6 +1,6 @@
 # Fixtures
 
-Eight canonical characters the pass docs load instead of building state by hand.
+Nine canonical characters the pass docs load instead of building state by hand.
 Each is a complete character in the app's own save format. Load one per
 [`P00 §4`](../passes/P00-setup.md).
 
@@ -21,8 +21,34 @@ play sheet chooses to show.
 | `synthetic-augmented.json` | Synthetic carrying **both** Bone Lacing tiers at once | **1** / 0 — invalid since JC-008 |
 | `speaker-spirits.json` | Speaker, 2 relationships, 2 bond slots | 0 / 0 |
 | `decker-two-decks.json` | **Finalized.** Two decks, a Hacking program matched to each, one equipped | 0 / 0 |
+| `rigger-drones.json` | **Finalized.** VCR + 2 drones + a vehicle, martial art, **`zr: houserule`** | 0 / 0 |
 | `kitchen-sink-final.json` | **Finalized.** Every chargen tab populated, play state in use | 0 / 0 |
 | `hostile-payloads.json` | **Finalized.** Inert XSS probes in every renderable string | 0 / 0 |
+
+### `rigger-drones.json` — what it's for
+
+Added 2026-08-05 alongside a coverage audit that found **six subsystems with no
+fixture at all**: rigs, drones, vehicles, martial arts, ritual skills and Amp
+powers. This one closes four of them, and is the **only fixture that isn't
+`zr: classic`** — it runs the ZR Casting Penalty rule, so a two-engine sweep
+finally has a second economy to diff against.
+
+| | |
+|---|---|
+| Rig | Advanced VCR + Input Validation + Bonus Link (2 of 2 mod slots) |
+| Effective rig stats | Bonus 4d, Hardening 2, **Links 3** (2 base + Bonus Link), Double core |
+| Drones | Roto-Drone "Kestrel" — grenade launcher, Extended Magazine bound to weapon 0, Armor; Orb "Peeper" — Hardening |
+| Vehicle | Battle Cycle + Armor |
+| Linked in play | both the Roto-Drone and the Battle Cycle; the Roto-Drone carries 2 physical damage |
+| Martial art | **Weirding Way 4** → dodge **+2** — the escalating-tier parser |
+| Rigging exploit actions | **2** — `Advanced VCR (Double core)` |
+| ZR | gear ZR 2, and ZP **5.8** — the house rule docking cyber ZR from ZP |
+| Budget | 204,650 spent of 250,000 (Resources 2) |
+
+Weirding Way is deliberate rather than flavourful: rank 4 is the tier that
+*replaces* rank 1's bonus, so `dodge_bonus` of 2 is the one number that catches
+the martial-art stat parser being switched between max and sum. It was switched
+in both directions on the day this fixture was written, with nothing to catch it.
 
 ### `decker-two-decks.json` — what it's for
 

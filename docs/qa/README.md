@@ -78,10 +78,16 @@ written to give identical results either way.
 
 ## Fixtures
 
-Seven canonical characters in [`fixtures/`](fixtures/), described in
+Eight canonical characters in [`fixtures/`](fixtures/), described in
 [`fixtures/README.md`](fixtures/README.md) along with the error/warning profile
 each one should produce. Load them through the app's own code path — never by
 writing localStorage directly.
+
+**A two-engine sweep is only as good as its fixtures.** `decker-two-decks.json`
+was added on 2026-08-05 after three separate changes to the decking rules all
+reported "zero drift across all seven fixtures" — true, and meaningless, because
+not one of them owned a deck. When you change a subsystem, check that some
+fixture actually exercises it before trusting a clean diff.
 
 `hostile-payloads.json` contains inert XSS probes. It is safe to load and is
 meant to be loaded, but do not publish or share it.

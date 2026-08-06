@@ -2402,6 +2402,8 @@ function tabDecks(p) {
     },
   }));
 
+  p.append(activeDeckSelect());
+
   // What each owned deck needs, and whether its slotted program covers it. The
   // program itself is bought below with the rest, and slotted on the deck row.
   const hackCard = el("div", { class: "card", style: "max-width:640px" });
@@ -2534,20 +2536,55 @@ function vehicleConditionSelect(it, onChange) {
  * bought in chargen silently counted for nothing. Writes the same
  * play.rigging.active_rig the play sheet uses; with nothing chosen the engine
  * falls back to the first owned rig, which is what this select shows. */
-function activeRigSelect() {
-  if (!CHAR.rigs.length) return null;
-  const rigging = ((CHAR.play ??= {}).rigging ??= { active_rig: "", units: {} });
-  const owned = CHAR.rigs.map(r => r.name);
-  const current = owned.includes(rigging.active_rig) ? rigging.active_rig : owned[0];
-  const sel = el("select", { onchange: e => { rigging.active_rig = e.target.value; refresh(); } },
-    ...owned.map(name => el("option", { value: name }, name)));
+/* Equipped deck / rig. A character can own and carry any number, but exactly
+ * one of each is jacked in at a time — only that one contributes its Zoetic
+ * Rating and its Decking/Rigging exploit actions. Exclusivity is structural:
+ * the choice is a single name, so there is no way to mark two.
+ *
+ * The default (first owned) is written through rather than merely displayed,
+ * so the record says which one is equipped instead of leaving the engine to
+ * infer it from list order. */
+function equippedSelect({ owned, get, set, title, hint, carriedOf }) {
+  if (!owned.length) return null;
+  const names = owned.map(o => o.name);
+  const current = names.includes(get()) ? get() : names[0];
+  if (get() !== current) set(current);          // persist the implied default
+  const sel = el("select", { onchange: e => { set(e.target.value); refresh(); } },
+    ...owned.map(o => el("option", { value: o.name },
+      o.name + (carriedOf && carriedOf(o) === false ? " (not carried)" : ""))));
   sel.value = current;
+  const entry = owned.find(o => o.name === current);
+  const notCarried = carriedOf && entry && carriedOf(entry) === false;
   return el("div", { class: "card", style: "max-width:520px" },
-    el("h3", {}, "Active rig"),
-    el("p", { class: "hint" },
-      "The rig you're jacked into. Only this one contributes its Zoetic Rating "
-      + "and rigging exploit actions; the rest are just owned."),
-    sel);
+    el("h3", {}, title),
+    el("p", { class: "hint" }, hint),
+    sel,
+    notCarried ? el("p", { class: "hint", style: "color:var(--bad)" },
+      "This one isn't marked carried — you can't be jacked into gear you left at home.") : null);
+}
+
+function activeRigSelect() {
+  const rigging = ((CHAR.play ??= {}).rigging ??= { active_rig: "", units: {} });
+  return equippedSelect({
+    owned: CHAR.rigs,
+    get: () => rigging.active_rig, set: v => { rigging.active_rig = v; },
+    title: "Equipped rig",
+    hint: "The rig you're jacked into. Only this one contributes its Zoetic Rating "
+      + "and rigging exploit actions; the rest are just owned.",
+  });
+}
+
+function activeDeckSelect() {
+  const decking = ((CHAR.play ??= {}).decking ??= { active_deck: "", loaded: [] });
+  return equippedSelect({
+    owned: CHAR.decks,
+    get: () => decking.active_deck, set: v => { decking.active_deck = v; },
+    title: "Equipped deck",
+    hint: "The deck you're running. Only this one contributes its Zoetic Rating and "
+      + "its Decking exploit actions, and only its threads are available; the rest "
+      + "are just owned. Carry as many as you like — one runs at a time.",
+    carriedOf: d => d.carried,
+  });
 }
 
 function tabDrones(p) {

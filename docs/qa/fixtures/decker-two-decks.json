@@ -1,0 +1,220 @@
+{
+  "name": "QA Decker",
+  "player": "QA",
+  "description": "Console cowboy. Two decks, a Hacking program matched to each, one equipped.",
+  "notes": "",
+  "house_rules": {
+    "zr": "classic",
+    "priorities": "classic",
+    "currency": "zuzus",
+    "ew": "classic",
+    "engineering": "classic"
+  },
+  "priorities": {
+    "resources": 3,
+    "skills": 0,
+    "attributes": 1,
+    "heritage": 2,
+    "magic": 4
+  },
+  "heritage": {
+    "type": "Human",
+    "uplift_type": "",
+    "features": [],
+    "blessing_plus3": "",
+    "blessing_plus1": "",
+    "specialization_pool": "",
+    "heavy_torso_mounts": [
+      "",
+      ""
+    ],
+    "no_head_mount": "",
+    "snake_attack": "bite"
+  },
+  "attributes": {
+    "Strength": 3,
+    "Body": 4,
+    "Reaction": 4,
+    "Intelligence": 6,
+    "Willpower": 4,
+    "Charisma": 3
+  },
+  "cha_pool_choice": "Brawn",
+  "skills": {
+    "Computer: Hacking": 5,
+    "Computer: Programming": 3,
+    "Athletics": 2,
+    "Firearms": 1
+  },
+  "skill_specializations": {},
+  "ritual_skills": {},
+  "knowledge_skills": [
+    {
+      "name": "Matrix Architecture",
+      "points": 2
+    }
+  ],
+  "etiquettes": {
+    "Street": 2,
+    "Corporate": 1
+  },
+  "martial_arts": [],
+  "magic": {
+    "chosen_type": "Amp",
+    "school": "",
+    "spells": [],
+    "amp_powers": [],
+    "archmage_bind": false
+  },
+  "speaker": {
+    "relationships": [],
+    "bonds": 0,
+    "infusions": []
+  },
+  "augments": [
+    {
+      "name": "Datajack",
+      "count": 1,
+      "target": "",
+      "slotted": false,
+      "alpha": false
+    }
+  ],
+  "weapons": [
+    {
+      "name": "Federated Arms 454 DA \"Super Chief\"",
+      "mods": [
+        "Laser Sight"
+      ],
+      "equipped": true
+    }
+  ],
+  "armor": [
+    {
+      "name": "Armor Jacket",
+      "style": "",
+      "material": "",
+      "extras": [],
+      "active": true
+    }
+  ],
+  "decks": [
+    {
+      "name": "MasterDeck",
+      "mods": [],
+      "hacking": "Hacking 1",
+      "carried": true
+    },
+    {
+      "name": "Fujitsu Edge",
+      "mods": [
+        "Range Extension"
+      ],
+      "hacking": "Hacking 4",
+      "carried": true
+    }
+  ],
+  "programs": [
+    "Hacking 1",
+    "Hacking 4",
+    "Acid Burn 1",
+    "Analysis Locus 1",
+    "Crack Encryption 1",
+    "Vent Gas 1"
+  ],
+  "hacking_rating": 0,
+  "rigs": [],
+  "drones": [],
+  "vehicles": [],
+  "gear": [
+    {
+      "name": "Trauma Kit",
+      "qty": 1
+    }
+  ],
+  "lifestyle": {
+    "name": "",
+    "months": 0
+  },
+  "lifestyles": [
+    {
+      "name": "Squatter",
+      "months": 2
+    }
+  ],
+  "finalized": true,
+  "play": {
+    "cash": 1500,
+    "cash_rolled": true,
+    "starting_cash": 1500,
+    "cash_log": [
+      {
+        "label": "Starting cash roll 4d6×100: [4, 3, 5, 3]",
+        "delta": 1500
+      }
+    ],
+    "lifestyles": [
+      {
+        "name": "Squatter",
+        "months": 2,
+        "active": true
+      }
+    ],
+    "lifestyles_seeded": true,
+    "lifestyles_baseline": {
+      "Squatter": 2
+    },
+    "lifestyles_reconciled": true,
+    "kismet": 2,
+    "kismet_earned": 2,
+    "kismet_log": [],
+    "boons_spent": 0,
+    "major_boons_spent": 0,
+    "physical_damage": 1,
+    "stun_damage": 0,
+    "initiative": 0,
+    "dodge_dice": 0,
+    "replicant_lifespan_months": null,
+    "pool_used": {},
+    "effects": [],
+    "modifiers": [],
+    "notes": "",
+    "attribute_advances": {},
+    "skill_advances": {},
+    "martial_art_advances": {},
+    "ritual_advances": {},
+    "zp_advances": 0,
+    "spell_force_advances": {},
+    "purchases": {
+      "gear": [],
+      "augments": [],
+      "amp_powers": [],
+      "spells": [],
+      "weapons": [],
+      "armor": [],
+      "decks": [],
+      "programs": [],
+      "rigs": [],
+      "drones": [],
+      "vehicles": [],
+      "hacking_levels": 0
+    },
+    "decking": {
+      "active_deck": "Fujitsu Edge",
+      "loaded": [
+        "Analysis Locus 1",
+        "Crack Encryption 1"
+      ]
+    },
+    "rigging": {
+      "active_rig": "",
+      "units": {}
+    },
+    "pool_boost": {},
+    "pool_kismet": {},
+    "images": [],
+    "infusion_spirits": {},
+    "bond_slots": [],
+    "ghost_rating": 3
+  }
+}

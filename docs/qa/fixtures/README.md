@@ -1,6 +1,6 @@
 # Fixtures
 
-Seven canonical characters the pass docs load instead of building state by hand.
+Eight canonical characters the pass docs load instead of building state by hand.
 Each is a complete character in the app's own save format. Load one per
 [`P00 §4`](../passes/P00-setup.md).
 
@@ -20,8 +20,44 @@ play sheet chooses to show.
 | `maxed-mage.json` | Archmage at magic priority 4, spell at the Force cap, Sorcery deliberately at 7 | 0 / **1** |
 | `synthetic-augmented.json` | Synthetic carrying **both** Bone Lacing tiers at once | **1** / 0 — invalid since JC-008 |
 | `speaker-spirits.json` | Speaker, 2 relationships, 2 bond slots | 0 / 0 |
+| `decker-two-decks.json` | **Finalized.** Two decks, a Hacking program matched to each, one equipped | 0 / 0 |
 | `kitchen-sink-final.json` | **Finalized.** Every chargen tab populated, play state in use | 0 / 0 |
 | `hostile-payloads.json` | **Finalized.** Inert XSS probes in every renderable string | 0 / 0 |
+
+### `decker-two-decks.json` — what it's for
+
+Added 2026-08-05, because **no other fixture owns a deck at all**. Every decking
+rule — Hacking programs, thread capacity, deck mod slots, the equipped deck's
+exploit actions — had zero fixture coverage, which is why two-engine sweeps kept
+reporting "zero drift" through changes that rewrote the whole subsystem.
+
+What it exercises, and the numbers to expect:
+
+| | |
+|---|---|
+| Equipped deck | **Fujitsu Edge** (MCP 8, Triple core, 9 threads, 1 mod slot) |
+| Carried but not equipped | MasterDeck (MCP 3) — proves the non-equipped deck is inert |
+| Hacking programs | **Hacking 4** in the Edge (needs 4), **Hacking 1** in the MasterDeck (needs 1) |
+| Deck mod | Range Extension, 1 of the Edge's 1 slot |
+| Loaded in play | Analysis Locus 1, Crack Encryption 1 (both `I/O: Yes`, so 2 of 9 threads) |
+| Owned but not loaded | Acid Burn 1 (`N/A`) and Vent Gas 1 (`No`) — always-on, no thread |
+| Decking exploit actions | **3** — `Fujitsu Edge (Triple core)` |
+| Gear ZR | **3** |
+| Budget | 466,050 spent of 600,000 (Resources 3) |
+
+The two Hacking programs are the point. Three mutations worth knowing, all
+observed:
+
+| Mutation | Result |
+|---|---|
+| `decks[1].hacking = "Hacking 1"` | warning — `Fujitsu Edge: Hacking 1 is under ½ MCP — needs rating 4 for MCP 8.` |
+| `decks[1].hacking = ""` | error — `Fujitsu Edge: no Hacking program slotted — the deck will not run.` |
+| `play.decking.active_deck = "MasterDeck"` | Decking exploits drop **3 → 1** (Single core) |
+
+Note the third leaves **gear ZR at 3 either way** — both decks are ZR 1 and every
+program here is ZR 0, so only the exploit count moves. That is correct, not a
+bug: if you need a fixture where the equipped deck changes the ZR too, give one
+of them a mod that carries ZR.
 
 ## Reading the error/warning counts
 

@@ -388,6 +388,17 @@ function deckHackingRequired(deckRow) {
   return Math.max(1, Math.floor(toInt(asNumber((deckRow || {}).MCP)) / 2));
 }
 
+/* Exactly one deck and one rig are equipped — jacked in — at a time. A
+ * character may own and carry any number; only the equipped one contributes
+ * Zoetic Rating and exploit actions, and only it needs to actually run. The
+ * choice is a single name, so two can never be marked. Falls back to the first
+ * owned entry for characters that never made a choice. */
+function equippedDeckName(character) {
+  const decks = (character || {}).decks || [];
+  const chosen = (((character || {}).play || {}).decking || {}).active_deck;
+  return decks.some(d => d.name === chosen) ? chosen : ((decks[0] || {}).name || "");
+}
+
 function programNeedsThread(row) {
   return !PROGRAM_NO_THREAD_IO.has(String((row || {})["I/O"] || "").trim());
 }
@@ -2715,19 +2726,6 @@ function priceDecking(character, data, gearCostMultiplier, warnings, errors) {
   for (const entry of character.decks) {
     const row = findRow(data.decks, "Name", entry.name);
     if (!row) continue;
-    const requiredHacking = deckHackingRequired(row);
-    const slotted = entry.hacking || "";
-    const slottedRating = hackingProgramRating(slotted);
-    if (!slotted) {
-      errors.push(`${entry.name}: no Hacking program slotted — the deck will not `
-                  + `run. It needs one rated ${requiredHacking} or better.`);
-    } else if (!owned.has(slotted)) {
-      errors.push(`${entry.name}: the slotted ${slotted} isn't owned — `
-                  + "buy it or slot a Hacking program you have.");
-    } else if (slottedRating < requiredHacking) {
-      warnings.push(`${entry.name}: ${slotted} is under ½ MCP — needs rating `
-                    + `${requiredHacking} for MCP ${row.MCP}.`);
-    }
     let cost = asNumber(row.Cost);
     const slotCapacity = toInt(asNumber(row.Mods));
     let slotsUsed = 0;
@@ -2736,6 +2734,27 @@ function priceDecking(character, data, gearCostMultiplier, warnings, errors) {
       if (modRow) {
         cost += asNumber(modRow.Cost);
         slotsUsed += toInt(asNumber(modRow.Slots, 1));
+      }
+    }
+    // Only the equipped deck runs, so only it needs a working Hacking program.
+    // The rest are stock you own; complaining about all of them would drown the
+    // real problem, and changing which is equipped moves the check with it.
+    if (entry.name === equippedDeckName(character)) {
+      const requiredHacking = deckHackingRequired(row);
+      const slotted = entry.hacking || "";
+      if (!slotted) {
+        errors.push(`${entry.name}: no Hacking program slotted — the deck will not `
+                    + `run. It needs one rated ${requiredHacking} or better.`);
+      } else if (!owned.has(slotted)) {
+        errors.push(`${entry.name}: the slotted ${slotted} isn't owned — `
+                    + "buy it or slot a Hacking program you have.");
+      } else if (hackingProgramRating(slotted) < requiredHacking) {
+        warnings.push(`${entry.name}: ${slotted} is under ½ MCP — needs rating `
+                      + `${requiredHacking} for MCP ${row.MCP}.`);
+      }
+      if (entry.carried === false) {
+        warnings.push(`${entry.name} is the equipped deck but isn't carried — `
+                      + "you can't run a deck you left at home.");
       }
     }
     if (slotsUsed > slotCapacity) {
@@ -2985,16 +3004,16 @@ function gearZoeticRating(character, data) {
   // thread runs whenever the deck does, so it counts with it. Nothing is loaded
   // during creation, so only the always-on ones count then.
   const decking = (character.play || {}).decking || {};
-  const activeDeck = character.decks.find(d => d.name === decking.active_deck)
-    || character.decks[0] || null;
+  const equippedName = equippedDeckName(character);
+  const activeDeck = character.decks.find(d => d.name === equippedName) || null;
   if (activeDeck && activeDeck.carried !== false) {
     const loaded = new Set(decking.loaded || []);
     add("programs", "Name", character.programs.filter(name =>
       loaded.has(name) || !programNeedsThread(findRow(data.programs, "Name", name))));
   }
-  // A rig contributes when it is the active one. Nothing is ever flagged active
-  // during creation, so the first owned rig stands in — the same fallback
-  // deriveExploitActions and the play tab use.
+  // A rig contributes when it is the equipped one — one at a time, same as
+  // decks. A character that never chose falls back to the first owned, the same
+  // fallback deriveExploitActions and the play tab use.
   const activeRig = activeGearRow(character.rigs,
     ((character.play || {}).rigging || {}).active_rig, data.rigs, "Rig Type");
   if (activeRig) total += asNumber(activeRig.ZR);
@@ -4087,6 +4106,7 @@ return {
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
   HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
+  equippedDeckName,
   SPEAKER_BOND_MAX, speakerBondCount,
   KIT_CATEGORIES, applyPlayAdvances,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,

@@ -1084,20 +1084,26 @@ function counterBtn(label, fn, cls) {
 const ROLLER_MAX_DICE = 30;
 const rollerD6 = () => 1 + Math.floor(Math.random() * 6);
 /* dice: {value, selected, rerolled}
+ * `count`     — the LIMIT dice: skill (or skill ± specialization). These are
+ *               the dice that come out of a pool, and the only thing the main
+ *               ± moves. Shown on its own, the way a weapon chip reads "3d".
  * `bonus`     — flat number added to successes (Initiative's Reaction).
  * `bonusDice` — free dice the roll came WITH: a weapon's Accuracy and firing
  *               mode, a skill's bonus dice. Inherent to the test, so they stay
  *               put across repeat rolls of it.
  * `bonusAdded` — free dice added by hand for this roll: point-blank, good
  *               light, a spirit leaning in. Situational, so they clear once
- *               thrown. Both are rolled and neither costs pool; together they
- *               are the line between "9d6 rolled" and "3 came out of Finesse".
+ *               thrown. Both are rolled and neither costs pool; the Bonus dice
+ *               row shows the two together, since what you want to see there is
+ *               how many free dice are going in.
+ * Dice thrown = count + bonusDice + bonusAdded. Pool spent = count.
  * `pool`      — the pool a roll draws from, "" for none. Sticky between rolls,
  *               because a run of Finesse tests is the normal case. */
 const rollerState = { open: false, count: 6, dice: [], bonus: 0, bonusDice: 0,
                       bonusAdded: 0, mode: "free", pool: "", spent: null };
-/* Every die in the roll that costs no pool. */
+/* Every die in the roll that costs no pool, and the total actually thrown. */
 const rollerFreeDice = () => (rollerState.bonusDice || 0) + (rollerState.bonusAdded || 0);
+const rollerTotalDice = () => Math.max(0, rollerState.count) + rollerFreeDice();
 
 function rollerRefresh() {
   const cur = $("#die-roller");
@@ -1120,8 +1126,10 @@ function openPoolRoller({ dice, bonus = 0, label, note, pool }) {
   Object.assign(rollerState, {
     open: true, mode: "pool", label: label || "", note: note || "",
     dice: [], bonus: 0, spent: null, bonusAdded: 0,
-    bonusDice: Math.max(0, +bonus || 0),
-    count: Math.max(1, Math.min(ROLLER_MAX_DICE, (+dice || 0) + (+bonus || 0))),
+    // Skill dice in the count, bonus dice in the bonus row — the roller reads
+    // the way the chip that opened it does.
+    bonusDice: Math.max(0, Math.min(ROLLER_MAX_DICE, +bonus || 0)),
+    count: Math.max(0, Math.min(ROLLER_MAX_DICE, +dice || 0)),
     // A test rolled off a skill knows which pool it draws from; keep the last
     // choice when the caller doesn't say.
     pool: pool !== undefined ? (pool || "") : rollerState.pool,
@@ -1139,7 +1147,7 @@ function rollerSpendPool() {
   // A shared view can roll all it likes; it doesn't get to spend someone else's
   // pool, even transiently (nothing persists there, but the chip would move).
   if (activeTabObj() && activeTabObj().readonly) return null;
-  const want = Math.max(0, st.count - rollerFreeDice());
+  const want = Math.max(0, st.count);      // the limit dice, and only those
   if (!want) return null;
   const ps = poolState(st.pool);
   const spend = Math.min(want, ps.remaining);
@@ -1207,23 +1215,16 @@ function rollerOverlay() {
 
   const successes = st.dice.filter(d => d.value >= 4).length;
   const selected = st.dice.filter(d => d.selected).length;
-  const clampCount = n => Math.max(1, Math.min(ROLLER_MAX_DICE, n));
-  // The main ± moves the total, and with it the LIMIT part — trimming for
-  // penalty dice should cost less pool, not silently eat the free dice. Bonus
-  // dice are held back until the limit is gone.
+  // Room left for more dice of either kind — 30 is the whole roll, not each half.
+  const headroom = () => ROLLER_MAX_DICE - rollerTotalDice();
+  // The main ± moves the skill dice, which are exactly the dice a pool pays
+  // for: trimming for penalty dice trims the cost and leaves the free dice be.
   const stepBtn = (delta, label) => el("button", {
-    class: "sh-roller-step", title: delta < 0 ? "One die fewer" : "One die more",
+    class: "sh-roller-step", title: delta < 0 ? "One skill die fewer" : "One skill die more",
     onclick: () => {
-      st.count = clampCount(st.count + delta);
-      // Free dice are held back until the limit is gone; past that, the ones
-      // added by hand go before the ones the test came with.
-      let over = rollerFreeDice() - st.count;
-      if (over > 0) {
-        const take = Math.min(over, st.bonusAdded || 0);
-        st.bonusAdded = (st.bonusAdded || 0) - take;
-        over -= take;
-      }
-      if (over > 0) st.bonusDice = Math.max(0, (st.bonusDice || 0) - over);
+      const next = st.count + delta;
+      st.count = Math.max(0, delta > 0 ? Math.min(next, st.count + Math.max(0, headroom())) : next);
+      if (rollerTotalDice() < 1) st.count = 1;      // never roll nothing
       rollerRefresh();
     },
   }, label);
@@ -1237,11 +1238,16 @@ function rollerOverlay() {
         onclick: () => { st.open = false; rollerRefresh(); } }, "✕")),
     el("div", { class: "sh-roller-controls" },
       stepBtn(-1, "–"),
-      el("span", { class: "sh-roller-count" },
-        `${st.count}d6` + (st.bonus ? `+${st.bonus}` : "")),
+      // Skill dice, then the free dice alongside them — the same "3d +2b"
+      // shorthand the weapon chips use.
+      el("span", { class: "sh-roller-count",
+          title: `${rollerTotalDice()}d6 thrown — ${st.count} skill`
+            + (rollerFreeDice() ? ` + ${rollerFreeDice()} bonus` : "") },
+        `${st.count}d6` + (rollerFreeDice() ? ` +${rollerFreeDice()}b` : "")
+        + (st.bonus ? ` +${st.bonus}` : "")),
       stepBtn(1, "+"),
       el("button", { class: "btn sh-roller-roll", onclick: () => {
-        st.dice = Array.from({ length: st.count },
+        st.dice = Array.from({ length: rollerTotalDice() },
           () => ({ value: rollerD6(), selected: false, rerolled: false }));
         rollerApply();
         st.spent = rollerSpendPool();   // re-renders the sheet if a pool moved
@@ -1252,7 +1258,6 @@ function rollerOverlay() {
         // they're the weapon, not the moment.
         if (st.bonusAdded) {
           if (st.spent) st.spent.bonus = st.bonusAdded;
-          st.count = Math.max(1, st.count - st.bonusAdded);
           st.bonusAdded = 0;
         }
         rollerRefresh();
@@ -1271,10 +1276,9 @@ function rollerOverlay() {
       }));
     sel.value = st.pool || "";
     const freeDice = rollerFreeDice();
-    const limitDice = Math.max(0, st.count - freeDice);
     panel.append(el("div", { class: "sh-roller-poolrow" }, sel,
       el("span", { class: "sub" }, st.pool
-        ? `−${limitDice}d on roll${freeDice ? ` (${freeDice} bonus free)` : ""}`
+        ? `−${st.count}d on roll${freeDice ? ` (${freeDice} bonus free)` : ""}`
         : "no pool spent")));
 
     // Bonus dice: thrown with the rest, but off the table's own ledger rather
@@ -1282,23 +1286,30 @@ function rollerOverlay() {
     // leaning in. The count above moves with them; the pool cost does not.
     // Stepping the main ± moves the limit dice, so the two controls between
     // them say "how many I'm putting in" and "how many I'm being given".
+    // The row shows every free die going in — the ones the test came with and
+    // the ones added here — because that's the number you check before rolling.
+    // ± only ever adds or removes hand-added ones first; the built-in dice go
+    // last, and come back when the roll is reloaded from its chip.
     const bonusStep = (delta, label, title) => el("button", {
       class: "sh-roller-step", title,
       onclick: () => {
-        const next = Math.max(0, (st.bonusAdded || 0) + delta);
-        const total = clampCount(st.count + (next - (st.bonusAdded || 0)));
-        st.bonusAdded = Math.min(next, Math.max(0, total - (st.bonusDice || 0)));
-        st.count = total;
+        if (delta > 0) {
+          if (headroom() > 0) st.bonusAdded = (st.bonusAdded || 0) + 1;
+        } else if (st.bonusAdded > 0) {
+          st.bonusAdded -= 1;
+        } else if (st.bonusDice > 0 && rollerTotalDice() > 1) {
+          st.bonusDice -= 1;               // trimming a built-in bonus die
+        }
         rollerRefresh();
       },
     }, label);
     panel.append(el("div", { class: "sh-roller-bonusrow" },
       el("span", { class: "sub" }, "Bonus dice"),
       bonusStep(-1, "–", "One fewer free die"),
-      el("span", { class: "sh-roller-bonuscount" }, String(st.bonusAdded || 0)),
+      el("span", { class: "sh-roller-bonuscount" }, String(freeDice)),
       bonusStep(1, "+", "One more die that costs no pool, for this roll only"),
       el("span", { class: "sub" },
-        st.bonusDice ? `+${st.bonusDice} built in` : "this roll only")));
+        st.bonusAdded ? `${st.bonusAdded} added this roll` : "no pool cost")));
   }
 
   if (st.dice.length) {
@@ -1345,8 +1356,8 @@ function rollerOverlay() {
   } else {
     panel.append(el("div", { class: "sh-roller-hint" },
       isInit
-        ? `Roll ${st.count}d6 — every 4–6 is a Success, plus ${st.bonus} Reaction.`
-        : `Roll ${st.count}d6 — every 4–6 is a Success.`
+        ? `Roll ${rollerTotalDice()}d6 — every 4–6 is a Success, plus ${st.bonus} Reaction.`
+        : `Roll ${rollerTotalDice()}d6 — every 4–6 is a Success.`
           // What made up the count, and the reminder that penalties are yours
           // to apply: the sheet can't know the range or the lighting.
           + (isPool && st.note ? ` ${st.note}.` : "")

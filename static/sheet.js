@@ -1060,13 +1060,19 @@ const ROLLER_MAX_DICE = 30;
 const rollerD6 = () => 1 + Math.floor(Math.random() * 6);
 /* dice: {value, selected, rerolled}
  * `bonus`     — flat number added to successes (Initiative's Reaction).
- * `bonusDice` — how many of `count` are BONUS dice rather than limit dice.
- *               Bonus dice are rolled but cost no pool, so this is the line
- *               between "8d6 rolled" and "how many came out of Brawn".
+ * `bonusDice` — free dice the roll came WITH: a weapon's Accuracy and firing
+ *               mode, a skill's bonus dice. Inherent to the test, so they stay
+ *               put across repeat rolls of it.
+ * `bonusAdded` — free dice added by hand for this roll: point-blank, good
+ *               light, a spirit leaning in. Situational, so they clear once
+ *               thrown. Both are rolled and neither costs pool; together they
+ *               are the line between "9d6 rolled" and "3 came out of Finesse".
  * `pool`      — the pool a roll draws from, "" for none. Sticky between rolls,
  *               because a run of Finesse tests is the normal case. */
 const rollerState = { open: false, count: 6, dice: [], bonus: 0, bonusDice: 0,
-                      mode: "free", pool: "", spent: null };
+                      bonusAdded: 0, mode: "free", pool: "", spent: null };
+/* Every die in the roll that costs no pool. */
+const rollerFreeDice = () => (rollerState.bonusDice || 0) + (rollerState.bonusAdded || 0);
 
 function rollerRefresh() {
   const cur = $("#die-roller");
@@ -1088,7 +1094,7 @@ function sheetInitiative() {
 function openPoolRoller({ dice, bonus = 0, label, note, pool }) {
   Object.assign(rollerState, {
     open: true, mode: "pool", label: label || "", note: note || "",
-    dice: [], bonus: 0, spent: null,
+    dice: [], bonus: 0, spent: null, bonusAdded: 0,
     bonusDice: Math.max(0, +bonus || 0),
     count: Math.max(1, Math.min(ROLLER_MAX_DICE, (+dice || 0) + (+bonus || 0))),
     // A test rolled off a skill knows which pool it draws from; keep the last
@@ -1105,7 +1111,7 @@ function openPoolRoller({ dice, bonus = 0, label, note, pool }) {
 function rollerSpendPool() {
   const st = rollerState;
   if (!st.pool || st.mode === "initiative") return null;
-  const want = Math.max(0, st.count - (st.bonusDice || 0));
+  const want = Math.max(0, st.count - rollerFreeDice());
   if (!want) return null;
   const ps = poolState(st.pool);
   const spend = Math.min(want, ps.remaining);
@@ -1162,7 +1168,8 @@ function rollerOverlay() {
     // is what puts the roller into initiative mode.
     onclick: () => {
       if (!st.open && st.mode !== "free") {
-        Object.assign(st, { mode: "free", bonus: 0, bonusDice: 0, dice: [], spent: null });
+        Object.assign(st, { mode: "free", bonus: 0, bonusDice: 0, bonusAdded: 0,
+          dice: [], spent: null });
       }
       st.open = !st.open;
       rollerRefresh();
@@ -1180,7 +1187,15 @@ function rollerOverlay() {
     class: "sh-roller-step", title: delta < 0 ? "One die fewer" : "One die more",
     onclick: () => {
       st.count = clampCount(st.count + delta);
-      if ((st.bonusDice || 0) > st.count) st.bonusDice = st.count;
+      // Free dice are held back until the limit is gone; past that, the ones
+      // added by hand go before the ones the test came with.
+      let over = rollerFreeDice() - st.count;
+      if (over > 0) {
+        const take = Math.min(over, st.bonusAdded || 0);
+        st.bonusAdded = (st.bonusAdded || 0) - take;
+        over -= take;
+      }
+      if (over > 0) st.bonusDice = Math.max(0, (st.bonusDice || 0) - over);
       rollerRefresh();
     },
   }, label);
@@ -1202,6 +1217,16 @@ function rollerOverlay() {
           () => ({ value: rollerD6(), selected: false, rerolled: false }));
         rollerApply();
         st.spent = rollerSpendPool();   // re-renders the sheet if a pool moved
+        // Hand-added dice belong to the roll that was just made — point-blank
+        // range, that light, that one spirit — so they come off with it and a
+        // second roll of the same test doesn't inherit a situation that has
+        // passed. The dice the test came WITH (Accuracy, firing mode) stay:
+        // they're the weapon, not the moment.
+        if (st.bonusAdded) {
+          if (st.spent) st.spent.bonus = st.bonusAdded;
+          st.count = Math.max(1, st.count - st.bonusAdded);
+          st.bonusAdded = 0;
+        }
         rollerRefresh();
       } }, "Roll")));
 
@@ -1217,10 +1242,11 @@ function rollerOverlay() {
         return el("option", { value: p }, `${p} ${ps.remaining}/${ps.max}`);
       }));
     sel.value = st.pool || "";
-    const limitDice = Math.max(0, st.count - (st.bonusDice || 0));
+    const freeDice = rollerFreeDice();
+    const limitDice = Math.max(0, st.count - freeDice);
     panel.append(el("div", { class: "sh-roller-poolrow" }, sel,
       el("span", { class: "sub" }, st.pool
-        ? `−${limitDice}d on roll${st.bonusDice ? ` (${st.bonusDice} bonus free)` : ""}`
+        ? `−${limitDice}d on roll${freeDice ? ` (${freeDice} bonus free)` : ""}`
         : "no pool spent")));
 
     // Bonus dice: thrown with the rest, but off the table's own ledger rather
@@ -1231,9 +1257,9 @@ function rollerOverlay() {
     const bonusStep = (delta, label, title) => el("button", {
       class: "sh-roller-step", title,
       onclick: () => {
-        const next = Math.max(0, (st.bonusDice || 0) + delta);
-        const total = clampCount(st.count + (next - (st.bonusDice || 0)));
-        st.bonusDice = Math.min(next, total);
+        const next = Math.max(0, (st.bonusAdded || 0) + delta);
+        const total = clampCount(st.count + (next - (st.bonusAdded || 0)));
+        st.bonusAdded = Math.min(next, Math.max(0, total - (st.bonusDice || 0)));
         st.count = total;
         rollerRefresh();
       },
@@ -1241,9 +1267,10 @@ function rollerOverlay() {
     panel.append(el("div", { class: "sh-roller-bonusrow" },
       el("span", { class: "sub" }, "Bonus dice"),
       bonusStep(-1, "–", "One fewer free die"),
-      el("span", { class: "sh-roller-bonuscount" }, String(st.bonusDice || 0)),
-      bonusStep(1, "+", "One more die that costs no pool"),
-      el("span", { class: "sub" }, "no pool cost")));
+      el("span", { class: "sh-roller-bonuscount" }, String(st.bonusAdded || 0)),
+      bonusStep(1, "+", "One more die that costs no pool, for this roll only"),
+      el("span", { class: "sub" },
+        st.bonusDice ? `+${st.bonusDice} built in` : "this roll only")));
   }
 
   if (st.dice.length) {
@@ -1278,7 +1305,8 @@ function rollerOverlay() {
         `−${st.spent.spend} ${st.spent.pool}`
         + (st.spent.spend < st.spent.want
             ? ` — ${st.spent.want} needed, pool was short` : "")
-        + ` · ${st.spent.left} left`));
+        + ` · ${st.spent.left} left`
+        + (st.spent.bonus ? ` · ${st.spent.bonus} bonus dice free, now cleared` : "")));
     else if (st.spent && st.spent.want)
       panel.append(el("div", { class: "sh-roller-spent" },
         `${st.spent.pool} is empty — nothing left to spend`));

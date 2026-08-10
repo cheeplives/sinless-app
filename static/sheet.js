@@ -1649,23 +1649,37 @@ async function renameCharacter() {
   persistWorkspace();
 }
 
-/* "carried_qty 10 → 8" for every field two copies of the same item disagree on,
- * so a re-sync can be judged row by row instead of on faith. */
-function entryDiff(from, to) {
+/* "carried_qty 10 → 8" for every field a re-sync would actually change, so it
+ * can be judged row by row instead of on faith.
+ *
+ * Only fields the BUILD carries are compared. A weapon in play also holds
+ * things chargen has never heard of — chambered ammo, rounds loaded, firing
+ * mode, kata — and those are play's alone: the build has no opinion on them, so
+ * they are neither a difference to report nor anything a re-sync should touch.
+ * Reporting them made every fired gun look out of step and offered to blank the
+ * magazine. */
+function entryDiff(kitEntry, buildEntry) {
   const show = v => {
     if (Array.isArray(v)) return v.length ? v.map(entryLabel).join(", ") : "none";
     if (v === "" || v == null) return "—";
     return String(v);
   };
-  const keys = new Set([...Object.keys(from || {}), ...Object.keys(to || {})]);
   const out = [];
-  for (const key of keys) {
+  for (const key of Object.keys(buildEntry || {})) {
     if (key === "name") continue;
-    const a = (from || {})[key], b = (to || {})[key];
+    const a = (kitEntry || {})[key], b = (buildEntry || {})[key];
     if (JSON.stringify(a ?? null) === JSON.stringify(b ?? null)) continue;
     out.push(`${key} ${show(a)} → ${show(b)}`);
   }
   return out.join(" · ");
+}
+
+/* Lay the build's version of an item over play's copy, field by field. Not a
+ * wholesale replacement: play-only keys (see entryDiff) survive, so re-syncing
+ * a rifle's mods doesn't unload it. */
+function applyBuildEntry(into, from) {
+  for (const [key, value] of Object.entries(from || {})) into[key] = deepCopyEntry(value);
+  return into;
 }
 
 /* Which of the out-of-step items to rebuild from the build. Resolves to the
@@ -1689,9 +1703,11 @@ function promptKitResync(pending) {
       el("h3", {}, "Re-sync from the build"),
       el("p", { class: "hint" },
         "These items differ between the chargen build and play's copy. Ticking one "
-        + "replaces play's copy with what the build says — use it for edits made in "
-        + "chargen that never reached the sheet. Leave the rest alone: ammo spent and "
-        + "flags changed at the table live on this side and would be undone."),
+        + "lays the build's version over play's copy — use it for edits made in "
+        + "chargen that never reached the sheet. Leave the rest alone: flags you "
+        + "changed at the table would be overwritten. Only items the build and play "
+        + "both hold are listed; anything bought in play has no build version to "
+        + "sync from, and a magazine or firing mode is play's alone either way."),
       el("div", { style: "display:flex;gap:8px;margin-bottom:6px" },
         el("button", { class: "btn small", onclick: () => setAll(true) }, "Select all"),
         el("button", { class: "btn small", onclick: () => setAll(false) }, "None")),
@@ -1733,9 +1749,13 @@ async function resyncKitFromBuild() {
       const nowOnes = now.filter(e => entryLabel(e) === name);
       const kitOnes = kit.filter(e => entryLabel(e) === name);
       for (let k = 0; k < Math.min(nowOnes.length, kitOnes.length); k++) {
-        if (JSON.stringify(nowOnes[k]) === JSON.stringify(kitOnes[k])) continue;
+        // An empty diff means the build and play agree on everything the build
+        // has a say in — a fired gun differs only in its magazine, and that is
+        // not something to offer to "repair".
+        const diff = entryDiff(kitOnes[k], nowOnes[k]);
+        if (!diff) continue;
         pending.push({ category, kit, at: kit.indexOf(kitOnes[k]), entry: nowOnes[k],
-          label: `${category}: ${name}`, diff: entryDiff(kitOnes[k], nowOnes[k]) });
+          label: `${category}: ${name}`, diff });
       }
     }
   }
@@ -1745,7 +1765,7 @@ async function resyncKitFromBuild() {
   // which rows are the build edits that never came across.
   const picked = await promptKitResync(pending);
   if (!picked || !picked.length) return;
-  picked.forEach(p => { p.kit[p.at] = deepCopyEntry(p.entry); });
+  picked.forEach(p => { applyBuildEntry(p.kit[p.at], p.entry); });
   // The baseline only moves for what was actually re-synced; anything left
   // deliberately out of step stays a pending chargen edit for the next
   // re-finalize to carry across.

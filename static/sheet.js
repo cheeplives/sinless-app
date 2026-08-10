@@ -505,12 +505,68 @@ function ensureCreationBudget() {
   play.creation_budget = snapshotCreationBudget();
 }
 
+/* An entry's identity for reconciling: its name. Sublist members (weapon mods,
+ * armor extras) are sometimes bare strings and sometimes {name}, so both shapes
+ * answer here. */
+const entryLabel = e => (e && typeof e === "object") ? (e.name || "") : String(e);
+
+/* Carry a chargen edit to an item the character ALREADY owned onto play's copy
+ * of it. `from` is the chargen entry now, `base` what chargen said at the last
+ * sync, `into` play's copy. Only fields the owner actually changed move, so
+ * anything play did to the same item survives:
+ *
+ *   - list fields (a weapon's mods, an armor piece's extras) apply the chargen
+ *     DELTA — a mod fitted in play isn't wiped by a chargen edit elsewhere on
+ *     the same gun;
+ *   - scalar fields (smart, style, material, qty, a focus link) are written
+ *     across only when they differ from the baseline. An untouched field means
+ *     play's value stands, which is what keeps a "worn"/"equipped" toggle made
+ *     at the table from snapping back after a trip through chargen.
+ */
+function mergeChargenEdits(from, base, into, note) {
+  if (!from || typeof from !== "object" || !into || typeof into !== "object") return;
+  const was = (base && typeof base === "object") ? base : {};
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  for (const [key, value] of Object.entries(from)) {
+    if (key === "name") continue;
+    if (Array.isArray(value)) {
+      const wasList = Array.isArray(was[key]) ? was[key] : [];
+      if (same(value, wasList)) continue;
+      const target = Array.isArray(into[key]) ? into[key] : (into[key] = []);
+      const tally = list => list.reduce((m, e) =>
+        m.set(entryLabel(e), (m.get(entryLabel(e)) || 0) + 1), new Map());
+      const nowCount = tally(value), wasCount = tally(wasList);
+      for (const [member, n] of nowCount) {
+        for (let k = (wasCount.get(member) || 0); k < n; k++) {
+          target.push(deepCopyEntry(value.find(e => entryLabel(e) === member)));
+          note(`+${member}`);
+        }
+      }
+      for (const [member, n] of wasCount) {
+        for (let k = (nowCount.get(member) || 0); k < n; k++) {
+          const at = target.findIndex(e => entryLabel(e) === member);
+          if (at >= 0) { target.splice(at, 1); note(`−${member}`); }
+        }
+      }
+    } else if (!same(value, was[key])) {
+      into[key] = deepCopyEntry(value);
+      note(`${key} ${value === "" ? "cleared" : value}`);
+    }
+  }
+}
+
 /* Re-finalize. The kit is play's, so an unrelated trip through chargen must not
  * disturb it — but a genuine edit to the BUILD should carry across, the same
  * ruling that governs lifestyle months. `kit_baseline` is what chargen said at
  * the last sync, so anything that differs from it now is an owner edit:
- * appended entries are added to the kit, removed ones are taken out of it, and
- * everything the player did in play is left alone. */
+ * appended entries are added to the kit, removed ones are taken out of it,
+ * edits to an item that's still there are merged onto play's copy of it, and
+ * everything the player did in play is left alone.
+ *
+ * That last case is easy to miss: matching by name alone, fitting Bling to a
+ * rifle you already owned changes nothing about the name, so before
+ * mergeChargenEdits the mod stayed in chargen and never reached the sheet or
+ * the markdown export. */
 function reconcileKit() {
   const play = CHAR.play;
   if (!play.kit) { ensureKit(); return; }
@@ -520,12 +576,15 @@ function reconcileKit() {
     const now = CHAR[category] || [];
     const was = baseline[category] || [];
     const kit = play.kit[category] = play.kit[category] || [];
-    const label = e => (e && typeof e === "object") ? (e.name || "") : String(e);
+    const label = entryLabel;
     const tally = list => list.reduce((m, e) => m.set(label(e), (m.get(label(e)) || 0) + 1), new Map());
     const nowCount = tally(now), wasCount = tally(was);
     for (const [name, n] of nowCount) {                 // added in chargen
+      // Copy the k-th same-named entry, not the first: buying a SECOND M31 must
+      // hand play a bare one, not a clone of the first gun's mods and flags.
+      const ones = now.filter(e => label(e) === name);
       for (let k = (wasCount.get(name) || 0); k < n; k++) {
-        kit.push(deepCopyEntry(now.find(e => label(e) === name)));
+        kit.push(deepCopyEntry(ones[k]));
         notes.push(`+${name}`);
       }
     }
@@ -533,6 +592,19 @@ function reconcileKit() {
       for (let k = (nowCount.get(name) || 0); k < n; k++) {
         const at = kit.findIndex(e => label(e) === name);
         if (at >= 0) { kit.splice(at, 1); notes.push(`−${name}`); }
+      }
+    }
+    // Still-owned items, reconfigured in chargen. Same-named copies pair up in
+    // order (the k-th "Armored Coat" here is the k-th one there). Only the ones
+    // that existed at the baseline are merged — anything added above that count
+    // was just deep-copied into the kit and has nothing to reconcile.
+    for (const name of nowCount.keys()) {
+      const nowOnes = now.filter(e => label(e) === name);
+      const wasOnes = was.filter(e => label(e) === name);
+      const kitOnes = kit.filter(e => label(e) === name);
+      for (let k = 0; k < Math.min(nowOnes.length, kitOnes.length, wasOnes.length); k++) {
+        mergeChargenEdits(nowOnes[k], wasOnes[k], kitOnes[k],
+          detail => notes.push(`${name}: ${detail}`));
       }
     }
   }
@@ -1471,6 +1543,9 @@ function sheetMenu() {
       saveBtn.textContent = "Saved ✓";
       setTimeout(() => { saveBtn.textContent = "Save"; }, 1200);
     } }, "Save") : null;
+    const renameBtn = !ro ? el("button", { class: "btn sh-mi-plain",
+      title: "Rename this character and move its save — not a copy",
+      onclick: act(renameCharacter) }, "Rename…") : null;
     const newBtn = el("button", { class: "btn sh-mi-plain", onclick: () => {
       sheetMenuOpen = false; newCharacterTab();
     } }, "New");
@@ -1502,6 +1577,10 @@ function sheetMenu() {
     // finalized character (they toggle play state), so hide them in chargen.
     const backBtn = CHAR.finalized
       ? el("button", { class: "btn sh-mi-plain", onclick: act(backToChargen) }, "← Back to Chargen") : null;
+    const resyncBtn = (CHAR.finalized && !ro && CHAR.play && CHAR.play.kit)
+      ? el("button", { class: "btn sh-mi-plain",
+          title: "Rebuild play's copy of the items you still own from the chargen build",
+          onclick: act(resyncKitFromBuild) }, "Re-sync Build → Kit") : null;
     const revertBtn = CHAR.finalized
       ? el("button", { class: "btn warn", onclick: act(revertToChargenEnd) }, "Revert to Post-Chargen") : null;
     const deleteBtn = el("button", { class: "btn sh-mi-delete", disabled: CHAR.name ? null : "1",
@@ -1515,10 +1594,10 @@ function sheetMenu() {
       ? el("button", { class: "btn sh-mi-danger", onclick: act(doSignOut) }, "Sign out") : null;
 
     const groups = [
-      [loadSel, saveBtn, newBtn],
+      [loadSel, saveBtn, renameBtn, newBtn],
       [importBtn, exportJsonBtn, exportMdBtn],
       [sharingBtn, sharedBtn, homebrewBtn],
-      [backBtn, revertBtn, deleteBtn],
+      [backBtn, resyncBtn, revertBtn, deleteBtn],
       [adminBtn, signOutBtn],
     ].map(g => g.filter(Boolean)).filter(g => g.length);
 
@@ -1535,6 +1614,155 @@ function sheetMenu() {
   }
   return wrap;
 }
+/* Rename a character, moving its save rather than forking it. Typing a new name
+ * into the chargen field and saving leaves the old slot behind — two characters
+ * where the player meant one — so this writes the new slot, re-points sharing at
+ * it, and deletes the old one. Storage keys are sanitised, so "Jimmy Chan" and
+ * "Jimmy-Chan" are the same slot and renaming between them is a no-op move. */
+async function renameCharacter() {
+  const oldName = CHAR.name || "";
+  const next = (prompt("New name for this character:", oldName) || "").trim();
+  if (!next || next === oldName) return;
+  const oldSlug = CHAR.saved_as || (oldName ? STORAGE.sanitizeName(oldName) : "");
+  const newSlug = STORAGE.sanitizeName(next);
+  // Someone else already in the destination slot: renaming would overwrite them.
+  const clash = STORAGE.collidingCharacter({ name: next, saved_as: oldSlug });
+  if (clash && !confirm(`"${clash}" is already saved under that name.\n\n`
+    + `Renaming REPLACES that character permanently — their build, play state `
+    + "and history all go.\n\nOverwrite them?")) return;
+  const wasPublic = typeof SYNC !== "undefined" && SYNC.enabled && SYNC.enabled()
+    && oldSlug && SYNC.isPublic(oldSlug);
+  CHAR.name = next;
+  CHAR.saved_as = newSlug;
+  if (oldSlug) STORAGE.saveCharacter(CHAR);      // unnamed drafts have nothing to move
+  // Sharing is keyed by slug, so a shared character has to be re-published under
+  // the new one. Links to the old slug are dead either way — the slug IS the URL.
+  if (wasPublic && newSlug !== oldSlug) {
+    await SYNC.setVisibility(newSlug, true);
+    await SYNC.setVisibility(oldSlug, false);
+  }
+  if (oldSlug && newSlug !== oldSlug) STORAGE.deleteCharacter(oldSlug);
+  if (typeof refreshLoadList === "function") refreshLoadList();
+  await recalc();
+  showActiveTab();
+  renderWorkspaceBar();     // the tab carries the name too
+  persistWorkspace();
+}
+
+/* "carried_qty 10 → 8" for every field two copies of the same item disagree on,
+ * so a re-sync can be judged row by row instead of on faith. */
+function entryDiff(from, to) {
+  const show = v => {
+    if (Array.isArray(v)) return v.length ? v.map(entryLabel).join(", ") : "none";
+    if (v === "" || v == null) return "—";
+    return String(v);
+  };
+  const keys = new Set([...Object.keys(from || {}), ...Object.keys(to || {})]);
+  const out = [];
+  for (const key of keys) {
+    if (key === "name") continue;
+    const a = (from || {})[key], b = (to || {})[key];
+    if (JSON.stringify(a ?? null) === JSON.stringify(b ?? null)) continue;
+    out.push(`${key} ${show(a)} → ${show(b)}`);
+  }
+  return out.join(" · ");
+}
+
+/* Which of the out-of-step items to rebuild from the build. Resolves to the
+ * chosen subset, or null if the player backed out. Nothing is ticked to start
+ * with — the safe answer is "change nothing". */
+function promptKitResync(pending) {
+  return new Promise(resolve => {
+    const backdrop = el("div", { class: "mount-modal-backdrop" });
+    const done = val => {
+      document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(val);
+    };
+    const onKey = e => { if (e.key === "Escape") done(null); };
+    const boxes = pending.map(p => el("input", { type: "checkbox" }));
+    const rows = pending.map((p, i) => el("label", { class: "opt sh-resync-row" },
+      boxes[i],
+      el("span", {},
+        el("b", {}, p.label),
+        p.diff ? el("div", { class: "sub" }, p.diff) : null)));
+    const setAll = on => boxes.forEach(b => { b.checked = on; });
+    const modal = el("div", { class: "card mount-modal", style: "max-width:560px" },
+      el("h3", {}, "Re-sync from the build"),
+      el("p", { class: "hint" },
+        "These items differ between the chargen build and play's copy. Ticking one "
+        + "replaces play's copy with what the build says — use it for edits made in "
+        + "chargen that never reached the sheet. Leave the rest alone: ammo spent and "
+        + "flags changed at the table live on this side and would be undone."),
+      el("div", { style: "display:flex;gap:8px;margin-bottom:6px" },
+        el("button", { class: "btn small", onclick: () => setAll(true) }, "Select all"),
+        el("button", { class: "btn small", onclick: () => setAll(false) }, "None")),
+      el("div", { class: "sh-resync-list" }, ...rows),
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:14px" },
+        el("button", { class: "btn-add",
+          onclick: () => done(pending.filter((p, i) => boxes[i].checked)) }, "Re-sync ticked"),
+        el("button", { class: "btn ghost", onclick: () => done(null) }, "Cancel")));
+    backdrop.append(modal);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) done(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(backdrop);
+  });
+}
+
+/* Repair hatch: rebuild play's copy of the items the character still owns from
+ * the chargen build.
+ *
+ * Needed because reconcileKit used to match by NAME only. A weapon you already
+ * owned, re-modded in chargen, changed no names — so nothing was carried across,
+ * while kit_baseline still advanced to the edited build. That leaves a character
+ * permanently out of step: chargen says Blinged with three mods, the sheet shows
+ * the bike as it was, and no future re-finalize can tell the difference, because
+ * as far as the baseline is concerned nothing changed.
+ *
+ * Membership is left alone — this only rewrites the CONFIGURATION of items
+ * present on both sides. Anything bought in play lives in play.purchases and is
+ * never touched; anything sold in play stays sold. */
+async function resyncKitFromBuild() {
+  const play = CHAR.play;
+  if (!play || !play.kit) { alert("Nothing to re-sync — this character has no play kit yet."); return; }
+  // Work out every replacement first, so the confirm can list them and a "no"
+  // leaves the character exactly as it was.
+  const pending = [];
+  for (const category of RULES.KIT_CATEGORIES) {
+    const now = CHAR[category] || [];
+    const kit = play.kit[category] = play.kit[category] || [];
+    for (const name of new Set(now.map(entryLabel))) {
+      const nowOnes = now.filter(e => entryLabel(e) === name);
+      const kitOnes = kit.filter(e => entryLabel(e) === name);
+      for (let k = 0; k < Math.min(nowOnes.length, kitOnes.length); k++) {
+        if (JSON.stringify(nowOnes[k]) === JSON.stringify(kitOnes[k])) continue;
+        pending.push({ category, kit, at: kit.indexOf(kitOnes[k]), entry: nowOnes[k],
+          label: `${category}: ${name}`, diff: entryDiff(kitOnes[k], nowOnes[k]) });
+      }
+    }
+  }
+  if (!pending.length) { alert("Already in step — play's copy matches the build."); return; }
+  // Item by item, not all or nothing: most of what differs here is the table
+  // doing its job — ammo spent, grenades thrown — and only the player knows
+  // which rows are the build edits that never came across.
+  const picked = await promptKitResync(pending);
+  if (!picked || !picked.length) return;
+  picked.forEach(p => { p.kit[p.at] = deepCopyEntry(p.entry); });
+  // The baseline only moves for what was actually re-synced; anything left
+  // deliberately out of step stays a pending chargen edit for the next
+  // re-finalize to carry across.
+  const base = play.kit_baseline || (play.kit_baseline = {});
+  picked.forEach(p => {
+    const list = base[p.category] = base[p.category] || [];
+    const at = list.findIndex(e => entryLabel(e) === entryLabel(p.entry));
+    if (at >= 0) list[at] = deepCopyEntry(p.entry); else list.push(deepCopyEntry(p.entry));
+  });
+  const changed = picked.map(p => p.label);
+  logCash(`Re-synced from the build: ${changed.slice(0, 6).join(", ")}`
+    + (changed.length > 6 ? ` +${changed.length - 6} more` : ""), 0);
+  STORAGE.saveCharacter(CHAR);
+  await recalc();
+  showActiveTab();
+}
+
 async function backToChargen() {
   if (!confirm("Return to character generation?\n\nChargen budgets become editable again. "
     + "Play state (damage, Kismet, notes, advances, purchases) is kept and returns when you re-finalize."))
@@ -5848,13 +6076,32 @@ function buildMarkdown() {
 
   L.push("## Skills");
   L.push("");
+  // A specialization splits the rating the way the sheet shows it — −1 off it,
+  // +1 on it — so the export carries both numbers and what the specialty is,
+  // rather than a single figure that is right in neither case.
+  const mdSpec = n => {
+    const spec = (CHAR.skill_specializations || {})[n];
+    return (spec && spec.on && CALC.skills[n].final > 0 && spec.text) ? spec : null;
+  };
+  let anySpec = false;
   for (const pool of POOL_ORDER) {
     const trained = Object.entries(DATA.skills)
       .filter(([n, m]) => m.pool === pool && CALC.skills[n].final > 0)
       .sort((a, b) => CALC.skills[b[0]].final - CALC.skills[a[0]].final);
     if (!trained.length) continue;
     L.push(`**${pool} (${CALC.pools[pool]}d)**: `
-      + trained.map(([n]) => `${n} ${CALC.skills[n].final}`).join(" · "));
+      + trained.map(([n]) => {
+          const final = CALC.skills[n].final;
+          const spec = mdSpec(n);
+          if (!spec) return `${n} ${final}`;
+          anySpec = true;
+          return `${n} ${final - 1}/${final + 1} (${spec.text})`;
+        }).join(" · "));
+    L.push("");
+  }
+  if (anySpec) {
+    L.push("*Specialized skills read **off-specialty / on-specialty** — the "
+      + "specialty in brackets is the +1 side.*");
     L.push("");
   }
   const skillNoteLines = [];
@@ -6015,9 +6262,22 @@ function buildMarkdown() {
   if (mdRigs.length || mdDrones.length || mdVehicles.length) {
     L.push("## Rigging");
     L.push("");
-    mdRigs.forEach(r => L.push(`- Rig: **${r.name}**`));
-    mdDrones.forEach(d => L.push(`- Drone: **${d.name}**${(d.weapons || []).length ? ` (${d.weapons.join(", ")})` : ""}`));
-    mdVehicles.forEach(v => L.push(`- Vehicle: **${v.name}**${(v.weapons || []).length ? ` (${v.weapons.join(", ")})` : ""}`));
+    // A unit's condition and fitted mods are half of what it is — a Blinged,
+    // reframed bike is not the Motorcycle off the page — so they travel with it.
+    const unitBits = u => [
+      (u.condition && u.condition !== "Pristine") ? u.condition : "",
+      (u.weapons || []).length ? `weapons: ${u.weapons.map(sublistName).join(", ")}` : "",
+      (u.mods || []).length ? `mods: ${u.mods.map(sublistName).join(", ")}` : "",
+    ].filter(Boolean).join(" · ");
+    const unitLine = (kind, u) => {
+      const bits = unitBits(u);
+      L.push(`- ${kind}: **${u.label || u.name}**`
+        + (u.label && u.name && u.label !== u.name ? ` (${u.name})` : "")
+        + (bits ? ` — ${bits}` : ""));
+    };
+    mdRigs.forEach(r => unitLine("Rig", r));
+    mdDrones.forEach(d => unitLine("Drone", d));
+    mdVehicles.forEach(v => unitLine("Vehicle", v));
     L.push("");
   }
 

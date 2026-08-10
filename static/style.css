@@ -1039,6 +1039,18 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .settings-rule > span{display:block;font:600 12px/1.3 var(--body);color:var(--text);margin-bottom:4px}
 .settings-rule select{width:100%}
 .settings-help{font:400 11px/1.4 var(--body);color:var(--dim);margin-top:4px}
+/* Click-to-roll dice figures (skill ratings, weapon dice chips, roll hints).
+   A bare button so it inherits whatever it wraps — the reading must not move,
+   only gain an affordance. Padding with a matching negative margin: the hit
+   area grows to something a thumb can find (a bare "5" is 8px wide) without
+   moving the number a pixel. */
+.sh-rollable{background:none;border:0;font:inherit;color:inherit;cursor:pointer;
+  text-align:inherit;border-radius:4px;padding:3px 6px;margin:-3px -6px;
+  text-decoration:underline dotted var(--line);text-underline-offset:3px}
+.sh-rollable:hover{color:var(--manon);background:var(--panel-2);
+  text-decoration-color:var(--manon)}
+.sh-rollable:hover .wpn-dice,.sh-rollable:hover .wpn-bonus{color:var(--manon)}
+.sh-rollable:focus-visible{outline:1px solid var(--manon);outline-offset:1px}
 /* Re-sync picker: one scrollable row per out-of-step item, diff underneath */
 .sh-resync-list{max-height:46vh;overflow-y:auto;border:1px solid var(--line);
   border-radius:6px;padding:6px 10px;background:var(--ink)}

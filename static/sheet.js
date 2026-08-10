@@ -91,20 +91,23 @@ function specAdjustFor(skill, weaponName, weaponType) {
   return RULES.weaponSpecAdjust(entry, skill, weaponName, weaponType, DATA.tables);
 }
 
-function weaponRoll(type, weaponName) {
+function weaponRollParts(type, weaponName) {
   const skill = WEAPON_SKILL_BY_TYPE[type] || "Firearms";
   const s = CALC.skills[skill] || {};
   const pool = s.pool || "Finesse";
   // final already folds in group-fallback dice, so no "grp" notation needed
   const spec = specAdjustFor(skill, weaponName, type);
   const rated = s.final > 0;
-  const rating = rated ? Math.max(0, s.final + spec.delta) : "untrained";
+  const dice = rated ? Math.max(0, s.final + spec.delta) : 0;
+  const rating = rated ? dice : "untrained";
   // Name the specialty rather than just moving the number, so a rating that
   // differs from the Skills tab explains itself.
   const note = (rated && spec.delta > 0) ? ` (+1 ${spec.term})`
     : (rated && spec.delta < 0) ? ` (−1 outside ${spec.term})` : "";
-  return `Roll ${pool} ${CALC.pools[pool]}d · ${skill} ${rating}${note}`;
+  return { skill, pool, dice,
+    text: `Roll ${pool} ${CALC.pools[pool]}d · ${skill} ${rating}${note}` };
 }
+function weaponRoll(type, weaponName) { return weaponRollParts(type, weaponName).text; }
 
 const LIFESTYLE_EFFECTS = {
   Squatter: "Rough living: begin play with one Physical condition box already checked and take a −1 penalty die on all tests during the run.",
@@ -1069,6 +1072,34 @@ function sheetInitiative() {
     || { dice: CALC.pools.Focus, bonus: CALC.attributes.Reaction.final, notes: [] };
 }
 
+/* Open the roller loaded with a named test's dice — what every clickable dice
+ * figure on the sheet calls. `dice` is the limit (skill, or skill + Accuracy on
+ * a weapon) and `bonus` the bonus dice from firing mode, light, point-blank and
+ * so on; both are dice you roll, so they add into one count. It stops at
+ * loading them: penalty dice from range, cover and lighting are a table call,
+ * and the ± steppers are right there to apply them before you roll. */
+function openPoolRoller({ dice, bonus = 0, label, note }) {
+  Object.assign(rollerState, {
+    open: true, mode: "pool", label: label || "", note: note || "",
+    dice: [], bonus: 0,
+    count: Math.max(1, Math.min(ROLLER_MAX_DICE, (+dice || 0) + (+bonus || 0))),
+  });
+  rollerRefresh();
+}
+
+/* A dice figure you can click to load the roller. Wraps whatever the caller
+ * already renders (a rating, a "(4d +1b)" chip) so the reading stays put and
+ * only the affordance is added. */
+function rollable(node, { dice, bonus = 0, label, note, title }) {
+  const total = Math.max(0, (+dice || 0) + (+bonus || 0));
+  if (!total) return node;      // nothing to roll — leave it as plain text
+  return el("button", {
+    class: "sh-rollable", type: "button",
+    title: title || `Roll ${total}d6 — ${label}`,
+    onclick: e => { e.stopPropagation(); openPoolRoller({ dice, bonus, label, note }); },
+  }, node);
+}
+
 /* Open the roller preloaded for an Initiative roll. */
 function openInitiativeRoller() {
   const init = sheetInitiative();
@@ -1120,8 +1151,10 @@ function rollerOverlay() {
   }, label);
 
   const isInit = st.mode === "initiative";
+  const isPool = st.mode === "pool";
   const panel = el("div", { class: "sh-roller" },
-    el("div", { class: "sh-roller-head" }, isInit ? "Initiative Roll" : "Die Roller",
+    el("div", { class: "sh-roller-head" },
+      isInit ? "Initiative Roll" : (isPool && st.label) ? st.label : "Die Roller",
       el("button", { class: "sh-roller-close", title: "Close",
         onclick: () => { st.open = false; rollerRefresh(); } }, "✕")),
     el("div", { class: "sh-roller-controls" },
@@ -1168,7 +1201,11 @@ function rollerOverlay() {
     panel.append(el("div", { class: "sh-roller-hint" },
       isInit
         ? `Roll ${st.count}d6 — every 4–6 is a Success, plus ${st.bonus} Reaction.`
-        : `Roll ${st.count}d6 — every 4–6 is a Success.`));
+        : `Roll ${st.count}d6 — every 4–6 is a Success.`
+          // What made up the count, and the reminder that penalties are yours
+          // to apply: the sheet can't know the range or the lighting.
+          + (isPool && st.note ? ` ${st.note}.` : "")
+          + (isPool ? " Adjust with – / + for penalty dice." : "")));
   }
   wrap.append(panel);
   return wrap;
@@ -2444,14 +2481,22 @@ function shOverview(body) {
       const bwhy = [];
       if (acc) bwhy.push(`Accuracy ${acc}`);
       for (const b of bonuses) if (+b.dice) bwhy.push(`${b.label} +${b.dice}`);
-      return el("span", { class: "wpn-dice-set" },
+      // Click the chip to load the roller: the limit and the bonus dice are all
+      // dice you roll, so it opens with skill + bonus already counted out.
+      return rollable(el("span", { class: "wpn-dice-set" },
         el("b", { class: "wpn-dice" + (spec.delta ? (spec.delta > 0 ? " spec-on" : " spec-off") : ""),
           title: why.join(" ") }, `(${skillDice}d`),
         bonus
           ? el("b", { class: "wpn-bonus", title: `Bonus dice: ${bwhy.join(" + ")}` },
               ` +${bonus}b`)
           : null,
-        el("b", { class: "wpn-dice" }, ")"));
+        el("b", { class: "wpn-dice" }, ")")),
+        // Weapon name alone in the header — it's a panel title, and the skill
+        // that made the number is one line down in the hint.
+        { dice: skillDice, bonus, label: name,
+          note: `${skill}: ${skillDice} skill${bonus ? ` + ${bonus} bonus` : ""}`,
+          title: `Roll ${skillDice + bonus}d6 — ${why.join(" ")}`
+            + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
     };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
@@ -3038,7 +3083,24 @@ function skillTableRow(name, dim = false, editable = false, bareName = false) {
     el("td", { class: "num sub" }, s.points ? String(s.points) : ""),
     el("td", { class: "num sub" }, s.bonus ? (s.bonus > 0 ? `+${s.bonus}` : String(s.bonus)) : ""),
     el("td", { class: "num sub" }, groupDice ? String(groupDice) : ""),
-    el("td", { class: "num" }, el("b", {}, rating),
+    // The rating is the dice limit for a test, so it's the thing to click. A
+    // specialized skill shows two ratings and each loads its own: −1 off the
+    // specialty, +1 on it. Bonus dice (+Nd) ride along into the count.
+    el("td", { class: "num" },
+      specOn
+        ? el("span", {},
+            rollable(el("b", {}, String(s.final - 1)),
+              { dice: s.final - 1, bonus: s.dice_bonus || 0,
+                label: `${name} (outside ${(spec && spec.text) || "specialty"})`,
+                note: `${s.final - 1} skill${s.dice_bonus ? ` + ${s.dice_bonus} bonus` : ""}` }),
+            el("b", {}, " / "),
+            rollable(el("b", {}, String(s.final + 1)),
+              { dice: s.final + 1, bonus: s.dice_bonus || 0,
+                label: `${name}${(spec && spec.text) ? ` (${spec.text})` : ""}`,
+                note: `${s.final + 1} skill${s.dice_bonus ? ` + ${s.dice_bonus} bonus` : ""}` }))
+        : rollable(el("b", {}, rating),
+            { dice: s.final, bonus: s.dice_bonus || 0, label: name,
+              note: `${s.final} skill${s.dice_bonus ? ` + ${s.dice_bonus} bonus` : ""}` }),
       s.soft ? el("span", { class: "sub" }, ` (soft)`) : null,
       s.dice_bonus ? el("span", { class: "skill-dice" }, `+${s.dice_bonus}d`) : null));
 }
@@ -3957,7 +4019,15 @@ function shGear(body) {
           reorderHandle(() => arrayMove(arr, wi, -1), () => arrayMove(arr, wi, 1),
             wi > 0, wi < arr.length - 1),
           el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
-          el("div", { class: "sub", style: "color:var(--manon)" }, weaponRoll(r.Type, w.name)),
+          (() => {   // the roll hint doubles as the roll button
+            const roll = weaponRollParts(r.Type, w.name);
+            const hint = el("div", { class: "sub", style: "color:var(--manon)" }, roll.text);
+            return roll.dice
+              ? rollable(hint, { dice: roll.dice, label: w.name,
+                  note: `${roll.skill}: ${roll.dice} skill — Accuracy and firing-mode `
+                    + "dice are counted on the Overview chip" })
+              : hint;
+          })(),
           shMountEditor(en, r, w.equipped !== false)),
         el("td", { class: "sub" },
           `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +

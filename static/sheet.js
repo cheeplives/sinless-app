@@ -2261,16 +2261,17 @@ function heatSpec(row) {
  * thrown grenade — so it gets the same one-press roll the guns' Fire button
  * gives, minus the ammo. Returns "—" when there's nothing to roll (an untrained
  * trained-only skill), which is what the cell used to show for all of them. */
-function attackButton(label, rs) {
+function attackButton(label, rs, opts = {}) {
   if (!rs || rs.locked || (rs.skillDice + rs.bonus) <= 0) return "—";
   const total = rs.skillDice + rs.bonus;
   return el("div", { class: "sh-fire-btns" },
     el("button", { class: "btn small",
-      title: `Roll ${total}d6 — ${rs.why.join(" ")}`
-        + (rs.bwhy.length ? `, bonus ${rs.bwhy.join(" + ")}` : ""),
+      title: opts.title || (`Roll ${total}d6 — ${rs.why.join(" ")}`
+        + (rs.bwhy.length ? `, bonus ${rs.bwhy.join(" + ")}` : "")),
       onclick: () => openPoolRoller({ dice: rs.skillDice, bonus: rs.bonus,
         pool: rs.pool, label,
-        note: `${rs.skill}: ${rs.skillDice} skill${rs.bonus ? ` + ${rs.bonus} bonus` : ""}` }),
+        note: opts.note
+          || `${rs.skill}: ${rs.skillDice} skill${rs.bonus ? ` + ${rs.bonus} bonus` : ""}` }),
     }, "Attack"));
 }
 
@@ -2826,8 +2827,10 @@ function shOverview(body) {
     // Fangs, Iron Fist, …) — auto-calculated Strength-based damage and Reach.
     if (grantedWeapons.length) {
       const gt = el("table");
+      const gro = !!(activeTabObj() && activeTabObj().readonly);
       gt.append(el("tr", {}, el("th", {}, "Natural / cyber weapon"),
-        el("th", {}, "Stats"), el("th", {}, "Source")));
+        el("th", {}, "Stats"), el("th", {}, "Source"),
+        gro ? null : el("th", {}, "")));
       // These are attacks made with the body, so they resolve against the
       // "Natural" pseudo-type (Unarmed Combat) unless weaponSkillName knows the
       // name -- the bladed implants roll Cybertech Combat instead.
@@ -2841,13 +2844,27 @@ function shOverview(body) {
               `${gw.dice} dice — a fixed pool from the implant, not a skill rating` },
               `(${gw.dice}d)`)
           : weaponSkillDice(gw.name, "Natural", 0);
+        // Same one-press roll the loadout's Attack gives, off whichever number
+        // this row is showing: a skill rating for claws and blades, or the
+        // implant's own fixed pool, which rolls off no skill and so spends none
+        // of a pool unless you pick one in the roller.
+        const rs = gw.dice != null
+          ? { skillDice: Math.max(0, +gw.dice || 0), bonus: 0, pool: "", locked: false,
+              skill: "", why: [`${gw.dice} dice from the implant`], bwhy: [] }
+          : weaponRollSpec(gw.name, "Natural", 0);
+        const attack = gro ? null : el("td", {},
+          attackButton(gw.name, rs, gw.dice != null
+            ? { note: `${gw.dice} dice — a fixed pool from the implant, not a skill rating`,
+                title: `Roll ${gw.dice}d6 — fixed pool from ${gw.source}` }
+            : {}));
         gt.append(el("tr", {},
           el("td", {}, el("b", {}, gw.name)),
           gw.stats
             ? el("td", { class: "sub" }, gw.stats)
             : el("td", { class: "sub" }, gw.kind || "Melee", dice,
                 ` · DMG ${gw.damage}` + (gw.note ? ` · ${gw.note}` : ` · Reach ${gw.reach}`)),
-          el("td", { class: "sub" }, gw.source)));
+          el("td", { class: "sub" }, gw.source),
+          attack));
       });
       loadout.append(gt);
     }

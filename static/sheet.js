@@ -2508,6 +2508,13 @@ function shOverview(body) {
     // Standing cover from martial arts and/or infusions — best tier wins. No
     // cover stat in the engine, so it's reported here and played at the table.
     c.cover ? statLine("Cover", c.cover.label, c.cover.sources.join(" · ")) : null,
+    // Bling: one line for the whole look, because a blinged gun and a blinged
+    // ride are the same show — best single source, never the sum.
+    ...(c.bling_etiquette || []).map(b => statLine(
+      "Bling", `+${b.bonus} ${b.etiquette} Etiquette`,
+      b.sources.length > 1
+        ? `Best single source — bling doesn't stack: ${b.sources.join(" · ")}`
+        : b.sources[0])),
     statLine("Simple actions", String(c.simple_actions)),
     ...exploitLines(c.exploit_actions),
     c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
@@ -6576,6 +6583,12 @@ function buildMarkdown() {
   const etqList = Object.entries(CHAR.etiquettes || {}).filter(([, v]) => v > 0);
   if (etqList.length) {
     L.push("**Etiquettes:** " + etqList.map(([n, v]) => `${n} ${v}`).join(" · "));
+    L.push("");
+  }
+  // Bling reads as one bonus per etiquette however many blinged things you own.
+  for (const b of (c.bling_etiquette || [])) {
+    L.push(`**Bling:** +${b.bonus} ${b.etiquette} Etiquette when you're showing it off `
+      + `— best single source, not cumulative (${b.sources.join(", ")})`);
     L.push("");
   }
   const knows = allKnowledgeSkills().filter(k => k.name);

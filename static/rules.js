@@ -3233,6 +3233,57 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
   };
 }
 
+/* Bling is a look, and a room only notices it once. A blinged gun, a blinged
+ * ride and (should one ever exist) blinged plate DO NOT add up: the character
+ * gets the best single source per etiquette, not the sum. Like every other
+ * etiquette rider this is reported rather than applied — but reported as ONE
+ * number, because the whole point is that they don't stack.
+ *
+ * Sources are the weapon mod (Effect "Street cred: +2 Street Etiquette") and a
+ * unit's Blinged condition. Anything else whose name starts "Bling" and whose
+ * effect names an etiquette joins in automatically, which is what an armor
+ * version would need.
+ *
+ * Returns [{ etiquette, bonus, sources: [...] }], best first, or []. */
+function blingEtiquette(character, data) {
+  const found = {};
+  const add = (text, label) => {
+    const m = /([+-]?\d+)\s*(?:to\s+)?([A-Za-z]+)\s+Etiquette/i.exec(text || "");
+    if (!m) return;
+    const n = parseInt(m[1], 10);
+    const etq = ETIQUETTES.find(e => e.toLowerCase().startsWith(m[2].toLowerCase()));
+    if (!n || !etq) return;
+    const slot = found[etq] || (found[etq] = { etiquette: etq, bonus: 0, sources: [] });
+    slot.sources.push(`${label} (+${n})`);
+    slot.bonus = Math.max(slot.bonus, n);      // best source wins, never the sum
+  };
+  const isBling = name => /^bling/i.test(String(name || ""));
+  for (const w of character.weapons || []) {
+    for (const mod of w.mods || []) {
+      const name = (mod && typeof mod === "object") ? mod.name : mod;
+      if (!isBling(name)) continue;
+      const row = findRow(data.weapon_mods, "Modification", name) || {};
+      add(row.Effect, `${name} on ${w.name}`);
+    }
+  }
+  for (const key of ["drones", "vehicles"]) {
+    for (const u of character[key] || []) {
+      add(VEHICLE_CONDITION_EFFECTS[u.condition], `${u.label || u.name} (${u.condition})`);
+    }
+  }
+  for (const a of character.armor || []) {
+    for (const extra of [...(a.extras || []), a.material, a.style]) {
+      const name = (extra && typeof extra === "object") ? extra.name : extra;
+      if (!isBling(name)) continue;
+      const row = findRow(data.armor_extras, "Extra", name)
+        || findRow(data.armor_materials, "Material", name)
+        || findRow(data.armor_styles, "Style", name) || {};
+      add(row.Effects || row.Effect || row["Etiquette Bonus"], `${name} on ${a.name}`);
+    }
+  }
+  return Object.values(found).sort((x, y) => y.bonus - x.bonus);
+}
+
 function deriveInitiative(pools, finalAttributes, heritage, augments, amp, martialArt, data) {
   const notes = [];
 
@@ -3984,6 +4035,10 @@ function calculate(character) {
     augments.zoetic_rating_raw,
     armor.ballistic_armor, armor.impact_armor,
     armor.ballistic_armor_max);
+
+  // Bling's etiquette rider, collapsed to the best single source per etiquette
+  // — a blinged gun and a blinged ride are one look, not two bonuses.
+  combat.bling_etiquette = blingEtiquette(character, data);
 
   // Fold infusion armor / movement into the derived combat stats, and name the
   // spirit in armor_sources so the Overview shows where it came from.

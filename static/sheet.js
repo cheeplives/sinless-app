@@ -4015,18 +4015,29 @@ function shCarriedToggle(entry) {
     el("span", {}, "Carried"));
 }
 
-function shUsesStepper(entry, onChange) {
-  const val = el("span", { class: "sv" }, String(entry.qty || 0));
+/* How many of this you own. Ammo counts in uses, everything else in items, but
+ * the control is the same: things get used up at the table — doses taken, rounds
+ * fired, grenades thrown — and that has to be recordable without deleting the
+ * row and losing the rest of the stack. No cash moves either way: spending isn't
+ * selling, and the + is for stock you already have (buying goes through the Buy
+ * section, which charges). A stack floors at 0 rather than 1, so an empty one
+ * sits there as a reminder to restock; the ✕ is what removes it for good. */
+function shUsesStepper(entry, onChange, unit = "use") {
+  const val = el("span", { class: "sv" }, String(ownedQty(entry)));
   const btn = (delta, label, title) => el("button", { class: "btn small", title,
     onclick: async () => {
-      entry.qty = Math.max(0, (entry.qty || 0) + delta);
+      entry.qty = Math.max(0, ownedQty(entry) + delta);
+      // Carrying more than you own is nonsense; carriedQty already clamps on
+      // read, and this keeps the stored number honest too.
+      if (entry.carried_qty != null && entry.carried_qty > entry.qty)
+        setCarriedQty(entry, entry.qty);
       val.textContent = String(entry.qty);
       await onChange();
     } }, label);
   return el("span", { class: "stepper" },
-    btn(-1, "–", "Spend a use (no refund)"),
+    btn(-1, "–", `Spend one ${unit} (no refund)`),
     val,
-    btn(1, "+", "Add a use you already own — buy more in the Buy section below"));
+    btn(1, "+", `Add one ${unit} you already own — buy more in the Buy section below`));
 }
 
 /* Mounted-augment editor for host gear (Power Armor, Arwin Goggles, homebrew
@@ -4116,6 +4127,9 @@ function shMountEditor(entry, hostRow, hostActive) {
 
 function shGear(body) {
   const play = CHAR.play;
+  // Shared read-only flag for the tab's editable controls (a shared view reads
+  // the same sheet but must not spend, sell or use anything up).
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
   // Weapons & armor carry the small-heritage surcharge; general gear does not.
   const mult = RULES.surchargeFor("weapon", CALC.budget.gear_cost_multiplier || 1);
   const gearMult = RULES.surchargeFor("gear", CALC.budget.gear_cost_multiplier || 1);
@@ -4254,7 +4268,14 @@ function shGear(body) {
         el("td", {},
           el("input", { type: "checkbox", ...(w.equipped !== false ? { checked: 1 } : {}),
             onchange: async e => { w.equipped = e.target.checked; await playChangedRecalc(); } }),
-          shMinStrControl(w, r)),
+          shMinStrControl(w, r),
+          // Thrown weapons stack, and a thrown grenade is gone. Same −/+ the
+          // gear rows carry, so the stack can run down without deleting it.
+          (!ro && r.Type === "Thrown")
+            ? el("div", { class: "sub", style: "margin-top:4px" },
+                el("span", { class: "sub" }, "Qty "),
+                shUsesStepper(w, playChangedRecalc, "grenade"))
+            : null),
         el("td", {}, el("button", { class: "row-del", title: "Sell / remove weapon",
           onclick: () => disposeOfItem({ category, arr, index: wi, inPlay, name: w.name,
             value: Math.round((+r.Cost || 0) * mult) }) }, "✕"))));
@@ -4409,7 +4430,6 @@ function shGear(body) {
     const { ref: g, inPlay, arr } = en;
     // Focus/Fetish/Spirit Bag links (chosen in chargen) now show — and stay
     // editable — on the sheet (issue #14). gearLinkSelect returns null otherwise.
-    const ro = !!(activeTabObj() && activeTabObj().readonly);
     const linkSel = (!ro && typeof gearLinkSelect === "function")
       ? gearLinkSelect(g, playChangedRecalc) : null;
     // Ammo counts in uses rather than pieces: its Qty stepper is the rounds you
@@ -4427,12 +4447,14 @@ function shGear(body) {
         linkSel ? el("div", { class: "sub sh-gearlink" }, "Linked to ", linkSel)
           : (g.link ? el("div", { class: "sub" }, `Linked to ${g.link}`) : null),
         shMountEditor(en, r, g.carried !== false)),
-      // Ammo is counted in uses, so it gets a live -/+ tracker for burning
-      // rounds at the table (issue #21). It moves no cash -- buying more goes
-      // through the Buy section below, which charges per use.
-      el("td", { class: "num" }, (!ro && isAmmo)
-        ? shUsesStepper(g, playChangedRecalc)
-        : String(owned)),
+      // Everything you own a count of gets the same live −/+ tracker: ammo in
+      // rounds (issue #21), and doses, meds and grenades in items, because a
+      // stack gets used up at the table and the row shouldn't have to be
+      // deleted to say so. It moves no cash — buying more goes through the Buy
+      // section below, which charges.
+      el("td", { class: "num" }, ro
+        ? String(owned)
+        : shUsesStepper(g, playChangedRecalc, isAmmo ? "use" : "item")),
       // Unit weight always; the carried subtotal too once it can differ from it.
       el("td", { class: "num sub" }, String(round1(unitWt)),
         (owned > 1 && unitWt > 0)

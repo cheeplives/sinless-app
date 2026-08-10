@@ -663,8 +663,8 @@ const DATA_BUNDLE ={
 ],
 "rigs":[
 {"Rig Type":"Basic VCR","ZR":"1","BI":"","Cost":"20000","Bonus Dice":"2","Hardening":"+0","Links":"1","Cores":"Single","Mods":"1","Rarity":"3"},
-{"Rig Type":"Advanced VCR","ZR":"1","BI":"","Cost":"100000","Bonus Dice":"4","Hardening":"+1","Links":"2","Cores":"Double","Mods":"2","Rarity":"4"},
-{"Rig Type":"Master VCR","ZR":"1","BI":"","Cost":"500000","Bonus Dice":"6","Hardening":"+2","Links":"4","Cores":"Quad","Mods":"3","Rarity":"5"}
+{"Rig Type":"Advanced VCR","ZR":"2","BI":"","Cost":"100000","Bonus Dice":"4","Hardening":"+1","Links":"2","Cores":"Double","Mods":"2","Rarity":"4"},
+{"Rig Type":"Master VCR","ZR":"3","BI":"","Cost":"500000","Bonus Dice":"6","Hardening":"+2","Links":"4","Cores":"Quad","Mods":"3","Rarity":"5"}
 ],
 "rig_mods":[
 {"Rig Mod":"Input Validation","ZR":"","BI":"","Cost":"15000","Slots":"1","Effect":"+1 to Vehicle/Drone Hardening","Hardening":"1","Link":""},

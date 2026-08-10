@@ -91,6 +91,31 @@ function specAdjustFor(skill, weaponName, weaponType) {
   return RULES.weaponSpecAdjust(entry, skill, weaponName, weaponType, DATA.tables);
 }
 
+/* Everything needed to roll one attack with one weapon: the limit dice (skill
+ * ± specialization), the free dice (Accuracy, firing mode, Gun-Kata) and the
+ * pool it comes out of. The Overview's dice chip renders this, and the Fire
+ * button loads the roller from it, so the number you click and the number you
+ * shoot with cannot drift apart. */
+function weaponRollSpec(name, type, accuracy, bonuses = []) {
+  const skill = RULES.weaponSkillName(name, type);
+  const s = skill && (CALC.skills || {})[skill];
+  if (!s) return null;
+  const spec = specAdjustFor(skill, name, type);
+  // Trained-only with no dice anywhere: the weapon can't be used at all.
+  const locked = s.trained_only && !(s.final > 0 || s.dice_bonus);
+  const skillDice = Math.max(0, s.final + spec.delta);
+  const acc = +accuracy || 0;
+  const bonus = acc + bonuses.reduce((n, b) => n + (+b.dice || 0), 0);
+  const why = [`${skill} ${s.final}`];
+  if (spec.delta > 0) why.push(`+1 specialized in ${spec.term}`);
+  if (spec.delta < 0) why.push(`−1 outside your specialty (${spec.term})`);
+  why.push(`= ${skillDice} skill dice`);
+  const bwhy = [];
+  if (acc) bwhy.push(`Accuracy ${acc}`);
+  for (const b of bonuses) if (+b.dice) bwhy.push(`${b.label} +${b.dice}`);
+  return { skill, pool: s.pool, spec, locked, skillDice, bonus, why, bwhy };
+}
+
 function weaponRollParts(type, weaponName) {
   const skill = WEAPON_SKILL_BY_TYPE[type] || "Firearms";
   const s = CALC.skills[skill] || {};
@@ -2112,15 +2137,20 @@ function munitionPicker(entry, weaponRow) {
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const cur = launcher ? loadedGrenadeFor(entry).name : ammoNameFor(entry, weaponRow);
   if (ro) return el("span", { class: "sub" }, cur || "—");
-  const label = r => launcher
-    ? `${r.Weapon.replace(/\s*Grenade$/i, "")} — DMG ${r.Damage || "—"}`
-    : (r.Effect ? `${r.Item} — ${r.Effect}` : r.Item);
-  return el("select", { class: "sh-fire-sel",
+  // Names only. What each round DOES is already spelled out in the Ammo table
+  // under this one, and repeating it inside every option made the dropdown —
+  // and with it the whole Ammo column — as wide as the weapon names. The detail
+  // rides along as each option's tooltip.
+  const label = r => launcher ? r.Weapon.replace(/\s*Grenade$/i, "") : r.Item;
+  const detail = r => launcher
+    ? `DMG ${r.Damage || "—"}`
+    : (r.Effect || "no special effect");
+  return el("select", { class: "sh-fire-sel sh-ammo-sel",
     title: launcher ? "Chambered grenade" : "Loaded ammunition",
     onchange: e => { entry.ammo = e.target.value; playChanged(); } },
     el("option", { value: "" }, launcher ? "— empty —" : "— none —"),
-    ...owned.map(r => el("option", { value: key(r), ...(key(r) === cur ? { selected: 1 } : {}) },
-      label(r))));
+    ...owned.map(r => el("option", { value: key(r), title: detail(r),
+      ...(key(r) === cur ? { selected: 1 } : {}) }, label(r))));
 }
 
 /* What a mount is loaded with, and the stat mods it lends. Same parsing as
@@ -2234,7 +2264,7 @@ function heatSpec(row) {
  * Energy weapons have no magazine. They're single-shot and run on Heat, stated
  * per shot and capped in their Notes, so they get a heat tracker instead of a
  * round count. Heat starts at 1. */
-function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false) {
+function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rollSpec = null) {
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const wrap = el("div", { class: "sh-fire" });
 
@@ -2290,15 +2320,32 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false) {
       el("span", {}, "Gun-Kata")));
   }
   if (ro) return wrap;
-  wrap.append(
+  // Fire and Reload sit together on their own line — they're the pair you reach
+  // between, and the mode select and round count above are what you set once.
+  const rollable = rollSpec && !rollSpec.locked
+    && (rollSpec.skillDice + rollSpec.bonus) > 0;
+  wrap.append(el("div", { class: "sh-fire-btns" },
     el("button", { class: "btn small", disabled: dry ? "1" : null,
       title: dry ? `Not enough rounds loaded for ${mode} (needs ${cost})`
                  : `Fire ${mode} — spends ${cost} round${cost === 1 ? "" : "s"}`
-                   + (kataOn ? " (includes the Gun-Kata bullet)" : ""),
-      onclick: () => { w.loaded = Math.max(0, loaded - cost); playChanged(); } }, "Fire"),
+                   + (kataOn ? " (includes the Gun-Kata bullet)" : "")
+                   + (rollable
+                       ? ` and loads ${rollSpec.skillDice + rollSpec.bonus}d6 in the roller`
+                       : ""),
+      onclick: () => {
+        // Same dice the chip beside it would load — firing IS the attack test,
+        // so it spends the rounds and opens the roll in one press.
+        if (rollable)
+          openPoolRoller({ dice: rollSpec.skillDice, bonus: rollSpec.bonus,
+            pool: rollSpec.pool, label: w.name,
+            note: `${rollSpec.skill}: ${rollSpec.skillDice} skill`
+              + (rollSpec.bonus ? ` + ${rollSpec.bonus} bonus (${mode})` : "") });
+        w.loaded = Math.max(0, loaded - cost);
+        playChanged();
+      } }, "Fire"),
     el("button", { class: "btn small", disabled: loaded >= maxAmmo ? "1" : null,
       title: "Reload to a full magazine",
-      onclick: () => { w.loaded = maxAmmo; playChanged(); } }, "Reload"));
+      onclick: () => { w.loaded = maxAmmo; playChanged(); } }, "Reload")));
   return wrap;
 }
 
@@ -2567,37 +2614,21 @@ function shOverview(body) {
      * own Accuracy. Melee rows list Reach and carry no Accuracy, so those come
      * out as the bare skill. Returns null when nothing maps, so it can be
      * dropped straight into el(). */
+    // A specialization is +1 on what it covers and −1 on everything else the
+    // skill rolls, so it resolves per weapon rather than as the flat −1/+1 pair
+    // the Skills tab shows. Skill dice and bonus dice stay apart because they
+    // behave differently at the table — and only the skill dice cost pool.
     const weaponSkillDice = (name, type, accuracy, bonuses = []) => {
-      const skill = RULES.weaponSkillName(name, type);
-      const s = skill && (CALC.skills || {})[skill];
-      if (!s) return null;
-      const acc = +accuracy || 0;
-      // A specialization is +1 on what it covers and -1 on everything else the
-      // skill rolls, so it resolves per weapon rather than as the flat -1/+1
-      // pair the Skills tab shows.
-      const spec = specAdjustFor(skill, name, type);
+      const rs = weaponRollSpec(name, type, accuracy, bonuses);
+      if (!rs) return null;
+      const { skill, skillDice, bonus, spec, why, bwhy } = rs;
       // The bladed cyber implants roll Cybertech Combat, which is trained only —
       // with no dice in it the weapon can't be used at all, so say so rather than
       // showing an Accuracy-only dice count that implies you can swing it.
-      const locked = s.trained_only && !(s.final > 0 || s.dice_bonus);
-      if (locked)
+      if (rs.locked)
         return el("b", { class: "wpn-dice locked",
           title: `${skill} is trained only — needs at least 1 die in the skill or its group` },
           "(trained only)");
-      // Skill dice and bonus dice are kept apart because they behave
-      // differently at the table. The specialization moves the SKILL rating;
-      // Accuracy (mods already folded in by CALC) and the firing mode are
-      // bonus, and every bonus source collapses into one number.
-      const skillDice = Math.max(0, s.final + spec.delta);
-      const extra = bonuses.reduce((n, b) => n + (+b.dice || 0), 0);
-      const bonus = acc + extra;
-      const why = [`${skill} ${s.final}`];
-      if (spec.delta > 0) why.push(`+1 specialized in ${spec.term}`);
-      if (spec.delta < 0) why.push(`−1 outside your specialty (${spec.term})`);
-      why.push(`= ${skillDice} skill dice`);
-      const bwhy = [];
-      if (acc) bwhy.push(`Accuracy ${acc}`);
-      for (const b of bonuses) if (+b.dice) bwhy.push(`${b.label} +${b.dice}`);
       // Click the chip to load the roller: the limit and the bonus dice are all
       // dice you roll, so it opens with skill + bonus already counted out.
       return rollable(el("span", { class: "wpn-dice-set" },
@@ -2610,14 +2641,14 @@ function shOverview(body) {
         el("b", { class: "wpn-dice" }, ")")),
         // Weapon name alone in the header — it's a panel title, and the skill
         // that made the number is one line down in the hint.
-        { dice: skillDice, bonus, label: name, pool: s.pool,
+        { dice: skillDice, bonus, label: name, pool: rs.pool,
           note: `${skill}: ${skillDice} skill${bonus ? ` + ${bonus} bonus` : ""}`,
           title: `Roll ${skillDice + bonus}d6 — ${why.join(" ")}`
             + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
     };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
     if (equippedWeapons.length || cyberguns.length) {
-      const wt = el("table");
+      const wt = el("table", { class: "sh-loadout" });
       // Mods are listed by name inside the stat line rather than getting a
       // column of their own -- their full effect text is on the Gear tab -- so
       // the freed columns can carry the firing mode and the loaded ammo.
@@ -2699,7 +2730,10 @@ function shOverview(body) {
               munNotes.length
                 ? el("div", { class: "sub wpn-ammo-note" }, `${munName}: ${munNotes.join(" · ")}`) : null),
             fire: el("td", { class: "sub" },
-              modes.length ? firingModeControls(w, r, calcRow, modes, mode, kataOffered) : "—"),
+              modes.length
+                ? firingModeControls(w, r, calcRow, modes, mode, kataOffered,
+                    weaponRollSpec(w.name, r.Type, shot.acc, bonuses))
+                : "—"),
             ammo: el("td", { class: "sub" }, munitionPicker(w, r)),
           };
         },

@@ -2796,16 +2796,19 @@ function tabGear(p) {
           v => { it.qty = v; costCell.textContent = fmt((+r.Cost || 0) * v); }, 1, 99)),
         // More than one owned makes "how many am I carrying" a real question, so
         // it gets a 0..owned spinner; a single item stays a plain yes/no.
+        // The label leads (issue #26, applied here to match the play Gear tab):
+        // trailing it left the Qty and Carried spinners running together as one
+        // undifferentiated row of -/+ buttons.
         el("td", {},
           el("label", { class: "opt" },
+            el("span", {}, "Carried"),
             ownedQty(it) > 1
               ? stepper(() => carriedQty(it), v => setCarriedQty(it, v), 0, ownedQty(it))
               : el("input", { type: "checkbox", ...(it.carried !== false ? { checked: 1 } : {}),
                   onchange: e => {
                     setCarriedQty(it, e.target.checked ? ownedQty(it) : 0);
                     refresh();
-                  } }),
-            el("span", {}, "Carried"))),
+                  } }))),
         el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
     },
   }));

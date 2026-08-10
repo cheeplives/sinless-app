@@ -2480,6 +2480,32 @@ function bowRating(row, entry) {
   };
 }
 
+/* What the gun itself is worth — the number a percentage-priced mod takes its
+ * share of. A bow has no price of its own: it's rated by the Strength needed to
+ * draw it, and bowRating turns that into the cost. */
+function weaponBaseCost(row, entry) {
+  const bow = bowRating(row, entry || {});
+  return bow ? bow.cost : asNumber((row || {}).Cost);
+}
+
+/* A weapon mod's price. Most are a flat figure, but a mod whose Cost cell ends
+ * in "%" is priced as a share of the gun it's bolted to (Bling is 25%) — a
+ * showpiece finish costs what the piece underneath is worth. Anything else
+ * falls through to asNumber, so a blank or junk cell reads as free. */
+function weaponModCost(modRow, weaponBaseCostValue) {
+  const raw = String((modRow || {}).Cost ?? "").trim();
+  const pct = /^(-?\d+(?:\.\d+)?)\s*%$/.exec(raw);
+  if (!pct) return asNumber(raw);
+  return round2(asNumber(weaponBaseCostValue) * (Number(pct[1]) / 100));
+}
+
+/* The "25%" from such a cell, or null for a flat price — for UI that wants to
+ * say WHY one gun's Bling costs more than another's. */
+function weaponModCostPercent(modRow) {
+  const pct = /^(-?\d+(?:\.\d+)?)\s*%$/.exec(String((modRow || {}).Cost ?? "").trim());
+  return pct ? Number(pct[1]) : null;
+}
+
 function priceWeapons(character, data, gearCostMultiplier, warnings, strength, errors,
                       activeAugmentNames, playWarnings) {
   const priced = [];
@@ -2513,7 +2539,9 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
     for (const modName of entry.mods || []) {
       const modRow = findRow(data.weapon_mods, "Modification", modName);
       if (modRow) {
-        cost += asNumber(modRow.Cost);
+        // Percentage-priced mods take their share of the gun's own price, not of
+        // the running total — fitting two of them can't compound.
+        cost += weaponModCost(modRow, baseCost);
         accMod += asNumber(modRow.AccMod);
         fittedMods.push({ name: modName, slot: modRow.Slot, effect: modRow.Effect });
       }
@@ -4118,6 +4146,7 @@ return {
   GHOST_RATING_DICE,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,
+  weaponBaseCost, weaponModCost, weaponModCostPercent,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage, augmentTier, augmentStacks,

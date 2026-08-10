@@ -207,7 +207,7 @@ const HOMEBREW_CONFIG = {
     { key: "Slot", select: () => hbDistinct("weapon_mods", "Slot") },
     { key: "ZR", hint: "number" },
     { key: "BI", hint: "number" },
-    { key: "Cost", hint: "number" },
+    { key: "Cost", hint: "number, or 25% for a share of the weapon's cost" },
     { key: "Effect", ta: true },
     { key: "RecoilMod", hint: "+/-N" },
     { key: "AccMod", hint: "+/-N" },

@@ -3229,9 +3229,13 @@ function shKismet(body) {
  * fitted mod's name above its chip (or "—" when empty), with an inline picker
  * to fit a new mod once a box is empty. Dual-slot mods (e.g. Laser Sight, fits
  * either barrel slot) land in whichever of their candidate slots is free. */
-function weaponModSlots(entry, mult, weaponName) {
+function weaponModSlots(entry, mult, weaponName, weaponRow) {
   const table = DATA.tables.weapon_mods;
   const order = ["Overbarrel", "Underbarrel", "Chassis"];
+  // A percentage-priced mod (Bling) costs a share of this gun, so every price
+  // below — fitting, selling, the dropdown label — is quoted per weapon.
+  const base = RULES.weaponBaseCost(weaponRow || {}, entry.ref);
+  const priceOf = m => Math.round(RULES.weaponModCost(m, base) * mult);
   const sub = sublistOf(entry, "mods");
   const boxes = RULES.assignWeaponModSlots(sub.items, table).assigned;
   const grid = el("div", { class: "sh-modslots" });
@@ -3250,8 +3254,7 @@ function weaponModSlots(entry, mult, weaponName) {
           const idx = sub.items.findIndex(m => sublistName(m) === modName);
           if (idx < 0) return;
           disposeOfMod({ entry, list: "mods", index: idx, name: modName,
-            hostName: weaponName,
-            value: Math.round((+(modRow && modRow.Cost) || 0) * mult) });
+            hostName: weaponName, value: priceOf(modRow) });
         },
       }, modName + " ✕"));
       if (modRow && modRow.Effect)
@@ -3263,7 +3266,7 @@ function weaponModSlots(entry, mult, weaponName) {
           const name = e.target.value;
           if (!name) return;
           const mr = table.find(m => m.Modification === name && m.Slot === slot);
-          const cost = Math.round((+(mr && mr.Cost) || 0) * mult);
+          const cost = priceOf(mr);
           if (CHAR.play.cash < cost
               && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) {
             e.target.value = ""; return;
@@ -3275,7 +3278,7 @@ function weaponModSlots(entry, mult, weaponName) {
         },
       }, el("option", { value: "" }, `+ ${slot}…`),
         ...options.map(m => el("option", { value: m.Modification },
-          `${m.Modification} (${fmt(Math.round((+m.Cost || 0) * mult))})`))));
+          `${m.Modification} (${fmt(priceOf(m))})`))));
     }
     grid.append(box);
   }
@@ -3645,7 +3648,7 @@ function shGear(body) {
             value: Math.round((+r.Cost || 0) * mult) }) }, "✕"))));
       const upgBoxes = weaponUpgradeSlots(w, r, mult);
       if (canMod || upgBoxes.length) {
-        const strip = canMod ? weaponModSlots(en, mult, w.name)
+        const strip = canMod ? weaponModSlots(en, mult, w.name, r)
                              : el("div", { class: "sh-modslots" });
         upgBoxes.forEach(b => strip.append(b));
         t.append(el("tr", { class: "sh-modslots-row" },

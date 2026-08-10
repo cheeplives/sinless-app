@@ -304,6 +304,11 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
   **first** match, so the Overbarrel row's cost wins wherever a mod is resolved by
   name alone. `check_data.py` allowlists these two names; a *new* duplicate is an
   error.
+  `Cost` is a flat figure **or** a percentage of the host weapon's own cost when
+  the cell ends in `%` (`Bling` is `25%`) — `RULES.weaponModCost(modRow, base)`
+  resolves either, and `RULES.weaponBaseCost` supplies the base (a bow's comes
+  from its draw Strength, not a data cell). Anything pricing a weapon mod must go
+  through those two, not `asNumber(row.Cost)`, which reads `"25%"` as 0.
 - **`heritage_features`** — identity is `Category`+`Name` (`UpliftType`,
   `GreenBoon`, `GreenBane`, …), but `rules.js:580` builds
   `traitsByName[row.Name]` across *all* categories. `Name` is unique table-wide

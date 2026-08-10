@@ -1874,7 +1874,12 @@ function modSlotClass(slot) {
   return ["overbarrel", "underbarrel", "chassis"].includes(s) ? `mod-${s}` : null;
 }
 
-function modGroups(table, nameCol, catCol, fallback) {
+/* `costOf` prices a row against its host when a flat number won't do — a
+ * percentage-priced weapon mod (Bling) is worth a share of the gun it's going
+ * on, so the browser can only show a real figure per weapon. The percentage is
+ * spelled out beside the effect, since the same mod costs different money on
+ * different guns. */
+function modGroups(table, nameCol, catCol, fallback, costOf) {
   const byCat = {};
   for (const r of table) {
     const cat = (catCol && r[catCol]) ? r[catCol] : fallback;
@@ -1883,12 +1888,17 @@ function modGroups(table, nameCol, catCol, fallback) {
   return Object.entries(byCat).map(([label, rows]) => ({
     label,
     cls: modSlotClass(label),   // colour the group header by slot, when applicable
-    items: rows.map(r => ({
-      name: r[nameCol],
-      cost: (r.Cost != null && r.Cost !== "") ? +r.Cost : null,
-      sub: r.Effect || r.ModeEffect || "",
-      cls: catCol ? modSlotClass(r[catCol]) : null,   // colour each item name by slot
-    })),
+    items: rows.map(r => {
+      const pct = RULES.weaponModCostPercent(r);
+      return {
+        name: r[nameCol],
+        cost: costOf ? costOf(r)
+          : ((r.Cost != null && r.Cost !== "") ? +r.Cost : null),
+        sub: [r.Effect || r.ModeEffect || "",
+              pct != null ? `${pct}% of the weapon's cost` : ""].filter(Boolean).join(" · "),
+        cls: catCol ? modSlotClass(r[catCol]) : null,   // colour each item name by slot
+      };
+    }),
   }));
 }
 
@@ -2237,7 +2247,10 @@ function tabWeapons(p) {
           canMod ? fittedCategoryEditor({
             id: `wmods-${i}-${it.name}`,
             items: it.mods || [],
-            groups: modGroups(DATA.tables.weapon_mods, "Modification", "Slot"),
+            // Prices are per-weapon: a percentage-costed mod is a share of this
+            // gun (a bow's price comes from its draw Strength, not a data cell).
+            groups: modGroups(DATA.tables.weapon_mods, "Modification", "Slot", null,
+              m => RULES.weaponModCost(m, RULES.weaponBaseCost(r, it))),
             // One mod per slot (Overbarrel / Underbarrel / Chassis): refuse a
             // mod that would leave the fitted set without a free slot.
             guard: name => {

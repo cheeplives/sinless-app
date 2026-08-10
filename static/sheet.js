@@ -1136,6 +1136,9 @@ function openPoolRoller({ dice, bonus = 0, label, note, pool }) {
 function rollerSpendPool() {
   const st = rollerState;
   if (!st.pool || st.mode === "initiative") return null;
+  // A shared view can roll all it likes; it doesn't get to spend someone else's
+  // pool, even transiently (nothing persists there, but the chip would move).
+  if (activeTabObj() && activeTabObj().readonly) return null;
   const want = Math.max(0, st.count - rollerFreeDice());
   if (!want) return null;
   const ps = poolState(st.pool);
@@ -2254,6 +2257,23 @@ function heatSpec(row) {
   return m ? { per: +m[1], max: +m[2] } : null;
 }
 
+/* A weapon with no firing mode still makes an attack test — a blade, a fist, a
+ * thrown grenade — so it gets the same one-press roll the guns' Fire button
+ * gives, minus the ammo. Returns "—" when there's nothing to roll (an untrained
+ * trained-only skill), which is what the cell used to show for all of them. */
+function attackButton(label, rs) {
+  if (!rs || rs.locked || (rs.skillDice + rs.bonus) <= 0) return "—";
+  const total = rs.skillDice + rs.bonus;
+  return el("div", { class: "sh-fire-btns" },
+    el("button", { class: "btn small",
+      title: `Roll ${total}d6 — ${rs.why.join(" ")}`
+        + (rs.bwhy.length ? `, bonus ${rs.bwhy.join(" + ")}` : ""),
+      onclick: () => openPoolRoller({ dice: rs.skillDice, bonus: rs.bonus,
+        pool: rs.pool, label,
+        note: `${rs.skill}: ${rs.skillDice} skill${rs.bonus ? ` + ${rs.bonus} bonus` : ""}` }),
+    }, "Attack"));
+}
+
 /* Firing controls on each Overview weapon row.
  *
  * Ballistic weapons pick a firing mode -- its bonus dice are folded into the
@@ -2729,11 +2749,15 @@ function shOverview(body) {
                 ? el("div", { class: "sub wpn-mods" }, "Mods: " + modNames.join(" · ")) : null,
               munNotes.length
                 ? el("div", { class: "sub wpn-ammo-note" }, `${munName}: ${munNotes.join(" · ")}`) : null),
-            fire: el("td", { class: "sub" },
-              modes.length
-                ? firingModeControls(w, r, calcRow, modes, mode, kataOffered,
-                    weaponRollSpec(w.name, r.Type, shot.acc, bonuses))
-                : "—"),
+            fire: el("td", { class: "sub" }, (() => {
+              const rs = weaponRollSpec(w.name, r.Type, shot.acc, bonuses);
+              if (modes.length)
+                return firingModeControls(w, r, calcRow, modes, mode, kataOffered, rs);
+              // Melee, thrown and anything else without a firing mode: no
+              // magazine to track, but the same attack test to roll.
+              const ro = !!(activeTabObj() && activeTabObj().readonly);
+              return ro ? "—" : attackButton(w.name, rs);
+            })()),
             ammo: el("td", { class: "sub" }, munitionPicker(w, r)),
           };
         },
@@ -3916,16 +3940,25 @@ function shMinStrControl(entry, row) {
     `Min STR ${bow.minStr}${short ? " ⚠" : ""}`);
 }
 
+/* Taking the hotseat means jacking in, and that takes a VCR. Owning one is the
+ * test: equippedSelect makes the first rig owned the active one by default, so
+ * "owns a rig" and "has one equipped" are the same state in practice. */
+function hasVcrRig() { return allRigs().length > 0; }
+
 /* "Hotseat": the unit the player is currently piloting. One at a time — you
  * can't be in two cockpits — so ticking one clears the rest. Its stat block is
  * what the Overview puts above the character's own weapons. */
 function shHotseatToggle(key, u) {
   const rg = rigFlags();
   const on = !!rg.hotseat[key];
-  return el("label", { class: "sub",
+  const rigged = hasVcrRig();
+  return el("label", { class: "sub" + (rigged ? "" : " sh-disabled"),
       style: "display:inline-flex;align-items:center;gap:6px;margin-top:4px",
-      title: `Piloting ${u.label || u.name} — its stats move to the Overview` },
+      title: rigged
+        ? `Piloting ${u.label || u.name} — its stats move to the Overview`
+        : "No VCR owned — nothing to jack into. Buy a rig on this tab first." },
     el("input", { type: "checkbox", ...(on ? { checked: 1 } : {}),
+      ...(rigged ? {} : { disabled: "1" }),
       onchange: e => {
         const want = e.target.checked;
         for (const k of Object.keys(rg.hotseat)) rg.hotseat[k] = false;
@@ -5720,7 +5753,11 @@ function deployedUnits() {
     list.forEach((u, i) => {
       const key = `${table}:${i}`;
       const linked = !!rg.linked[key], active = !!rg.active[key];
-      if (linked || active) out.push({ table, u, key, linked, active, hotseat: !!rg.hotseat[key] });
+      // A hotseat flag left over from before the rig was sold reads as empty:
+      // you can't be piloting anything without a VCR to jack in with.
+      if (linked || active)
+        out.push({ table, u, key, linked, active,
+          hotseat: !!rg.hotseat[key] && hasVcrRig() });
     });
   });
   return out;

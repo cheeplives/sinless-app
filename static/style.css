@@ -771,8 +771,12 @@ label.opt input{margin-top:3px}
 .sh-loadout th:first-child{width:25%}
 .sh-loadout th:last-child{width:12%}
 /* Fire and Reload are the pair you reach between mid-fight, so they get their
-   own line under the mode select rather than trailing off the end of it. */
+   own line under the mode select rather than trailing off the end of it. A
+   weapon with no firing mode carries a lone Attack button in the same slot. */
 .sh-fire-btns{display:flex;gap:6px;flex-basis:100%;margin-top:2px}
+/* a toggle that can't apply yet (Hotseat with no VCR owned) — still readable,
+   visibly out of reach, and the title says why */
+.sh-disabled{opacity:.45;cursor:not-allowed}
 .sh-fire-mag{font-family:var(--mono);font-size:11px;color:var(--text)}
 .sh-fire-mag.dry{color:var(--bad)}
 .sh-fire .btn.small{padding:1px 8px;font-size:11px}

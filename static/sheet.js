@@ -1058,8 +1058,15 @@ function counterBtn(label, fn, cls) {
  * re-roll (see rollerApply). */
 const ROLLER_MAX_DICE = 30;
 const rollerD6 = () => 1 + Math.floor(Math.random() * 6);
-// dice: {value, selected, rerolled}
-const rollerState = { open: false, count: 6, dice: [], bonus: 0, mode: "free" };
+/* dice: {value, selected, rerolled}
+ * `bonus`     — flat number added to successes (Initiative's Reaction).
+ * `bonusDice` — how many of `count` are BONUS dice rather than limit dice.
+ *               Bonus dice are rolled but cost no pool, so this is the line
+ *               between "8d6 rolled" and "how many came out of Brawn".
+ * `pool`      — the pool a roll draws from, "" for none. Sticky between rolls,
+ *               because a run of Finesse tests is the normal case. */
+const rollerState = { open: false, count: 6, dice: [], bonus: 0, bonusDice: 0,
+                      mode: "free", pool: "", spent: null };
 
 function rollerRefresh() {
   const cur = $("#die-roller");
@@ -1078,25 +1085,46 @@ function sheetInitiative() {
  * so on; both are dice you roll, so they add into one count. It stops at
  * loading them: penalty dice from range, cover and lighting are a table call,
  * and the ± steppers are right there to apply them before you roll. */
-function openPoolRoller({ dice, bonus = 0, label, note }) {
+function openPoolRoller({ dice, bonus = 0, label, note, pool }) {
   Object.assign(rollerState, {
     open: true, mode: "pool", label: label || "", note: note || "",
-    dice: [], bonus: 0,
+    dice: [], bonus: 0, spent: null,
+    bonusDice: Math.max(0, +bonus || 0),
     count: Math.max(1, Math.min(ROLLER_MAX_DICE, (+dice || 0) + (+bonus || 0))),
+    // A test rolled off a skill knows which pool it draws from; keep the last
+    // choice when the caller doesn't say.
+    pool: pool !== undefined ? (pool || "") : rollerState.pool,
   });
   rollerRefresh();
+}
+
+/* Take the roll's limit dice out of the chosen pool. Bonus dice are free — they
+ * come from the firing mode or the light, not from you — so only the part of
+ * the count that isn't bonus is spent. Returns what actually moved, which can
+ * be short of the ask when the pool is nearly out. */
+function rollerSpendPool() {
+  const st = rollerState;
+  if (!st.pool || st.mode === "initiative") return null;
+  const want = Math.max(0, st.count - (st.bonusDice || 0));
+  if (!want) return null;
+  const ps = poolState(st.pool);
+  const spend = Math.min(want, ps.remaining);
+  const result = { pool: st.pool, want, spend, left: ps.remaining - spend };
+  if (spend > 0) ps.setUsed(ps.used + spend);   // persists and re-renders
+  return result;
 }
 
 /* A dice figure you can click to load the roller. Wraps whatever the caller
  * already renders (a rating, a "(4d +1b)" chip) so the reading stays put and
  * only the affordance is added. */
-function rollable(node, { dice, bonus = 0, label, note, title }) {
+function rollable(node, { dice, bonus = 0, label, note, title, pool }) {
   const total = Math.max(0, (+dice || 0) + (+bonus || 0));
   if (!total) return node;      // nothing to roll — leave it as plain text
   return el("button", {
     class: "sh-rollable", type: "button",
-    title: title || `Roll ${total}d6 — ${label}`,
-    onclick: e => { e.stopPropagation(); openPoolRoller({ dice, bonus, label, note }); },
+    title: (title || `Roll ${total}d6 — ${label}`)
+      + (pool ? ` · costs ${dice} ${pool}` : ""),
+    onclick: e => { e.stopPropagation(); openPoolRoller({ dice, bonus, label, note, pool }); },
   }, node);
 }
 
@@ -1134,7 +1162,7 @@ function rollerOverlay() {
     // is what puts the roller into initiative mode.
     onclick: () => {
       if (!st.open && st.mode !== "free") {
-        Object.assign(st, { mode: "free", bonus: 0, dice: [] });
+        Object.assign(st, { mode: "free", bonus: 0, bonusDice: 0, dice: [], spent: null });
       }
       st.open = !st.open;
       rollerRefresh();
@@ -1166,8 +1194,28 @@ function rollerOverlay() {
         st.dice = Array.from({ length: st.count },
           () => ({ value: rollerD6(), selected: false, rerolled: false }));
         rollerApply();
+        st.spent = rollerSpendPool();   // re-renders the sheet if a pool moved
         rollerRefresh();
       } }, "Roll")));
+
+  // Pool selector: which pool the roll comes out of. Initiative doesn't spend
+  // one, so it isn't offered there.
+  if (!isInit) {
+    const sel = el("select", { class: "sh-roller-pool",
+      title: "Rolling spends this many dice from this pool (bonus dice are free)",
+      onchange: e => { st.pool = e.target.value; rollerRefresh(); } },
+      el("option", { value: "" }, "No pool"),
+      ...POOL_ORDER.map(p => {
+        const ps = poolState(p);
+        return el("option", { value: p }, `${p} ${ps.remaining}/${ps.max}`);
+      }));
+    sel.value = st.pool || "";
+    const limitDice = Math.max(0, st.count - (st.bonusDice || 0));
+    panel.append(el("div", { class: "sh-roller-poolrow" }, sel,
+      el("span", { class: "sub" }, st.pool
+        ? `−${limitDice}d on roll${st.bonusDice ? ` (${st.bonusDice} bonus free)` : ""}`
+        : "no pool spent")));
+  }
 
   if (st.dice.length) {
     panel.append(el("div", { class: "sh-roller-dice" },
@@ -1194,9 +1242,21 @@ function rollerOverlay() {
         rollerRefresh();
       },
     }, selected ? `Re-roll ${selected} selected` : "Re-roll selected"));
+    // What the roll cost, said once, after it happens. A short pool spends what
+    // it has rather than refusing the roll — the dice were already thrown.
+    if (st.spent && st.spent.spend > 0)
+      panel.append(el("div", { class: "sh-roller-spent" },
+        `−${st.spent.spend} ${st.spent.pool}`
+        + (st.spent.spend < st.spent.want
+            ? ` — ${st.spent.want} needed, pool was short` : "")
+        + ` · ${st.spent.left} left`));
+    else if (st.spent && st.spent.want)
+      panel.append(el("div", { class: "sh-roller-spent" },
+        `${st.spent.pool} is empty — nothing left to spend`));
     panel.append(el("div", { class: "sh-roller-hint" },
       "4–6 = Success. Tap dice to mark for re-roll — each die re-rolls once."
-      + (isInit ? " The total is saved to your Initiative." : "")));
+      + (isInit ? " The total is saved to your Initiative." : "")
+      + (st.spent ? " Re-rolls cost no further pool." : "")));
   } else {
     panel.append(el("div", { class: "sh-roller-hint" },
       isInit
@@ -2493,7 +2553,7 @@ function shOverview(body) {
         el("b", { class: "wpn-dice" }, ")")),
         // Weapon name alone in the header — it's a panel title, and the skill
         // that made the number is one line down in the hint.
-        { dice: skillDice, bonus, label: name,
+        { dice: skillDice, bonus, label: name, pool: s.pool,
           note: `${skill}: ${skillDice} skill${bonus ? ` + ${bonus} bonus` : ""}`,
           title: `Roll ${skillDice + bonus}d6 — ${why.join(" ")}`
             + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
@@ -3090,16 +3150,16 @@ function skillTableRow(name, dim = false, editable = false, bareName = false) {
       specOn
         ? el("span", {},
             rollable(el("b", {}, String(s.final - 1)),
-              { dice: s.final - 1, bonus: s.dice_bonus || 0,
+              { dice: s.final - 1, bonus: s.dice_bonus || 0, pool: s.pool,
                 label: `${name} (outside ${(spec && spec.text) || "specialty"})`,
                 note: `${s.final - 1} skill${s.dice_bonus ? ` + ${s.dice_bonus} bonus` : ""}` }),
             el("b", {}, " / "),
             rollable(el("b", {}, String(s.final + 1)),
-              { dice: s.final + 1, bonus: s.dice_bonus || 0,
+              { dice: s.final + 1, bonus: s.dice_bonus || 0, pool: s.pool,
                 label: `${name}${(spec && spec.text) ? ` (${spec.text})` : ""}`,
                 note: `${s.final + 1} skill${s.dice_bonus ? ` + ${s.dice_bonus} bonus` : ""}` }))
         : rollable(el("b", {}, rating),
-            { dice: s.final, bonus: s.dice_bonus || 0, label: name,
+            { dice: s.final, bonus: s.dice_bonus || 0, label: name, pool: s.pool,
               note: `${s.final} skill${s.dice_bonus ? ` + ${s.dice_bonus} bonus` : ""}` }),
       s.soft ? el("span", { class: "sub" }, ` (soft)`) : null,
       s.dice_bonus ? el("span", { class: "skill-dice" }, `+${s.dice_bonus}d`) : null));
@@ -4023,7 +4083,7 @@ function shGear(body) {
             const roll = weaponRollParts(r.Type, w.name);
             const hint = el("div", { class: "sub", style: "color:var(--manon)" }, roll.text);
             return roll.dice
-              ? rollable(hint, { dice: roll.dice, label: w.name,
+              ? rollable(hint, { dice: roll.dice, label: w.name, pool: roll.pool,
                   note: `${roll.skill}: ${roll.dice} skill — Accuracy and firing-mode `
                     + "dice are counted on the Overview chip" })
               : hint;

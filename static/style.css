@@ -985,6 +985,13 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-step:hover{border-color:var(--manon-dim)}
 .sh-roller-count{font-family:var(--mono);font-size:15px;font-weight:600;min-width:44px;text-align:center}
 .sh-roller-roll{flex:1}
+/* which pool the roll comes out of, and what it will cost. Stacked, not
+   side-by-side: the panel is ~260px and a squeezed select loses its own name */
+.sh-roller-poolrow{display:grid;gap:4px;margin-bottom:8px}
+.sh-roller-poolrow select{width:100%;min-width:0}
+.sh-roller-poolrow .sub{font-family:var(--mono);font-size:11px}
+/* what the roll actually cost, once it's thrown */
+.sh-roller-spent{font-family:var(--mono);font-size:11.5px;color:var(--amber);margin-bottom:6px}
 .sh-roller-dice{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 .sh-roller-die{width:40px;height:40px;border:1px solid var(--line);border-radius:8px;
   background:var(--panel-2);color:var(--dim);font-family:var(--mono);font-size:19px;font-weight:700;

@@ -1908,7 +1908,10 @@ function scoreSkills(character, heritage, amp, augments, warnings, errors, playE
     if (RANGED_ATTACK_SKILLS.includes(name) && heritage.has_cyclopean) {
       bonus -= CYCLOPEAN_RANGED_PENALTY;
     }
-    if (heritage.specialization_pool === pool) bonus += 1;
+    // Specialization is NOT a rank in every skill of its pool — it's a bonus
+    // die on each, granted below with the drone dice. Raising the rating would
+    // also raise what the skill can be pushed to and what its group falls back
+    // to; a die does neither.
 
     let groupValue = null;
     if (group && points === 0) {
@@ -2281,11 +2284,18 @@ const SKILL_ALIASES = {
  */
 function droneSkillDice(character, data) {
   const bonus = {};
-  const linked = ((character.play || {}).rigging || {}).linked || {};
+  const rigging = ((character.play || {}).rigging || {});
+  // A drone grants its rider because it's OUT THERE, not because of how it's
+  // being flown: riding a VCR link and running Active both count. (Active is
+  // the off-link flag — no rig, no link spent.) Counted once either way.
+  const deployed = {};
+  for (const map of [rigging.linked || {}, rigging.active || {}]) {
+    for (const [key, on] of Object.entries(map)) if (on) deployed[key] = true;
+  }
   const drones = character.drones || [];
   const aliasesFor = skill => SKILL_ALIASES[skill] || [skill];
   const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  for (const [key, on] of Object.entries(linked)) {
+  for (const [key, on] of Object.entries(deployed)) {
     if (!on || !key.startsWith("drones:")) continue;
     const unit = drones[+key.split(":")[1]];
     if (!unit) continue;
@@ -3772,8 +3782,16 @@ function calculate(character) {
     errors.push(`Skill points overspent by ${-skillScoring.points.remaining}.`);
   }
 
-  // Bonus skill dice from active + linked drones (shown as "rank+Nd").
+  // Bonus skill dice from deployed drones (shown as "rank+Nd"), plus a
+  // Synthetic's Specialization pool — a die on every skill in it rather than a
+  // point in each.
   const skillDice = droneSkillDice(character, data);
+  if (heritage.specialization_pool) {
+    for (const [name, [pool]] of Object.entries(SKILLS)) {
+      if (pool === heritage.specialization_pool)
+        skillDice[name] = (skillDice[name] || 0) + 1;
+    }
+  }
   for (const [name, dice] of Object.entries(skillDice)) {
     if (skillScoring.skills[name]) skillScoring.skills[name].dice_bonus = dice;
   }

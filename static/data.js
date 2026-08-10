@@ -962,7 +962,7 @@ const DATA_BUNDLE ={
 {"Slot":"Chassis","Modification":"Hardening","ZR":"","BI":"","Cost":"850","Effect":"+2 to hardening","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"2","Conceal Mod":""},
 {"Slot":"Chassis","Modification":"Basic RF shielding","ZR":"","BI":"","Cost":"150","Effect":"+1 Hardening","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"1","Conceal Mod":""},
 {"Slot":"Chassis","Modification":"Bling","ZR":"","BI":"","Cost":"25%","Effect":"Street cred: +2 Street Etiquette","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":""},
-{"Slot":"Overbarrel","Modification":"Laser Sight","ZR":"","BI":"","Cost":"151","Effect":"+1 Accuracy","RecoilMod":"","AccMod":"1","MagMod":"","HardMod":"","Conceal Mod":""},
+{"Slot":"Overbarrel","Modification":"Laser Sight","ZR":"","BI":"","Cost":"150","Effect":"+1 Accuracy","RecoilMod":"","AccMod":"1","MagMod":"","HardMod":"","Conceal Mod":""},
 {"Slot":"Overbarrel","Modification":"Imaging scope","ZR":"","BI":"","Cost":"300","Effect":"Shift one range category","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":""},
 {"Slot":"Overbarrel","Modification":"Optical Scope","ZR":"","BI":"","Cost":"100","Effect":"Shift one range category if aiming","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":"1"},
 {"Slot":"Overbarrel","Modification":"Flashlight","ZR":"","BI":"","Cost":"50","Effect":"Eliminates lowlight penalties","RecoilMod":"","AccMod":"","MagMod":"","HardMod":"","Conceal Mod":"1"},

@@ -303,7 +303,9 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
   but `findRow(data.weapon_mods, "Modification", …)` (`rules.js:1659`) returns the
   **first** match, so the Overbarrel row's cost wins wherever a mod is resolved by
   name alone. `check_data.py` allowlists these two names; a *new* duplicate is an
-  error.
+  error. Both pairs currently price identically (Laser Sight 150, Flashlight 50),
+  so which row wins costs nothing today — keep them in step, or the by-name
+  lookup starts quietly overcharging for the Underbarrel fit.
   `Cost` is a flat figure **or** a percentage of the host weapon's own cost when
   the cell ends in `%` (`Bling` is `25%`) — `RULES.weaponModCost(modRow, base)`
   resolves either, and `RULES.weaponBaseCost` supplies the base (a bow's comes

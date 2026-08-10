@@ -2309,6 +2309,42 @@ function shOverview(body) {
   const heritageCard = heritageTraitsCard();
   if (heritageCard) body.append(heritageCard);
 
+  // --- drones on station: the one you're piloting, then what the rest are
+  // giving you. Above the weapons deliberately — in a round spent flying a
+  // drone, the drone's numbers are the ones being rolled.
+  const onStation = deployedUnits();
+  if (onStation.length) {
+    const stationCard = el("div", { class: "card sh-card" }, el("h3", {}, "Drones on station"));
+    const seat = onStation.filter(d => d.hotseat);
+    if (seat.length) {
+      stationCard.append(el("p", { class: "hint" },
+        `In the hotseat — you're piloting ${seat.map(d => d.u.label || d.u.name).join(", ")}.`));
+      stationCard.append(unitLoadoutTable(seat, "station"));
+    }
+    // Passive riders come from every deployed unit, hotseat or not, and stay
+    // text: "reroll 1s on dodge tests" isn't a number the engine can add.
+    const riders = onStation
+      .map(d => ({ d, effect: unitPassiveEffect(d.table, d.u) }))
+      .filter(x => x.effect);
+    if (riders.length) {
+      stationCard.append(el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
+        el("span", { class: "sub" }, "Passive bonuses while deployed")));
+      riders.forEach(({ d, effect }) => stationCard.append(el("div", { class: "stat-line" },
+        el("span", { class: "sub", style: "white-space:nowrap" },
+          `${d.u.label || d.u.name}${d.linked ? " · VCR" : " · Active"}`),
+        el("span", { style: "text-align:right;color:var(--manon)" }, effect))));
+      stationCard.append(el("p", { class: "hint" },
+        "Applied at the table, not folded into the numbers above — the same way "
+        + "situational infusion and armor-style riders are reported."));
+    }
+    if (!seat.length && !riders.length)
+      stationCard.append(el("p", { class: "hint" },
+        `${onStation.length} unit(s) deployed — none carries a passive effect, and `
+        + "nothing is in the hotseat. Tick Hotseat on the Rigging tab to bring a "
+        + "unit's stats up here."));
+    body.append(stationCard);
+  }
+
   // --- equipped weapons (+ mods) and worn armor, mirrored from the Gear tab
   const weaponsAll = allWeapons(), armorAll = allArmor();
   const equippedWeapons = weaponsAll.filter(w => w.equipped !== false);
@@ -3626,6 +3662,26 @@ function shMinStrControl(entry, row) {
     title: short ? `Needs Strength ${bow.minStr} to draw — this character has ${strength}`
                  : `Rated to Strength ${bow.minStr}` },
     `Min STR ${bow.minStr}${short ? " ⚠" : ""}`);
+}
+
+/* "Hotseat": the unit the player is currently piloting. One at a time — you
+ * can't be in two cockpits — so ticking one clears the rest. Its stat block is
+ * what the Overview puts above the character's own weapons. */
+function shHotseatToggle(key, u) {
+  const rg = rigFlags();
+  const on = !!rg.hotseat[key];
+  return el("label", { class: "sub",
+      style: "display:inline-flex;align-items:center;gap:6px;margin-top:4px",
+      title: `Piloting ${u.label || u.name} — its stats move to the Overview` },
+    el("input", { type: "checkbox", ...(on ? { checked: 1 } : {}),
+      onchange: e => {
+        const want = e.target.checked;
+        for (const k of Object.keys(rg.hotseat)) rg.hotseat[k] = false;
+        rg.hotseat[key] = want;
+        playChanged();
+        renderSheet();
+      } }),
+    el("span", {}, "Hotseat"));
 }
 
 /* Plain Carried yes/no for a deck, drone or vehicle — the same flag misc gear
@@ -5363,7 +5419,7 @@ function unitAttachments(cfg, unit) {
    carry the key don't leave stale entries behind. */
 function shiftUnitStateDown(table, removedAt, newLength) {
   const rg = CHAR.play.rigging;
-  for (const map of [rg.units, rg.linked, rg.unit_open]) {
+  for (const map of [rg.units, rg.linked, rg.active, rg.hotseat, rg.unit_open]) {
     if (!map) continue;
     for (let n = removedAt; n < newLength; n++) {
       const next = map[`${table}:${n + 1}`];
@@ -5372,6 +5428,51 @@ function shiftUnitStateDown(table, removedAt, newLength) {
     }
     delete map[`${table}:${newLength}`];
   }
+}
+
+/* The three ways a unit can be "out there", all keyed by the same slot:
+ *
+ *   linked  — riding a VCR link. Limited by the active rig's Links.
+ *   active  — deployed WITHOUT a link: it runs itself, costs no link, and its
+ *             passive rider (a Shield Drone's dodge reroll, a Bug-Spy's
+ *             Observation and Initiative dice) is on the character.
+ *   hotseat — the one the player is currently piloting. Its stats belong on the
+ *             Overview, above the character's own weapons, because that is what
+ *             the player is rolling this round.
+ *
+ * A linked drone is deployed by definition, so it grants its rider too — the
+ * Active box is what a drone running off-link needs to say the same thing.
+ */
+function rigFlags() {
+  const rg = CHAR.play.rigging;
+  rg.linked = rg.linked || {};
+  rg.active = rg.active || {};
+  rg.hotseat = rg.hotseat || {};
+  return rg;
+}
+
+/* Every unit currently on station, in Rigging-tab order. `onStation` is the
+ * linked-or-active test the passive-bonus and summary lists both read. */
+function deployedUnits() {
+  const rg = rigFlags();
+  const out = [];
+  [["drones", allDrones()], ["vehicles", allVehicles()]].forEach(([table, list]) => {
+    list.forEach((u, i) => {
+      const key = `${table}:${i}`;
+      const linked = !!rg.linked[key], active = !!rg.active[key];
+      if (linked || active) out.push({ table, u, key, linked, active, hotseat: !!rg.hotseat[key] });
+    });
+  });
+  return out;
+}
+
+/* The passive rider a deployed unit puts on the character, from the data row's
+ * Effect column. Free text — reported, never folded into a stat, the same
+ * ruling armor Style etiquette bonuses and Blinged vehicles follow. */
+function unitPassiveEffect(table, u) {
+  const cfg = RIG_UNIT_CFG[table];
+  const r = (DATA.tables[table] || []).find(x => x[cfg.nameKey] === u.name) || {};
+  return (r.Effect || "").trim();
 }
 
 /* Play-state key for a unit's slot in CHAR.play.rigging.units. Keyed by list
@@ -5493,10 +5594,16 @@ function unitConditionTracks(cfg, unit, st, label) {
 }
 
 /* Unit | Stats | Attachments table for drones/vehicles. Shared by the Rigging
-   tab (linked units) and the Gear tab (everything owned) so the two never drift
-   -- issue #20 was the Gear tab showing only a name and a type. `entries` are
-   {table, u} pairs, where table keys RIG_UNIT_CFG. */
-function unitLoadoutTable(entries) {
+   tab (units on station) and the Gear tab (everything owned) so the two never
+   drift -- issue #20 was the Gear tab showing only a name and a type. `entries`
+   are {table, u} pairs, where table keys RIG_UNIT_CFG.
+
+   `mode` picks the per-row toggle, because the two callers ask different
+   questions. The Gear tab is an inventory: "Carried". The on-station list is
+   about what you're flying right now: "Hotseat" — carrying a drone you have
+   deployed says nothing, and the box that matters there is which one you're in.
+   `mode: "station"` also labels how each unit is out (VCR link or Active). */
+function unitLoadoutTable(entries, mode = "inventory") {
   const t = el("table");
   t.append(el("tr", {}, el("th", {}, "Unit"), el("th", {}, "Stats"),
     el("th", {}, "Weapons & mods")));
@@ -5537,11 +5644,21 @@ function unitLoadoutTable(entries) {
             ? [el("div", { style: "margin-left:14px;color:var(--manon)" }, "↳ " + it.mods.join(" · "))]
             : []))))
       : "—";
+    const station = mode === "station";
+    const key = unitStateKey(table, u);
+    const rg = station ? rigFlags() : null;
     t.append(el("tr", {},
       el("td", {}, el("b", {}, u.label || u.name),
         u.label ? el("div", { class: "sub" }, u.name) : null,
         el("div", { class: "sub" }, cfg.title.replace(/s$/, "")),
-        shCarriedToggle(u)),
+        station
+          ? el("div", {},
+              el("div", { class: "sub" },
+                rg.linked[key] ? "VCR link" : null,
+                (rg.linked[key] && rg.active[key]) ? " · " : null,
+                rg.active[key] ? "Active" : null),
+              shHotseatToggle(key, u))
+          : shCarriedToggle(u)),
       el("td", { class: "sub" }, stats,
         dmgLine ? el("div", { class: "sh-unit-dmg" }, dmgLine) : null),
       el("td", {}, attachCell)));
@@ -5550,8 +5667,7 @@ function unitLoadoutTable(entries) {
 }
 
 function shRigging(body) {
-  const rg = CHAR.play.rigging;
-  rg.linked = rg.linked || {};
+  const rg = rigFlags();
   // The small-heritage surcharge applies to vehicles (below, via unitBlock) but
   // not to VCRs/rigs or drones — those pay face value.
   const base = CALC.budget.gear_cost_multiplier || 1;
@@ -5636,15 +5752,16 @@ function shRigging(body) {
       } })));
   body.append(rigCard);
 
-  // Active (VCR-linked) drones & vehicles summary — mirrors the Overview loadout.
+  // On-station summary: everything riding a VCR link OR running Active.
   // Link keys index the joined list, the same one unitStateKey uses.
-  const activeUnits = [];
-  [["drones", allDrones()], ["vehicles", allVehicles()]].forEach(([table, list]) => {
-    list.forEach((u, i) => { if (rg.linked[`${table}:${i}`]) activeUnits.push({ table, u }); });
-  });
+  const activeUnits = deployedUnits();
   if (activeUnits.length) {
     body.append(el("div", { class: "card sh-card" },
-      el("h3", {}, "Active drones & vehicles"), unitLoadoutTable(activeUnits)));
+      el("h3", {}, "Active drones & vehicles"),
+      el("p", { class: "hint" },
+        "Anything on a VCR link or ticked Active. Hotseat marks the one you're "
+        + "piloting — its stats move to the Overview, above your own weapons."),
+      unitLoadoutTable(activeUnits, "station")));
   }
 
   /* `entries` is the joined chargen-then-play list from ownedSplit, so `i` is
@@ -5816,8 +5933,23 @@ function shRigging(body) {
               alert(`Active VCR links only ${linkLimit} unit(s).`); e.target.checked = false; return;
             }
             rg.linked[key] = e.target.checked; playChanged();
+            renderSheet();       // the on-station list and Overview both follow this
           } }),
         el("span", {}, isLinked ? "Linked to VCR" : "Link to VCR"));
+      // Running off-link. Costs no VCR link and takes no rig, but the drone is
+      // out there, so its passive rider is on the character. Drones only —
+      // a vehicle nobody is driving isn't doing anything for you.
+      const isActive = !!rg.active[key];
+      const passive = unitPassiveEffect(cfg.table, u);
+      const activeToggle = cfg.table === "drones" ? el("label", { class: "opt",
+          title: passive ? `Deployed off-link — grants: ${passive}`
+                         : "Deployed off-link (this drone has no passive effect of its own)" },
+        el("input", { type: "checkbox", ...(isActive ? { checked: 1 } : {}),
+          onchange: e => {
+            rg.active[key] = e.target.checked; playChanged();
+            renderSheet();
+          } }),
+        el("span", {}, "Active")) : null;
 
       // Weapons + mods live in their own column (below), so they're always
       // visible alongside the condition tracks instead of collapsed.
@@ -5891,7 +6023,11 @@ function shRigging(body) {
               // the condition tracks above.
               ? el("span", { class: "sub" }, `Inertia ${toInt(st.inertia)}`)
               : miniCounter("Inertia", () => st.inertia, v => { st.inertia = v; })),
-          activeRig ? linkToggle : null),
+          // No effect text beside the box: the unit's own stat line above
+          // already carries it, and printing it twice on one row is the noise
+          // the armor rows were just cleaned up for. The tooltip says it.
+          activeRig ? linkToggle : null,
+          activeToggle),
         attachments));
     });
     if (!entries.length) card.append(el("p", { class: "hint" }, `No ${cfg.title.toLowerCase()} owned.`));

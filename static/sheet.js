@@ -2406,6 +2406,8 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
 function shOverview(body) {
   const play = CHAR.play;
   const econ = kismetEcon();
+  // A shared view reads the same Overview but edits nothing on it.
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
 
   // Rules problems that survive Finalize. Creation budgets stop applying, but
   // an illegal body or an empty wallet doesn't stop being illegal — the engine
@@ -2977,8 +2979,58 @@ function shOverview(body) {
           i > 0, i < items.length - 1);
         at.append(el("tr", {}, el("td", {}, handle, c.name), c.stats, c.last));
       });
-      loadout.append(el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
-        el("span", { class: "sub" }, `Total armor: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I`)), at);
+      // One selector per slot the character owns armor for, so changing what
+      // you're wearing is a single click here rather than a trip to the Gear
+      // tab to untick one box and tick another. Picking a piece takes off
+      // whatever else was in that slot — the same one-piece-per-slot rule the
+      // Worn checkbox enforces — and a Helmet keeps its own slot ("Outer*"),
+      // which is why it can be worn alongside a coat.
+      const SLOT_LABELS = { Outer: "Outer", Under: "Under", "Outer*": "Helmet" };
+      const armorSwap = (() => {
+        if (ro || !armorAll.length) return null;
+        const bySlot = new Map();
+        armorAll.forEach((a, i) => {
+          const slot = (DATA.tables.armor.find(x => x.Armor === a.name) || {}).Slot || "Other";
+          if (!bySlot.has(slot)) bySlot.set(slot, []);
+          bySlot.get(slot).push({ a, i });
+        });
+        const order = ["Outer", "Under", "Outer*"];
+        const slots = [...bySlot.keys()]
+          .sort((x, y) => (order.indexOf(x) + 1 || 99) - (order.indexOf(y) + 1 || 99));
+        const row = el("div", { class: "sh-armor-swap" });
+        for (const slot of slots) {
+          const group = bySlot.get(slot);
+          const worn = group.find(({ a }) => a.active !== false);
+          const sel = el("select", { class: "sh-fire-sel",
+            title: `What you're wearing in the ${SLOT_LABELS[slot] || slot} slot`,
+            onchange: async e => {
+              const pick = e.target.value === "" ? -1 : +e.target.value;
+              group.forEach(({ a, i }) => { a.active = (i === pick); });
+              await playChangedRecalc();
+            } },
+            el("option", { value: "" }, "— nothing —"),
+            ...group.map(({ a, i }) => {
+              const r = DATA.tables.armor.find(x => x.Armor === a.name) || {};
+              const arow = (CALC.armor || [])[i] || {};
+              // Style and Quality distinguish four otherwise identical coats.
+              const trim = [arow.style, arow.material].filter(Boolean).join(" · ");
+              return el("option", { value: String(i),
+                ...(worn && worn.i === i ? { selected: 1 } : {}) },
+                `${a.name}${trim ? ` (${trim})` : ""} — ${r.Ballistic || 0}/${r.Impact || 0}`);
+            }));
+          sel.value = worn ? String(worn.i) : "";
+          row.append(el("label", { class: "sub sh-armor-swap-slot" },
+            el("span", {}, SLOT_LABELS[slot] || slot), sel));
+        }
+        return row;
+      })();
+      loadout.append(...[
+        el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
+          el("span", { class: "sub" },
+            `Total armor: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I`)),
+        armorSwap,
+        at,
+      ].filter(Boolean));
       // Sits directly under the total it inflates, so the number and the reason
       // it's wrong are read together.
       for (const { slot, names } of overArmoredSlots()) {

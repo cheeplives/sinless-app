@@ -64,6 +64,11 @@ const el = (tag, attrs = {}, ...kids) => {
   for (const k of kids) add(k);
   return n;
 };
+/* Append a child that may legitimately be absent. Element.append() stringifies
+ * anything that isn't a Node, so append(null) quietly writes the word "null"
+ * into the page — el() skips nulls for its own children, and this is the same
+ * courtesy for a bare parent.append(). */
+const appendIf = (parent, kid) => { if (kid != null) parent.append(kid); };
 const fmt = amount => CURRENCY_SYMBOL + Number(amount || 0).toLocaleString();
 
 /* Raw dice-pool formulas (match computePools in rules.js). Shown on the
@@ -2411,7 +2416,7 @@ function tabDecks(p) {
     },
   }));
 
-  p.append(activeDeckSelect());
+  appendIf(p, activeDeckSelect());   // null until a deck is owned
 
   // What each owned deck needs, and whether its slotted program covers it. The
   // program itself is bought below with the rest, and slotted on the deck row.
@@ -2553,6 +2558,9 @@ function vehicleConditionSelect(it, onChange) {
  * The default (first owned) is written through rather than merely displayed,
  * so the record says which one is equipped instead of leaving the engine to
  * infer it from list order. */
+/* Returns null when there's nothing to equip. Callers must NOT hand that
+ * straight to Element.append(), which stringifies a non-Node argument and
+ * renders the literal word "null" on the page — use appendIf. */
 function equippedSelect({ owned, get, set, title, hint, carriedOf }) {
   if (!owned.length) return null;
   const names = owned.map(o => o.name);
@@ -2629,7 +2637,7 @@ function tabDrones(p) {
         el("td", {}, el("button", { class: "row-del", onclick: del }, "\u2715")));
     },
   }));
-  p.append(activeRigSelect());
+  appendIf(p, activeRigSelect());    // null until a rig is owned
 
   const block = (title, key, table, nameKey, wtabs, kind) => {
     p.append(el("h2", {}, title));

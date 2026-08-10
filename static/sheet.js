@@ -1596,6 +1596,16 @@ function arrayMove(arr, i, dir, after = playChanged) {
   [arr[i], arr[j]] = [arr[j], arr[i]];
   after();
 }
+/* Same swap, but between two arbitrary slots. A grouped list (the Gear tab's
+ * gear table, split into Class headings) shows a category's rows as a subset of
+ * its backing array, so "move up" means swapping with the previous row of the
+ * SAME category — not the previous array slot, which may belong to another
+ * heading. Only the two entries move; every other item keeps its index. */
+function arraySwap(arr, i, j, after = playChanged) {
+  if (i === j || i < 0 || j < 0 || i >= arr.length || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  after();
+}
 
 // Cyberguns are augments with a chosen gun; surface them as read-only weapons
 // on the Overview loadout and the Gear weapons list.
@@ -3333,6 +3343,12 @@ function weaponUpgradeSlots(w, r, mult) {
 }
 
 /* ------------------------------------------------ gear tab */
+/* Which Gear-list categories are expanded, keyed by Class. Module-level like
+ * browserOpenState: toggling one re-renders the sheet, so it can't live in the
+ * DOM, and it isn't part of the character. Missing = open, so a kit reads
+ * exactly as it always did until you collapse something. */
+const gearCatOpen = {};
+
 /* Uses tracker for consumables bought per use (Ammo). Adjusts the owned count
    in place and moves NO cash — spending a use isn't a sale, and buying more
    goes through the Buy section, which charges per use. Floors at 0 so a spent
@@ -3747,18 +3763,27 @@ function shGear(body) {
 
   // ===== Gear list (chargen + bought in play) — remove buttons
   // (Augments moved to their own tab.)
-  // Two backing stores rendered as one table (chargen kit, then bought-in-play).
-  // Reordering stays inside an item's own array — moving across the boundary
-  // would silently relabel a purchase — so the handles stop at each block's edge.
-  const gearEntries = ownedGear();
+  // Two backing stores rendered as one table (chargen kit, then bought-in-play),
+  // under the same Class headings the Buy section groups by, so a long kit can
+  // be collapsed down to the category you're looking for. Reordering stays
+  // inside an item's own array AND its own heading — moving across either
+  // boundary would silently relabel a purchase or its category — so the handles
+  // stop at each block's edge.
+  // An item whose table row has gone (a deleted homebrew entry) still needs a
+  // home, so it falls back to the same "Gear" heading the Buy section uses.
+  const gearEntries = ownedGear().map(en => {
+    const row = DATA.tables.misc_gear.find(x => x.Item === en.ref.name) || {};
+    return { en, row, cls: row.Class || "Gear" };
+  });
+  const gearCats = [...new Set(gearEntries.map(e => e.cls))].sort((a, b) => a.localeCompare(b));
   const gt = el("table");
   gt.append(el("tr", {}, el("th", {}, "Item"), el("th", { class: "num" }, "Qty"),
     el("th", { class: "num" }, "Weight"),
     el("th", {}, "Effect"), el("th", {}, "Carried"), el("th", {}, "")));
   let gearWeightCarried = 0, gearWeightOwned = 0;
-  gearEntries.forEach(en => {
-    const { ref: g, inPlay, arr, i: gi } = en;
-    const r = DATA.tables.misc_gear.find(x => x.Item === g.name) || {};
+  const round1 = n => Math.round(n * 10) / 10;
+  const gearRow = ({ en, row: r }, prev, next) => {
+    const { ref: g, inPlay, arr } = en;
     // Focus/Fetish/Spirit Bag links (chosen in chargen) now show — and stay
     // editable — on the sheet (issue #14). gearLinkSelect returns null otherwise.
     const ro = !!(activeTabObj() && activeTabObj().readonly);
@@ -3770,13 +3795,10 @@ function shGear(body) {
     const owned = ownedQty(g);
     const unitWt = wtNum(r.Weight);
     const carried = carriedQty(g);
-    gearWeightCarried += unitWt * carried;
-    gearWeightOwned += unitWt * owned;
-    const round1 = n => Math.round(n * 10) / 10;
-    gt.append(el("tr", {},
+    return el("tr", {},
       el("td", {},
-        reorderHandle(() => arrayMove(arr, gi, -1), () => arrayMove(arr, gi, 1),
-          gi > 0, gi < arr.length - 1),
+        reorderHandle(() => prev && arraySwap(arr, en.i, prev.en.i),
+          () => next && arraySwap(arr, en.i, next.en.i), !!prev, !!next),
         el("b", {}, g.name),
         inPlay ? el("span", { class: "sh-tag" }, "bought in play") : null,
         linkSel ? el("div", { class: "sub sh-gearlink" }, "Linked to ", linkSel)
@@ -3805,23 +3827,63 @@ function shGear(body) {
               await playChangedRecalc();
             } })]),
       el("td", {}, el("button", { class: "row-del", title: "Sell / remove item",
-        onclick: () => disposeOfItem({ category: "gear", arr, index: gi, inPlay,
-          name: g.name, value: Math.round((+r.Cost || 0) * gearMult * owned) }) }, "✕"))));
+        onclick: () => disposeOfItem({ category: "gear", arr, index: en.i, inPlay,
+          name: g.name, value: Math.round((+r.Cost || 0) * gearMult * owned) }) }, "✕")));
+  };
+  // Weights tally over everything owned, collapsed categories included — hiding
+  // a heading tidies the list, it doesn't take the load off your back.
+  gearEntries.forEach(({ en, row: r }) => {
+    const unitWt = wtNum(r.Weight);
+    gearWeightCarried += unitWt * carriedQty(en.ref);
+    gearWeightOwned += unitWt * ownedQty(en.ref);
+  });
+  gearCats.forEach(cls => {
+    const rows = gearEntries.filter(e => e.cls === cls);
+    const open = gearCatOpen[cls] !== false;
+    // Per-heading carried weight, so collapsing a category doesn't hide the one
+    // number the section is otherwise there to answer.
+    const catWt = round1(rows.reduce((sum, { en, row: r }) =>
+      sum + wtNum(r.Weight) * carriedQty(en.ref), 0));
+    gt.append(el("tr", { class: "sh-gear-cat" },
+      el("td", { colspan: "6", role: "button", tabindex: "0",
+        title: open ? `Collapse ${cls}` : `Expand ${cls}`,
+        onclick: () => { gearCatOpen[cls] = !open; renderSheet(); },
+        onkeydown: e => { if (e.key === "Enter" || e.key === " ") e.currentTarget.click(); } },
+        el("span", { class: "cat-arrow" }, open ? "▾" : "▸"),
+        el("b", {}, cls),
+        el("span", { class: "sub" }, ` (${rows.length})`),
+        catWt > 0 ? el("span", { class: "sub" }, ` · ${catWt} carried`) : null)));
+    if (!open) return;
+    // Rows of one category run kit-first then bought-in-play, so a neighbour in
+    // the same backing array is simply the adjacent row of this block.
+    rows.forEach((e, p) => {
+      const sameArr = other => (other && other.en.arr === e.en.arr) ? other : null;
+      gt.append(gearRow(e, sameArr(rows[p - 1]), sameArr(rows[p + 1])));
+    });
   });
   if (!gearEntries.length)
     gt.append(el("tr", {}, el("td", { class: "sub", colspan: "6" }, "No gear.")));
   else {
-    const r1 = n => Math.round(n * 10) / 10;
-    const stashed = r1(gearWeightOwned - gearWeightCarried);
+    const stashed = round1(gearWeightOwned - gearWeightCarried);
     gt.append(el("tr", { class: "sh-gear-total" },
       el("td", { class: "sub" }, el("b", {}, "Gear weight")),
       el("td", {}, ""),
-      el("td", { class: "num" }, el("b", {}, String(r1(gearWeightCarried)))),
+      el("td", { class: "num" }, el("b", {}, String(round1(gearWeightCarried)))),
       el("td", { class: "sub", colspan: "3" },
-        `carried of ${r1(gearWeightOwned)} owned`
+        `carried of ${round1(gearWeightOwned)} owned`
         + (stashed > 0 ? ` · ${stashed} left behind` : ""))));
   }
-  body.append(el("div", { class: "card sh-card", id: "gear-gear" }, el("h3", {}, "Gear"), gt));
+  // One switch for the whole list once there's more than one heading to work.
+  const gearCatBar = gearCats.length > 1 ? el("div", { class: "cat-sort" },
+    el("span", { class: "sub" }, "Categories"),
+    el("button", { class: "cat-sort-btn",
+      onclick: () => { gearCats.forEach(c => { gearCatOpen[c] = true; }); renderSheet(); } },
+      "Expand all"),
+    el("button", { class: "cat-sort-btn",
+      onclick: () => { gearCats.forEach(c => { gearCatOpen[c] = false; }); renderSheet(); } },
+      "Collapse all")) : null;
+  body.append(el("div", { class: "card sh-card", id: "gear-gear" },
+    el("h3", {}, "Gear"), gearCatBar, gt));
 
   // ===== Vehicles / rigs / decks owned (configured on their own tabs).
   // Drones and vehicles get their full Rigging-tab stat + attachment lines here

@@ -1039,6 +1039,14 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 /* gear-table footer: the weight tally reads as a summary, not another item */
 .sh-gear-total td{border-top:1px solid var(--line);border-bottom:none;padding-top:7px}
 .sh-gear-total:hover td{background:transparent}
+/* gear-table category headings: a band across the row, styled like the buy
+   browser's .cat-head so "Ammo" means the same thing in both lists */
+.sh-gear-cat td{background:var(--panel-2);border-bottom:1px solid var(--line);
+  cursor:pointer;padding:7px 8px;font-family:var(--disp);font-size:12px;letter-spacing:.04em;
+  user-select:none}
+.sh-gear-cat:hover td{background:var(--line)}
+.sh-gear-cat td:focus-visible{outline:1px solid var(--manon);outline-offset:-2px}
+.sh-gear-cat .cat-arrow{display:inline-block;width:14px;color:var(--dim)}
 
 /* reorder handles: Overview loadout rows, Gear weapons / armor / gear rows */
 .sh-reorder{display:inline-flex;flex-direction:column;vertical-align:middle;margin-right:7px;gap:1px}

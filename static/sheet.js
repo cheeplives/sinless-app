@@ -302,6 +302,28 @@ function logCash(label, delta, undo) {
   CHAR.play.cash_log.unshift(undo ? { label, delta, undo } : { label, delta });
 }
 
+/* Using something up belongs in the Activity ledger next to what was bought —
+ * "where did my six doses go" is the same question as "where did my money go".
+ * No cash moves (a spent dose isn't a sale), so it lands as a zero-delta note,
+ * which the ledger already renders with a dash rather than a fake ㄓ0.
+ *
+ * Consecutive clicks on the same item fold into ONE line, because a stepper is
+ * held down: taking three doses reads "Used 3 Bliss — 7 left", not three rows.
+ * The fold only ever touches the newest entry, and only while it's still the
+ * same item going the same direction, so it can't rewrite history. */
+function logItemUse(name, delta, left) {
+  if (!delta) return;
+  const log = CHAR.play.cash_log;
+  const top = log[0];
+  const folds = top && top.use === name && Math.sign(top.use_n || 0) === Math.sign(delta);
+  const n = (folds ? top.use_n : 0) + delta;
+  const label = n < 0
+    ? `Used ${-n} ${name} — ${left} left`
+    : `Restocked ${n} ${name} from supplies — ${left} on hand`;
+  if (folds) Object.assign(top, { label, use_n: n });
+  else log.unshift({ label, delta: 0, use: name, use_n: n });
+}
+
 /* Reversing a cash purchase: the item goes and the money comes back in full.
  * Kismet spends have always had this; cash didn't, so removing a bought item
  * quietly kept the money. Undo lives only here in the Activity ledger — the
@@ -4026,12 +4048,15 @@ function shUsesStepper(entry, onChange, unit = "use") {
   const val = el("span", { class: "sv" }, String(ownedQty(entry)));
   const btn = (delta, label, title) => el("button", { class: "btn small", title,
     onclick: async () => {
-      entry.qty = Math.max(0, ownedQty(entry) + delta);
+      const before = ownedQty(entry);
+      entry.qty = Math.max(0, before + delta);
+      const moved = entry.qty - before;          // 0 when already empty
       // Carrying more than you own is nonsense; carriedQty already clamps on
       // read, and this keeps the stored number honest too.
       if (entry.carried_qty != null && entry.carried_qty > entry.qty)
         setCarriedQty(entry, entry.qty);
       val.textContent = String(entry.qty);
+      logItemUse(entry.name, moved, entry.qty);
       await onChange();
     } }, label);
   return el("span", { class: "stepper" },

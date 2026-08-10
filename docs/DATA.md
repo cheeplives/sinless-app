@@ -307,9 +307,10 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
   so which row wins costs nothing today — keep them in step, or the by-name
   lookup starts quietly overcharging for the Underbarrel fit.
   `Cost` is a flat figure **or** a percentage of the host weapon's own cost when
-  the cell ends in `%` (`Bling` is `25%`) — `RULES.weaponModCost(modRow, base)`
-  resolves either, and `RULES.weaponBaseCost` supplies the base (a bow's comes
-  from its draw Strength, not a data cell). Anything pricing a weapon mod must go
+  the cell ends in `%` (`Bling` is `25%`, floored to whole woolongs) —
+  `RULES.weaponModCost(modRow, base)` resolves either, and
+  `RULES.weaponBaseCost` supplies the base (a bow's comes from its draw
+  Strength, not a data cell). Anything pricing a weapon mod must go
   through those two, not `asNumber(row.Cost)`, which reads `"25%"` as 0.
 - **`heritage_features`** — identity is `Category`+`Name` (`UpliftType`,
   `GreenBoon`, `GreenBane`, …), but `rules.js:580` builds

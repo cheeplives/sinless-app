@@ -2490,13 +2490,15 @@ function weaponBaseCost(row, entry) {
 
 /* A weapon mod's price. Most are a flat figure, but a mod whose Cost cell ends
  * in "%" is priced as a share of the gun it's bolted to (Bling is 25%) — a
- * showpiece finish costs what the piece underneath is worth. Anything else
- * falls through to asNumber, so a blank or junk cell reads as free. */
+ * showpiece finish costs what the piece underneath is worth. The share rounds
+ * DOWN to whole woolongs: nobody bills a runner for three quarters of one, and
+ * flooring keeps the break in the customer's favour. Anything else falls
+ * through to asNumber, so a blank or junk cell reads as free. */
 function weaponModCost(modRow, weaponBaseCostValue) {
   const raw = String((modRow || {}).Cost ?? "").trim();
   const pct = /^(-?\d+(?:\.\d+)?)\s*%$/.exec(raw);
   if (!pct) return asNumber(raw);
-  return round2(asNumber(weaponBaseCostValue) * (Number(pct[1]) / 100));
+  return Math.floor(asNumber(weaponBaseCostValue) * (Number(pct[1]) / 100));
 }
 
 /* The "25%" from such a cell, or null for a flat price — for UI that wants to

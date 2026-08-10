@@ -1845,6 +1845,9 @@ function fittedItemsEditor({ items, placeholder, optionElements, onAdd, onRemove
           return effect ? el("div", {}, `${name}: ${effect}`) : null;
         }).filter(Boolean))
     : null;
+  // Nothing left to offer (every one-per-piece option already fitted) means no
+  // add row at all — an empty dropdown beside a Fit button can only disappoint.
+  if (!optionElements.length) return el("div", {}, chips, effects);
   const picker = el("select", {}, el("option", { value: "" }, placeholder), ...optionElements);
   const addRow = el("div", { class: "add-row" }, picker,
     el("button", { class: "btn-add", onclick: () => {
@@ -2310,10 +2313,16 @@ function tabWeapons(p) {
           fittedItemsEditor({
             items: it.extras || [],
             placeholder: "Extra\u2026",
-            optionElements: extras.map(x => el("option", { value: x.Extra }, `${x.Extra} \u00d7${x.Multiplier}`)),
+            // A piece takes one of each extra, so the dropdown offers only what
+            // this one isn't already wearing; unfit a chip and it comes back.
+            optionElements: extras
+              .filter(x => !(it.extras || []).includes(x.Extra))
+              .map(x => el("option", { value: x.Extra }, `${x.Extra} \u00d7${x.Multiplier}`)),
             onAdd: name => it.extras.push(name),
             onRemove: index => it.extras.splice(index, 1),
-            effectOf: name => (extras.find(x => x.Extra === name) || {}).Effects || "",
+            // No effectOf: the effects line below already reports every fitted
+            // extra alongside the Quality and Style ones, so listing them by the
+            // chips as well printed each one twice.
           }));
       } else {
         styleCtl.append(el("div", { class: "sub" }, "fixed design \u2014 no Style"));

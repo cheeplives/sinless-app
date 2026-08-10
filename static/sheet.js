@@ -1173,9 +1173,16 @@ function rollerOverlay() {
   const successes = st.dice.filter(d => d.value >= 4).length;
   const selected = st.dice.filter(d => d.selected).length;
   const clampCount = n => Math.max(1, Math.min(ROLLER_MAX_DICE, n));
+  // The main ± moves the total, and with it the LIMIT part — trimming for
+  // penalty dice should cost less pool, not silently eat the free dice. Bonus
+  // dice are held back until the limit is gone.
   const stepBtn = (delta, label) => el("button", {
-    class: "sh-roller-step",
-    onclick: () => { st.count = clampCount(st.count + delta); rollerRefresh(); },
+    class: "sh-roller-step", title: delta < 0 ? "One die fewer" : "One die more",
+    onclick: () => {
+      st.count = clampCount(st.count + delta);
+      if ((st.bonusDice || 0) > st.count) st.bonusDice = st.count;
+      rollerRefresh();
+    },
   }, label);
 
   const isInit = st.mode === "initiative";
@@ -1215,6 +1222,28 @@ function rollerOverlay() {
       el("span", { class: "sub" }, st.pool
         ? `−${limitDice}d on roll${st.bonusDice ? ` (${st.bonusDice} bonus free)` : ""}`
         : "no pool spent")));
+
+    // Bonus dice: thrown with the rest, but off the table's own ledger rather
+    // than out of you — a firing mode, point-blank range, good light, a spirit
+    // leaning in. The count above moves with them; the pool cost does not.
+    // Stepping the main ± moves the limit dice, so the two controls between
+    // them say "how many I'm putting in" and "how many I'm being given".
+    const bonusStep = (delta, label, title) => el("button", {
+      class: "sh-roller-step", title,
+      onclick: () => {
+        const next = Math.max(0, (st.bonusDice || 0) + delta);
+        const total = clampCount(st.count + (next - (st.bonusDice || 0)));
+        st.bonusDice = Math.min(next, total);
+        st.count = total;
+        rollerRefresh();
+      },
+    }, label);
+    panel.append(el("div", { class: "sh-roller-bonusrow" },
+      el("span", { class: "sub" }, "Bonus dice"),
+      bonusStep(-1, "–", "One fewer free die"),
+      el("span", { class: "sh-roller-bonuscount" }, String(st.bonusDice || 0)),
+      bonusStep(1, "+", "One more die that costs no pool"),
+      el("span", { class: "sub" }, "no pool cost")));
   }
 
   if (st.dice.length) {

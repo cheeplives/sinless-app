@@ -399,6 +399,9 @@ input[type=checkbox]{accent-color:var(--manon)}
 
 /* collapsible categorized equipment browser */
 .cat-browser{margin-top:14px;border:1px solid var(--line);border-radius:8px;overflow:hidden;max-width:860px}
+/* every group hidden (e.g. an armor piece already wearing all of its extras)
+   leaves an empty bordered box with nothing to click — collapse it away */
+.cat-browser:empty{display:none}
 .cat-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;
   background:var(--panel);border-bottom:1px solid var(--line);font-family:var(--disp);font-size:13px;letter-spacing:.04em}
 .cat-head:hover{background:var(--panel-2)}

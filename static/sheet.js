@@ -3695,10 +3695,14 @@ function shGear(body) {
         ? fittedCategoryEditor({
             id: `sh-aextras-${ai}-${a.name}`,
             items: extrasSub.items,
+            // A piece takes one of each extra, so anything already fitted drops
+            // out of the picker — the shortlist is what you can still add. Unfit
+            // the chip and it comes back.
             groups: [{ label: "Armor Extras", items: DATA.tables.armor_extras.map(x => ({
               name: x.Extra,
               cost: Math.round(baseCost * ((+x.Multiplier || 1) - 1) * armorMult),
               sub: `×${x.Multiplier}${x.Effects ? " · " + x.Effects : ""}`,
+              hidden: extrasSub.items.some(it => sublistName(it) === x.Extra),
             })) }],
             onAdd: name => {
               const ex = DATA.tables.armor_extras.find(x => x.Extra === name) || {};
@@ -3713,7 +3717,11 @@ function shGear(body) {
               value: Math.round(baseCost * (((+(DATA.tables.armor_extras
                 .find(x => x.Extra === sublistName(extrasSub.items[index])) || {}).Multiplier || 1)) - 1)
                 * armorMult) }),
-            effectOf: name => (DATA.tables.armor_extras.find(x => x.Extra === name) || {}).Effects || "",
+            // No effectOf: every fitted extra already reports its effect on the
+            // armor's own line below (CALC.armor effects covers Quality, Style
+            // AND Extras), so repeating it beside the chip printed each one
+            // twice. The picker still shows the effect where it's needed — when
+            // you're choosing what to fit.
             rerender: renderSheet,
             afterAdd: () => playChangedRecalc(),
           })

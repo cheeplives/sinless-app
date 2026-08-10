@@ -2267,6 +2267,61 @@ function shOverview(body) {
       c.dodge_bonus ? `+ ${c.dodge_bonus} passive dodge bonus` : "Bonus dice gained in play (Full Defense, cover, …)"),
     miniCounter("Dodge dice", () => play.dodge_dice || 0, v => { play.dodge_dice = v; }, 0, 99));
 
+  // --- drones on station, sized to sit in the card flow beside Dodge Dice and
+  // Combat rather than as a full-width band. The hotseat unit gets a compact
+  // stat block (the full Unit|Stats|Attachments table is a Rigging-tab width);
+  // every deployed unit's passive rider is listed under it.
+  const onStation = deployedUnits();
+  const stationCard = onStation.length
+    ? (() => {
+        const card = el("div", { class: "card sh-card" }, el("h3", {}, "Drones on Station"));
+        const seat = onStation.find(d => d.hotseat);
+        if (seat) {
+          const cfg = RIG_UNIT_CFG[seat.table];
+          const r = DATA.tables[seat.table].find(x => x[cfg.nameKey] === seat.u.name) || {};
+          const { statMods } = unitAttachments(cfg, seat.u);
+          const ball = toInt(r.Ballistic) + statMods.ballistic;
+          const imp = toInt(r.Impact) + statMods.impact;
+          const bodyMax = Math.max(0, toInt(r.Body) + statMods.body);
+          const st = (CHAR.play.rigging.units || {})[unitStateKey(seat.table, seat.u)] || {};
+          card.append(el("div", { class: "sh-h4", style: "margin:6px 0 2px" },
+            (seat.u.label || seat.u.name),
+            el("span", { class: "sh-tag", style: "margin-left:6px" }, "hotseat")));
+          if (seat.u.label) card.append(el("div", { class: "sub" }, seat.u.name));
+          // .filter(Boolean), not a bare append: Element.append() stringifies a
+          // null argument into the literal word "null" on the page.
+          card.append(...[
+            statLine("Move", String(r.Move || "—")
+              + (statMods.infusion_move ? ` +${statMods.infusion_move}m` : "")),
+            statLine("Handling", String(r.Handling ?? "—")),
+            statLine("Body", String(bodyMax) + (statMods.body ? ` (base ${r.Body})` : "")),
+            (ball || imp) ? statLine("Armor B / I", `${ball} / ${imp}`) : null,
+            bodyMax ? statLine("Damage",
+              `${Math.min(toInt(st.physical), bodyMax)} phys · `
+              + `${Math.min(toInt(st.integrity), bodyMax)} integrity`) : null,
+            (seat.u.weapons || []).length
+              ? statLine("Weapons", seat.u.weapons.map(sublistName).join(" · ")) : null,
+          ].filter(Boolean));
+        }
+        const riders = onStation
+          .map(d => ({ d, effect: unitPassiveEffect(d.table, d.u) }))
+          .filter(x => x.effect);
+        if (riders.length) {
+          card.append(el("div", { class: "sh-h4", style: "margin:8px 0 2px" }, "Passive while deployed"));
+          riders.forEach(({ d, effect }) => card.append(el("div", { class: "stat-line" },
+            el("span", { class: "sub", style: "white-space:nowrap" }, d.u.label || d.u.name),
+            el("span", { style: "text-align:right;color:var(--manon)" }, effect))));
+        }
+        if (!seat && !riders.length)
+          card.append(el("p", { class: "hint" },
+            `${onStation.length} deployed · none carries a passive effect. Tick `
+            + "Hotseat on the Rigging tab to bring a unit's stats up here."));
+        else if (riders.length)
+          card.append(el("p", { class: "hint" }, "Applied at the table, not in the numbers above."));
+        return card;
+      })()
+    : null;
+
   // --- martial arts combat effects: every unlocked level, grouped by style
   const maStylesWithLevels = (CALC.martial_arts || []).filter(m => m.levels.length);
   const maCard = maStylesWithLevels.length
@@ -2302,48 +2357,12 @@ function shOverview(body) {
   // Flat card list in a balanced multi-column flow (see .sh-ov-grid): columns
   // fill to equal height and reflow 3→2→1 by width, so no column is overloaded.
   body.append(el("div", { class: "sh-ov-grid" },
-    ...[poolCard, cond, maCard, infCard, initCard, dodgeCard, combatCard].filter(Boolean)));
+    ...[poolCard, cond, maCard, infCard, initCard, dodgeCard, stationCard, combatCard].filter(Boolean)));
 
   // Heritage / uplift special abilities (e.g. a Bat's Echolocation) — surfaced
   // here on the Overview, not just buried on the Notes tab.
   const heritageCard = heritageTraitsCard();
   if (heritageCard) body.append(heritageCard);
-
-  // --- drones on station: the one you're piloting, then what the rest are
-  // giving you. Above the weapons deliberately — in a round spent flying a
-  // drone, the drone's numbers are the ones being rolled.
-  const onStation = deployedUnits();
-  if (onStation.length) {
-    const stationCard = el("div", { class: "card sh-card" }, el("h3", {}, "Drones on station"));
-    const seat = onStation.filter(d => d.hotseat);
-    if (seat.length) {
-      stationCard.append(el("p", { class: "hint" },
-        `In the hotseat — you're piloting ${seat.map(d => d.u.label || d.u.name).join(", ")}.`));
-      stationCard.append(unitLoadoutTable(seat, "station"));
-    }
-    // Passive riders come from every deployed unit, hotseat or not, and stay
-    // text: "reroll 1s on dodge tests" isn't a number the engine can add.
-    const riders = onStation
-      .map(d => ({ d, effect: unitPassiveEffect(d.table, d.u) }))
-      .filter(x => x.effect);
-    if (riders.length) {
-      stationCard.append(el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
-        el("span", { class: "sub" }, "Passive bonuses while deployed")));
-      riders.forEach(({ d, effect }) => stationCard.append(el("div", { class: "stat-line" },
-        el("span", { class: "sub", style: "white-space:nowrap" },
-          `${d.u.label || d.u.name}${d.linked ? " · VCR" : " · Active"}`),
-        el("span", { style: "text-align:right;color:var(--manon)" }, effect))));
-      stationCard.append(el("p", { class: "hint" },
-        "Applied at the table, not folded into the numbers above — the same way "
-        + "situational infusion and armor-style riders are reported."));
-    }
-    if (!seat.length && !riders.length)
-      stationCard.append(el("p", { class: "hint" },
-        `${onStation.length} unit(s) deployed — none carries a passive effect, and `
-        + "nothing is in the hotseat. Tick Hotseat on the Rigging tab to bring a "
-        + "unit's stats up here."));
-    body.append(stationCard);
-  }
 
   // --- equipped weapons (+ mods) and worn armor, mirrored from the Gear tab
   const weaponsAll = allWeapons(), armorAll = allArmor();

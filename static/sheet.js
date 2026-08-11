@@ -1135,14 +1135,45 @@ const rollerD6 = () => 1 + Math.floor(Math.random() * 6);
  * `pool`      — the pool a roll draws from, "" for none. Sticky between rolls,
  *               because a run of Finesse tests is the normal case. */
 const rollerState = { open: false, count: 6, dice: [], bonus: 0, bonusDice: 0,
-                      bonusAdded: 0, mode: "free", pool: "", spent: null };
-/* Every die in the roll that costs no pool, and the total actually thrown. */
+                      bonusAdded: 0, mode: "free", pool: "", spent: null, penalty: 0 };
+/* Every die in the roll that costs no pool, before penalties. */
 const rollerFreeDice = () => (rollerState.bonusDice || 0) + (rollerState.bonusAdded || 0);
-const rollerTotalDice = () => Math.max(0, rollerState.count) + rollerFreeDice();
+
+/* What actually gets thrown once the wound penalty is taken off.
+ *
+ * The combat sequence is explicit about the order: penalty dice cancel bonus
+ * dice first, and only "once the bonus dice are eliminated" do they lower the
+ * limit. So a −2 wound on a roll with 5 bonus dice costs no limit at all, and a
+ * −2 on a roll with none takes 2 off the limit — and with it, 2 off the pool,
+ * since the pool only ever pays for limit dice. */
+function rollerEffective() {
+  const st = rollerState;
+  const penalty = Math.max(0, st.penalty || 0);
+  const free = rollerFreeDice();
+  const bonus = Math.max(0, free - penalty);
+  const limit = Math.max(0, Math.max(0, st.count) - Math.max(0, penalty - free));
+  return { penalty, free, bonus, limit, total: bonus + limit,
+           bonusLost: free - bonus, limitLost: Math.max(0, st.count) - limit };
+}
+const rollerTotalDice = () => rollerEffective().total;
 
 function rollerRefresh() {
   const cur = $("#die-roller");
   if (cur) cur.replaceWith(rollerOverlay());
+}
+
+/* The wound penalty the tracks currently impose: every 3 boxes marked on either
+ * track is −1 die on tasks, cumulative, doubled by a Reaction Enhancer and
+ * negated outright by a Pain Nullifier. `dice` is signed (−2), `size` is the
+ * count of penalty dice (2). Shared by the Condition card and the die roller,
+ * so what the sheet says you're suffering is what the roller takes off. */
+function woundPenalty() {
+  const play = CHAR.play || {};
+  const raw = -(Math.floor((play.physical_damage || 0) / 3) + Math.floor((play.stun_damage || 0) / 3));
+  const negated = !!(CALC.combat || {}).wound_penalty_negated;
+  const doubled = !!(CALC.combat || {}).wound_penalty_doubled;
+  const dice = negated ? 0 : raw * (doubled ? 2 : 1);
+  return { raw, negated, doubled, dice, size: Math.abs(dice) };
 }
 
 /* Initiative as shown on the sheet: Focus-pool dice + Reaction ("12d+8"). */
@@ -1168,7 +1199,13 @@ function openPoolRoller({ dice, bonus = 0, label, note, pool }) {
     // A test rolled off a skill knows which pool it draws from; keep the last
     // choice when the caller doesn't say.
     pool: pool !== undefined ? (pool || "") : rollerState.pool,
+    // Wounds are a standing condition, not a situational modifier, so the
+    // roller takes them off every test without being asked (issue #30).
+    penalty: woundPenalty().size,
   });
+  // A roll with nothing in it is no roll: a caller that preloads only bonus
+  // dice (Soak, Dodge) starts at zero limit, but a bare one needs a die.
+  if (rollerTotalDice() < 1 && !rollerFreeDice()) rollerState.count = Math.max(1, rollerState.count);
   rollerRefresh();
 }
 
@@ -1182,7 +1219,8 @@ function rollerSpendPool() {
   // A shared view can roll all it likes; it doesn't get to spend someone else's
   // pool, even transiently (nothing persists there, but the chip would move).
   if (activeTabObj() && activeTabObj().readonly) return null;
-  const want = Math.max(0, st.count);      // the limit dice, and only those
+  // Only limit dice cost pool, and only the ones that survived the penalty.
+  const want = rollerEffective().limit;
   if (!want) return null;
   const ps = poolState(st.pool);
   const spend = Math.min(want, ps.remaining);
@@ -1242,6 +1280,8 @@ function rollerOverlay() {
         Object.assign(st, { mode: "free", bonus: 0, bonusDice: 0, bonusAdded: 0,
           dice: [], spent: null });
       }
+      if (!st.open) st.penalty = woundPenalty().size;   // refresh: wounds change
+
       st.open = !st.open;
       rollerRefresh();
     },
@@ -1275,13 +1315,23 @@ function rollerOverlay() {
       stepBtn(-1, "–"),
       // Skill dice, then the free dice alongside them — the same "3d +2b"
       // shorthand the weapon chips use.
-      el("span", { class: "sh-roller-count",
-          title: `${rollerTotalDice()}d6 thrown — ${st.count} skill`
-            + (rollerFreeDice() ? ` + ${rollerFreeDice()} bonus` : "") },
-        `${st.count}d6` + (rollerFreeDice() ? ` +${rollerFreeDice()}b` : "")
-        + (st.bonus ? ` +${st.bonus}` : "")),
+      (() => {
+        const eff = rollerEffective();
+        return el("span", { class: "sh-roller-count",
+            title: `${eff.total}d6 thrown — ${eff.limit} skill`
+              + (eff.bonus ? ` + ${eff.bonus} bonus` : "")
+              + (eff.penalty ? ` · wound −${eff.penalty} already taken off` : "") },
+          `${eff.limit}d6` + (eff.bonus ? ` +${eff.bonus}b` : "")
+          + (st.bonus ? ` +${st.bonus}` : ""));
+      })(),
       stepBtn(1, "+"),
-      el("button", { class: "btn sh-roller-roll", onclick: () => {
+      el("button", { class: "btn sh-roller-roll",
+        // Wounds can take a small test to nothing. That's the rule, but it has
+        // to read as "you can't attempt this" rather than as a broken button.
+        ...(rollerTotalDice() < 1 ? { disabled: "1",
+          title: "No dice left once the wound penalty is applied" } : {}),
+        onclick: () => {
+        if (rollerTotalDice() < 1) return;
         st.dice = Array.from({ length: rollerTotalDice() },
           () => ({ value: rollerD6(), selected: false, rerolled: false }));
         rollerApply();
@@ -1310,11 +1360,20 @@ function rollerOverlay() {
         return el("option", { value: p }, `${p} ${ps.remaining}/${ps.max}`);
       }));
     sel.value = st.pool || "";
+    const eff = rollerEffective();
     const freeDice = rollerFreeDice();
     panel.append(el("div", { class: "sh-roller-poolrow" }, sel,
       el("span", { class: "sub" }, st.pool
-        ? `−${st.count}d on roll${freeDice ? ` (${freeDice} bonus free)` : ""}`
+        ? `−${eff.limit}d on roll${eff.bonus ? ` (${eff.bonus} bonus free)` : ""}`
         : "no pool spent")));
+    // Wounds come off before anything else is decided, so they're stated here
+    // rather than left for the player to subtract (issue #30). Cancelling bonus
+    // dice first is the combat sequence's own order.
+    if (eff.penalty)
+      panel.append(el("div", { class: "sh-roller-wound" },
+        `Wound −${eff.penalty}d applied`
+        + (eff.bonusLost ? ` · ${eff.bonusLost} bonus ${eff.bonusLost === 1 ? "die" : "dice"} cancelled` : "")
+        + (eff.limitLost ? ` · ${eff.limitLost} off the limit` : "")));
 
     // Bonus dice: thrown with the rest, but off the table's own ledger rather
     // than out of you — a firing mode, point-blank range, good light, a spirit
@@ -1388,6 +1447,10 @@ function rollerOverlay() {
       "4–6 = Success. Tap dice to mark for re-roll — each die re-rolls once."
       + (isInit ? " The total is saved to your Initiative." : "")
       + (st.spent ? " Re-rolls cost no further pool." : "")));
+  } else if (rollerTotalDice() < 1) {
+    panel.append(el("div", { class: "sh-roller-hint", style: "color:var(--bad)" },
+      `The wound penalty takes this test to nothing — there are no dice left to roll. `
+      + "Add bonus dice, or heal."));
   } else {
     panel.append(el("div", { class: "sh-roller-hint" },
       isInit
@@ -2028,11 +2091,43 @@ async function resyncKitFromBuild() {
   showActiveTab();
 }
 
+/* Knowledge skills are the one kit category the play sheet ADDS to directly:
+ * every other category has a play.purchases list, but a knowledge costs no cash
+ * and is budgeted off Intelligence in both modes, so the sheet writes it
+ * straight into the kit. That left one added in play invisible on the chargen
+ * tab, so players re-added it there — and re-finalize, seeing a genuinely new
+ * chargen entry, pushed a second copy into the kit (issue #35).
+ *
+ * Going back to chargen therefore folds them into the build: the same points
+ * against the same Intelligence budget, just now visible where they're edited.
+ * The baseline moves with it so the next re-finalize sees nothing new to add.
+ * This is a deliberate, narrow exception to "play never writes to the build" —
+ * it is safe precisely because knowledge spends no creation cash. */
+function syncKnowledgeToBuild() {
+  const play = CHAR.play;
+  if (!play || !play.kit) return 0;
+  const build = CHAR.knowledge_skills = CHAR.knowledge_skills || [];
+  const key = k => String((k || {}).name || "").trim().toLowerCase();
+  let moved = 0;
+  for (const k of play.kit.knowledge_skills || []) {
+    if (!key(k)) continue;                       // an unnamed row is a half-typed one
+    const found = build.find(b => key(b) === key(k));
+    if (!found) { build.push({ name: k.name, points: k.points }); moved++; }
+    else if (found.points !== k.points) { found.points = k.points; moved++; }
+  }
+  if (moved) {
+    play.kit_baseline = play.kit_baseline || {};
+    play.kit_baseline.knowledge_skills = JSON.parse(JSON.stringify(build));
+  }
+  return moved;
+}
+
 async function backToChargen() {
   if (!confirm("Return to character generation?\n\nChargen budgets become editable again. "
     + "Play state (damage, Kismet, notes, advances, purchases) is kept and returns when you re-finalize."))
     return;
   CHAR.finalized = false;
+  syncKnowledgeToBuild();      // so knowledges added in play are visible where they're edited
   schedulePlaySave();
   await recalc();
   exitSheet();
@@ -2504,10 +2599,7 @@ function shOverview(body) {
   if (expandedPool) poolCard.append(poolSkillList(expandedPool));
 
   // --- condition (wound penalty folded in — it's derived straight from these tracks)
-  const rawWound = -(Math.floor(play.physical_damage / 3) + Math.floor(play.stun_damage / 3));
-  const woundNegated = !!CALC.combat.wound_penalty_negated;   // Pain Nullifier, Shibumi, …
-  const woundDoubled = !!CALC.combat.wound_penalty_doubled;   // Reaction Enhancer bioware
-  const wound = woundNegated ? 0 : rawWound * (woundDoubled ? 2 : 1);
+  const { raw: rawWound, negated: woundNegated, doubled: woundDoubled, dice: wound } = woundPenalty();
   const cond = el("div", { class: "card sh-card" },
     el("div", { class: "sh-card-head" }, el("h3", {}, "Condition"),
       el("span", {},
@@ -2528,6 +2620,17 @@ function shOverview(body) {
       "Wound Penalty",
       el("b", { style: wound < 0 ? "color:var(--bad)" : "color:var(--ok)" },
         wound < 0 ? `${wound} dice` : "0")),
+    // Soaking is Brawn out of the pool plus whatever soak dice you're owed, so
+    // it opens the roller pointed at Brawn with those already in (issue #39).
+    ro ? null : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
+      el("button", { class: "btn",
+        title: "Roll to soak — Brawn pool dice, plus any passive soak dice",
+        onclick: () => openPoolRoller({ dice: 0, bonus: CALC.combat.soak_bonus || 0,
+          pool: "Brawn", label: "Soak",
+          note: (CALC.combat.soak_bonus ? `${CALC.combat.soak_bonus} passive soak dice — ` : "")
+            + "dial in the Brawn you're spending" }) }, "⚄ Soak"),
+      el("span", { class: "sub", style: "align-self:center" },
+        CALC.combat.soak_bonus ? `+${CALC.combat.soak_bonus} soak dice` : "Brawn pool")),
     woundNegated
       ? el("div", { class: "sub", style: "color:var(--ok)" },
           rawWound < 0 ? `Negated — would be ${rawWound}` : "Wound penalties negated")
@@ -2598,7 +2701,19 @@ function shOverview(body) {
     el("div", { class: "big" }, String(play.dodge_dice || 0)),
     el("div", { class: "sub" },
       c.dodge_bonus ? `+ ${c.dodge_bonus} passive dodge bonus` : "Bonus dice gained in play (Full Defense, cover, …)"),
-    miniCounter("Dodge dice", () => play.dodge_dice || 0, v => { play.dodge_dice = v; }, 0, 99));
+    miniCounter("Dodge dice", () => play.dodge_dice || 0, v => { play.dodge_dice = v; }, 0, 99),
+    // Dodging spends Finesse; the passive bonus and anything tracked above ride
+    // along free (issue #39).
+    ro ? null : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
+      el("button", { class: "btn",
+        title: "Roll to dodge — Finesse pool dice, plus your dodge bonus dice",
+        onclick: () => openPoolRoller({ dice: 0,
+          bonus: (c.dodge_bonus || 0) + (play.dodge_dice || 0),
+          pool: "Finesse", label: "Dodge",
+          note: [(c.dodge_bonus ? `${c.dodge_bonus} passive` : ""),
+                 (play.dodge_dice ? `${play.dodge_dice} tracked` : "")].filter(Boolean).join(" + ")
+            + (c.dodge_bonus || play.dodge_dice ? " dodge dice — " : "")
+            + "dial in the Finesse you're spending" }) }, "⚄ Dodge")));
 
   // --- drones on station, sized to sit in the card flow beside Dodge Dice and
   // Combat rather than as a full-width band. The hotseat unit gets a compact
@@ -2629,6 +2744,7 @@ function shOverview(body) {
             statLine("Handling", String(r.Handling ?? "—")),
             statLine("Body", String(bodyMax) + (statMods.body ? ` (base ${r.Body})` : "")),
             (ball || imp) ? statLine("Armor B / I", `${ball} / ${imp}`) : null,
+            statLine("Hardening", String(unitHardening(r, statMods))),
             bodyMax ? statLine("Damage",
               `${Math.min(toInt(st.physical), bodyMax)} phys · `
               + `${Math.min(toInt(st.integrity), bodyMax)} integrity`) : null,
@@ -6035,6 +6151,14 @@ function unitStateKey(table, unit) {
   return `${table}:${allUnits(table).indexOf(unit)}`;
 }
 
+/* A unit's Hardening: whatever its data row states (drones and vehicles carry
+ * no such column today, so 0) plus anything a fitted mod or a Drone-slot spirit
+ * infusion adds. Reported everywhere a unit's stats are, including at 0 — a
+ * blank read as "this stat doesn't exist here" (issue #33). */
+function unitHardening(row, statMods) {
+  return toInt((row || {}).Hardening) + toInt((statMods || {}).hardening);
+}
+
 /* Effective Body after any weapon/mod deltas — the box count for both condition
    tracks (issue #22). Never below 0; a wrecked chassis still has zero boxes
    rather than a negative track. */
@@ -6171,7 +6295,11 @@ function unitLoadoutTable(entries, mode = "inventory") {
       + ` · Handling ${r.Handling} · Body ${body}`
       + (statMods.body ? ` (base ${r.Body})` : "")
       + ((ball || imp) ? ` · ${ball}B/${imp}I` : "")
-      + (statMods.hardening ? ` · Hardening ${statMods.hardening}` : "")
+      // Hardening always prints, even at 0. Drones and vehicles carry no base
+      // Hardening in the data — it only arrives from a fitted mod or a drone
+      // infusion — and hiding the zero made the stat look missing rather than
+      // absent (issue #33).
+      + ` · Hardening ${unitHardening(r, statMods)}`
       + ` · ${cfg.capLabel} ${cfg.capOf(r)}`
       // A condition carrying a gameplay rider (Blinged) reports it here; it is
       // never applied to a stat.
@@ -6543,7 +6671,7 @@ function shRigging(body) {
               return `Handling ${r.Handling} · Body ${eBody}`
                 + (sm.body ? ` (base ${r.Body})` : "")
                 + ((ball || imp) ? ` · Armor ${ball}B/${imp}I` : "")
-                + (sm.hardening ? ` · Hardening ${sm.hardening}` : "")
+                + ` · Hardening ${unitHardening(r, sm)}`
                 + ` · weapons ${summary.weapon_count ?? u.weapons.length}/${summary.weapon_cap ?? cfg.capOf(r)}`;
             })()),
           r.Effect ? el("div", { class: "sub", style: "color:var(--manon)" }, r.Effect) : null,

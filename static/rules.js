@@ -759,25 +759,16 @@ function migrateRenamedSpirits(character) {
   }
 }
 
-/* RENAMED_AMMO: every round that only fits a vehicle / drone mount gained a
- * "Vehicle " prefix on 2026-08-10, so the personal HEI and Tracer rounds added
- * alongside them can't be mistaken for mount ammunition — a Wolfhound's
- * "Vehicle Autocannon HEI" is not the HEI a character loads into a Panther.
- * Ammo resolves by name, so without this a saved character's loaded mount goes
- * blank and its stockpile stops pricing. Never remove an entry. */
+/* RENAMED_AMMO: personal HEI and Tracer rounds arrived on 2026-08-10 and would
+ * otherwise read as the mount rounds of the same designation, so those two
+ * mount rounds — and only those two — say "Vehicle": a Wolfhound's Vehicle
+ * Autocannon HEI is not the HEI a character loads into a Panther. Every other
+ * mount round keeps its name; Tank Rounds and Micro missiles were never
+ * ambiguous. Ammo resolves by name, so without this a saved character's loaded
+ * mount goes blank and its stockpile stops pricing. Never remove an entry. */
 const RENAMED_AMMO = {
-  "Micro missile (HEAP)": "Vehicle Micro missile (HEAP)",
-  "Micro Missile (anti-personnel)": "Vehicle Micro Missile (anti-personnel)",
-  "Tank Rounds (HEAP)": "Vehicle Tank Rounds (HEAP)",
-  "Tank Rounds (HE)": "Vehicle Tank Rounds (HE)",
-  "Tank Rounds (KE)": "Vehicle Tank Rounds (KE)",
-  "Tank Rounds (Cannister)": "Vehicle Tank Rounds (Cannister)",
-  "Autocannon AP": "Vehicle Autocannon AP",
   "Autocannon HEI": "Vehicle Autocannon HEI",
   "Autocannon Tracer": "Vehicle Autocannon Tracer",
-  "20/25mm Cannon": "Vehicle 20/25mm Cannon",
-  "30mm Cannon": "Vehicle 30mm Cannon",
-  "Vulcan Cannon": "Vehicle Vulcan Cannon",
 };
 
 /* Apply RENAMED_AMMO everywhere an ammo name is stored. Two shapes, and they
@@ -787,10 +778,11 @@ const RENAMED_AMMO = {
  *    nests deeply enough that naming every path is the thing most likely to
  *    miss one. Safe to walk: nothing but a round is ever stored under `ammo`.
  *
- *  - `name` on a bought stack of rounds. NOT walked — "30mm Cannon" is both a
- *    round and a vehicle weapon, and "Vulcan Cannon" likewise, so a blanket
- *    rewrite of every `name` would rename the mounted gun out from under a
- *    rigger. Only the three arrays that hold bought gear are touched.
+ *  - `name` on a bought stack of rounds. NOT walked, and it must stay that way:
+ *    ammo and vehicle weapons share a namespace — "30mm Cannon" and "Vulcan
+ *    Cannon" are each both a round and a mounted gun — so a blanket rewrite of
+ *    every `name` would one day rename the gun out from under a rigger. Only
+ *    the three arrays that hold bought gear are touched.
  *
  * Idempotent: a prefixed name is not itself a key. */
 function migrateRenamedAmmo(character) {
@@ -2251,24 +2243,24 @@ function ammoFitsWeapon(ammoRow, weaponRow) {
  * mount it belongs to in its Notes. Matched here by mount name so the mount
  * pickers offer only what actually fits, and the ordinary personal rounds --
  * which say nothing about vehicles -- stay out of them entirely. */
-/* Every one of these is named "Vehicle …" in the data, which is what keeps them
- * apart from the personal rounds that share their designation — a Wolfhound's
- * "Vehicle Autocannon HEI" is not the HEI a character loads into a Panther. */
+/* Only the two that collide with a personal round of the same designation say
+ * "Vehicle" (see RENAMED_AMMO); the rest were never ambiguous and keep the
+ * names they have always had. */
 const UNIT_AMMO_FITS = {
-  "Vehicle Micro missile (HEAP)": /missile launcher/i,
-  "Vehicle Micro Missile (anti-personnel)": /missile launcher/i,
-  "Vehicle Tank Rounds (HEAP)": /tank cannon/i,
-  "Vehicle Tank Rounds (HE)": /tank cannon/i,
-  "Vehicle Tank Rounds (KE)": /tank cannon/i,
-  "Vehicle Tank Rounds (Cannister)": /tank cannon/i,
+  "Micro missile (HEAP)": /missile launcher/i,
+  "Micro Missile (anti-personnel)": /missile launcher/i,
+  "Tank Rounds (HEAP)": /tank cannon/i,
+  "Tank Rounds (HE)": /tank cannon/i,
+  "Tank Rounds (KE)": /tank cannon/i,
+  "Tank Rounds (Cannister)": /tank cannon/i,
   // The autocannons name their rounds in prose; these are those rounds. The
   // vehicle mount is "Autocannons" and the drone one "Autocannon", so match both.
-  "Vehicle Autocannon AP": /autocannon/i,
+  "Autocannon AP": /autocannon/i,
   "Vehicle Autocannon HEI": /autocannon/i,
   "Vehicle Autocannon Tracer": /autocannon/i,
-  "Vehicle 20/25mm Cannon": /^25mm cannon$/i,
-  "Vehicle 30mm Cannon": /^30mm cannon$/i,
-  "Vehicle Vulcan Cannon": /vulcan/i,
+  "20/25mm Cannon": /^25mm cannon$/i,
+  "30mm Cannon": /^30mm cannon$/i,
+  "Vulcan Cannon": /vulcan/i,
 };
 function ammoFitsUnitWeapon(ammoRow, unitWeaponName) {
   const rx = UNIT_AMMO_FITS[String((ammoRow && ammoRow.Item) || "")];

@@ -347,30 +347,35 @@ actually testing.
   conventional `Explosive` round already exists and row identity is by name.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P02-016b: "Vehicle " tells mount rounds from the personal rounds they share a name with
+### P02-016b: "Vehicle " marks only the two mount rounds a personal round collides with
 - **Type:** correctness
 - **Check:**
 
-      (() => { const g = n => DATA.tables.misc_gear.find(x => x.Item === n); const W = DATA.tables.weapons; const fits = n => W.filter(w => RULES.ammoFitsWeapon(g(n), w)).map(w => w.Weapon); const legacy = { name: "R", gear: [{ name: "Autocannon HEI", qty: 20 }], vehicles: [{ name: "V", weapons: [{ name: "30mm Cannon", ammo: "30mm Cannon" }] }] }; const m = RULES.mergeDefaults(JSON.parse(JSON.stringify(legacy))); return { unprefixed: DATA.tables.misc_gear.filter(r => r.Class === "Ammo (Exotic)" && !/^Vehicle /.test(r.Item)).map(r => r.Item), hei: fits("High Explosive Incendiary (HEI)").length, tracerAllFA: fits("Tracer Rounds").every(n => RULES.weaponFiringModes(W.find(w => w.Weapon === n)).includes("FA")), mountRoundOnPeople: fits("Vehicle Autocannon HEI").length, mountStillBinds: RULES.ammoFitsUnitWeapon(g("Vehicle Autocannon HEI"), "Autocannon"), migratedGear: m.gear[0].name, migratedAmmo: m.vehicles[0].weapons[0].ammo, weaponNameIntact: m.vehicles[0].weapons[0].name }; })()
+      (() => { const g = n => DATA.tables.misc_gear.find(x => x.Item === n); const W = DATA.tables.weapons; const fits = n => W.filter(w => RULES.ammoFitsWeapon(g(n), w)).map(w => w.Weapon); const legacy = { name: "R", gear: [{ name: "Autocannon HEI", qty: 20 }, { name: "Tank Rounds (KE)", qty: 4 }], vehicles: [{ name: "V", weapons: [{ name: "30mm Cannon", ammo: "Autocannon Tracer" }] }] }; const m = RULES.mergeDefaults(JSON.parse(JSON.stringify(legacy))); return { prefixed: DATA.tables.misc_gear.filter(r => /^Vehicle /.test(r.Item)).map(r => r.Item), hei: fits("High Explosive Incendiary (HEI)").length, tracerAllFA: fits("Tracer Rounds").every(n => RULES.weaponFiringModes(W.find(w => w.Weapon === n)).includes("FA")), mountRoundOnPeople: fits("Vehicle Autocannon HEI").length, binds: [RULES.ammoFitsUnitWeapon(g("Vehicle Autocannon HEI"), "Autocannon"), RULES.ammoFitsUnitWeapon(g("Tank Rounds (KE)"), "Tank Cannon"), RULES.ammoFitsUnitWeapon(g("30mm Cannon"), "30mm Cannon")], migratedGear: m.gear.map(x => x.name), migratedAmmo: m.vehicles[0].weapons[0].ammo, weaponNameIntact: m.vehicles[0].weapons[0].name }; })()
 
 - **Expected:**
 
-      { "unprefixed": ["AM-3 Rifle ammo"], "hei": 3, "tracerAllFA": true,
-        "mountRoundOnPeople": 0, "mountStillBinds": true,
-        "migratedGear": "Vehicle Autocannon HEI",
-        "migratedAmmo": "Vehicle 30mm Cannon", "weaponNameIntact": "30mm Cannon" }
+      { "prefixed": ["Vehicle Autocannon HEI", "Vehicle Autocannon Tracer"],
+        "hei": 3, "tracerAllFA": true, "mountRoundOnPeople": 0,
+        "binds": [true, true, true],
+        "migratedGear": ["Vehicle Autocannon HEI", "Tank Rounds (KE)"],
+        "migratedAmmo": "Vehicle Autocannon Tracer",
+        "weaponNameIntact": "30mm Cannon" }
 
-- **Note:** `weaponNameIntact` is the case with teeth. **"30mm Cannon" is both a
-  round and a vehicle weapon** (so is "Vulcan Cannon"), so `migrateRenamedAmmo`
-  may not rewrite `name` wherever it finds it — only inside the three arrays
-  that hold bought gear, plus `ammo` anywhere. If this reads
-  `"Vehicle 30mm Cannon"`, the migration has renamed the mounted gun out from
-  under every rigger who owns one and the mount no longer resolves.
+- **Note:** `prefixed` is the whole naming rule: **exactly two** rounds say
+  Vehicle, and only because a personal HEI and a personal Tracer now exist to
+  confuse them with. Tank Rounds, Micro missiles and the cannon rounds were
+  never ambiguous and keep their names — a third entry here means someone
+  prefixed the whole exotic class again. `migratedGear` shows the same
+  asymmetry surviving the migration: the Autocannon HEI stack is renamed, the
+  Tank Rounds stack is left alone.
 
-  `unprefixed` must list **only** `AM-3 Rifle ammo`: it is the one exotic round
-  that is personal (it feeds the AM-3 rifle a character carries), so it is the
-  one that must not say Vehicle. Anything else appearing here is a mount round
-  that lost its prefix and can now be bought as personal gear.
+  `weaponNameIntact` is the case with teeth. **Ammo and vehicle weapons share a
+  namespace** — "30mm Cannon" and "Vulcan Cannon" are each both a round and a
+  mounted gun — so `migrateRenamedAmmo` walks `ammo` anywhere but rewrites
+  `name` only inside the three arrays holding bought gear. Nothing in today's
+  rename map collides, which is exactly why this guard is easy to loosen and
+  worth asserting: widen it and the next rename renames a rigger's gun.
 
   `hei` is 3 — the large-bore guns, the same set API fits. The data's Recoilless
   Rifle and Autocannon are drone/vehicle mounts, so the personal-scale reading

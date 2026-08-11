@@ -2883,8 +2883,8 @@ function shOverview(body) {
   // Flat card list in a balanced multi-column flow (see .sh-ov-grid): columns
   // fill to equal height and reflow 3→2→1 by width, so no column is overloaded.
   body.append(el("div", { class: "sh-ov-grid" },
-    ...[poolCard, cond, actionsCard(), maCard, infCard, initCard, dodgeCard,
-        stationCard, combatCard].filter(Boolean)));
+    ...[poolCard, cond, actionsCard(), infCard, initCard, dodgeCard,
+        stationCard, combatCard, maCard].filter(Boolean)));
 
   // Heritage / uplift special abilities (e.g. a Bat's Echolocation) — surfaced
   // here on the Overview, not just buried on the Notes tab.

@@ -759,6 +759,61 @@ function migrateRenamedSpirits(character) {
   }
 }
 
+/* RENAMED_AMMO: every round that only fits a vehicle / drone mount gained a
+ * "Vehicle " prefix on 2026-08-10, so the personal HEI and Tracer rounds added
+ * alongside them can't be mistaken for mount ammunition — a Wolfhound's
+ * "Vehicle Autocannon HEI" is not the HEI a character loads into a Panther.
+ * Ammo resolves by name, so without this a saved character's loaded mount goes
+ * blank and its stockpile stops pricing. Never remove an entry. */
+const RENAMED_AMMO = {
+  "Micro missile (HEAP)": "Vehicle Micro missile (HEAP)",
+  "Micro Missile (anti-personnel)": "Vehicle Micro Missile (anti-personnel)",
+  "Tank Rounds (HEAP)": "Vehicle Tank Rounds (HEAP)",
+  "Tank Rounds (HE)": "Vehicle Tank Rounds (HE)",
+  "Tank Rounds (KE)": "Vehicle Tank Rounds (KE)",
+  "Tank Rounds (Cannister)": "Vehicle Tank Rounds (Cannister)",
+  "Autocannon AP": "Vehicle Autocannon AP",
+  "Autocannon HEI": "Vehicle Autocannon HEI",
+  "Autocannon Tracer": "Vehicle Autocannon Tracer",
+  "20/25mm Cannon": "Vehicle 20/25mm Cannon",
+  "30mm Cannon": "Vehicle 30mm Cannon",
+  "Vulcan Cannon": "Vehicle Vulcan Cannon",
+};
+
+/* Apply RENAMED_AMMO everywhere an ammo name is stored. Two shapes, and they
+ * need different treatment:
+ *
+ *  - `ammo` on a weapon or a unit mount. Walked, because the rigging state
+ *    nests deeply enough that naming every path is the thing most likely to
+ *    miss one. Safe to walk: nothing but a round is ever stored under `ammo`.
+ *
+ *  - `name` on a bought stack of rounds. NOT walked — "30mm Cannon" is both a
+ *    round and a vehicle weapon, and "Vulcan Cannon" likewise, so a blanket
+ *    rewrite of every `name` would rename the mounted gun out from under a
+ *    rigger. Only the three arrays that hold bought gear are touched.
+ *
+ * Idempotent: a prefixed name is not itself a key. */
+function migrateRenamedAmmo(character) {
+  const rename = value => (typeof value === "string" && RENAMED_AMMO[value]) || null;
+  const walkAmmo = node => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(walkAmmo); return; }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "ammo") { const to = rename(value); if (to) node[key] = to; }
+      else walkAmmo(value);
+    }
+  };
+  walkAmmo(character);
+  const play = character.play || {};
+  for (const list of [character.gear, (play.kit || {}).gear,
+                      (play.purchases || {}).gear]) {
+    for (const item of list || []) {
+      const to = item && rename(item.name);
+      if (to) item.name = to;
+    }
+  }
+}
+
 /* Does this parsed JSON look like a Sinless character?
  *
  * Import used to accept anything that parsed, wasn't an array, and had a truthy
@@ -844,6 +899,7 @@ function mergeDefaults(character) {
   // Follow renamed data rows onto saved characters (see RENAMED_AUGMENTS).
   migrateRenamedAugments(character);
   migrateRenamedSpirits(character);
+  migrateRenamedAmmo(character);
 
   // The per-unit Damage counter was a free-form tally no code ever read, and the
   // Physical Condition track superseded it. Carry a recorded Damage over into
@@ -2149,10 +2205,19 @@ const HEAVY_RIFLES = [/AM-3/i, /M334/i, /Panther/i];
  * lobs grenades or missiles, and nothing that already delivers stun damage. */
 const takesConventionalRounds = row =>
   !/by grenade|by missile|stun/i.test(String((row && row.Damage) || ""));
+const isLargeBore = row => HEAVY_RIFLES.some(rx => rx.test(String(row.Weapon || "")));
+/* "Autofire only" — a round you only load to walk a burst onto the target, so
+ * it needs a gun that can actually burst. Read off the weapon's own modes
+ * rather than a list of names, so a new full-auto gun takes it on its own. */
+const firesFullAuto = row => weaponFiringModes(row).includes("FA");
 const AMMO_FITS = {
   "Buckshot":        row => row.Type === "Shotgun",
   "Subsonic loads":  row => row.Type !== "Shotgun",
-  "API":             row => HEAVY_RIFLES.some(rx => rx.test(String(row.Weapon || ""))),
+  "API":             isLargeBore,
+  // Recoilless Rifle / Autocannon only. The personal-scale guns that qualify
+  // are the large-bore ones — the same set API needs.
+  "High Explosive Incendiary (HEI)": isLargeBore,
+  "Tracer Rounds":   firesFullAuto,
   "Gel":             takesConventionalRounds,
   "Flechette":       takesConventionalRounds,
   "Cased":           takesConventionalRounds,
@@ -2186,21 +2251,24 @@ function ammoFitsWeapon(ammoRow, weaponRow) {
  * mount it belongs to in its Notes. Matched here by mount name so the mount
  * pickers offer only what actually fits, and the ordinary personal rounds --
  * which say nothing about vehicles -- stay out of them entirely. */
+/* Every one of these is named "Vehicle …" in the data, which is what keeps them
+ * apart from the personal rounds that share their designation — a Wolfhound's
+ * "Vehicle Autocannon HEI" is not the HEI a character loads into a Panther. */
 const UNIT_AMMO_FITS = {
-  "Micro missile (HEAP)": /missile launcher/i,
-  "Micro Missile (anti-personnel)": /missile launcher/i,
-  "Tank Rounds (HEAP)": /tank cannon/i,
-  "Tank Rounds (HE)": /tank cannon/i,
-  "Tank Rounds (KE)": /tank cannon/i,
-  "Tank Rounds (Cannister)": /tank cannon/i,
+  "Vehicle Micro missile (HEAP)": /missile launcher/i,
+  "Vehicle Micro Missile (anti-personnel)": /missile launcher/i,
+  "Vehicle Tank Rounds (HEAP)": /tank cannon/i,
+  "Vehicle Tank Rounds (HE)": /tank cannon/i,
+  "Vehicle Tank Rounds (KE)": /tank cannon/i,
+  "Vehicle Tank Rounds (Cannister)": /tank cannon/i,
   // The autocannons name their rounds in prose; these are those rounds. The
   // vehicle mount is "Autocannons" and the drone one "Autocannon", so match both.
-  "Autocannon AP": /autocannon/i,
-  "Autocannon HEI": /autocannon/i,
-  "Autocannon Tracer": /autocannon/i,
-  "20/25mm Cannon": /^25mm cannon$/i,
-  "30mm Cannon": /^30mm cannon$/i,
-  "Vulcan Cannon": /vulcan/i,
+  "Vehicle Autocannon AP": /autocannon/i,
+  "Vehicle Autocannon HEI": /autocannon/i,
+  "Vehicle Autocannon Tracer": /autocannon/i,
+  "Vehicle 20/25mm Cannon": /^25mm cannon$/i,
+  "Vehicle 30mm Cannon": /^30mm cannon$/i,
+  "Vehicle Vulcan Cannon": /vulcan/i,
 };
 function ammoFitsUnitWeapon(ammoRow, unitWeaponName) {
   const rx = UNIT_AMMO_FITS[String((ammoRow && ammoRow.Item) || "")];

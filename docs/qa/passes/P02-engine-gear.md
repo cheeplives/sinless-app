@@ -347,6 +347,38 @@ actually testing.
   conventional `Explosive` round already exists and row identity is by name.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-016b: "Vehicle " tells mount rounds from the personal rounds they share a name with
+- **Type:** correctness
+- **Check:**
+
+      (() => { const g = n => DATA.tables.misc_gear.find(x => x.Item === n); const W = DATA.tables.weapons; const fits = n => W.filter(w => RULES.ammoFitsWeapon(g(n), w)).map(w => w.Weapon); const legacy = { name: "R", gear: [{ name: "Autocannon HEI", qty: 20 }], vehicles: [{ name: "V", weapons: [{ name: "30mm Cannon", ammo: "30mm Cannon" }] }] }; const m = RULES.mergeDefaults(JSON.parse(JSON.stringify(legacy))); return { unprefixed: DATA.tables.misc_gear.filter(r => r.Class === "Ammo (Exotic)" && !/^Vehicle /.test(r.Item)).map(r => r.Item), hei: fits("High Explosive Incendiary (HEI)").length, tracerAllFA: fits("Tracer Rounds").every(n => RULES.weaponFiringModes(W.find(w => w.Weapon === n)).includes("FA")), mountRoundOnPeople: fits("Vehicle Autocannon HEI").length, mountStillBinds: RULES.ammoFitsUnitWeapon(g("Vehicle Autocannon HEI"), "Autocannon"), migratedGear: m.gear[0].name, migratedAmmo: m.vehicles[0].weapons[0].ammo, weaponNameIntact: m.vehicles[0].weapons[0].name }; })()
+
+- **Expected:**
+
+      { "unprefixed": ["AM-3 Rifle ammo"], "hei": 3, "tracerAllFA": true,
+        "mountRoundOnPeople": 0, "mountStillBinds": true,
+        "migratedGear": "Vehicle Autocannon HEI",
+        "migratedAmmo": "Vehicle 30mm Cannon", "weaponNameIntact": "30mm Cannon" }
+
+- **Note:** `weaponNameIntact` is the case with teeth. **"30mm Cannon" is both a
+  round and a vehicle weapon** (so is "Vulcan Cannon"), so `migrateRenamedAmmo`
+  may not rewrite `name` wherever it finds it — only inside the three arrays
+  that hold bought gear, plus `ammo` anywhere. If this reads
+  `"Vehicle 30mm Cannon"`, the migration has renamed the mounted gun out from
+  under every rigger who owns one and the mount no longer resolves.
+
+  `unprefixed` must list **only** `AM-3 Rifle ammo`: it is the one exotic round
+  that is personal (it feeds the AM-3 rifle a character carries), so it is the
+  one that must not say Vehicle. Anything else appearing here is a mount round
+  that lost its prefix and can now be bought as personal gear.
+
+  `hei` is 3 — the large-bore guns, the same set API fits. The data's Recoilless
+  Rifle and Autocannon are drone/vehicle mounts, so the personal-scale reading
+  of "Recoilless Rifle / Autocannon only" is the large-bore list.
+  `tracerAllFA` checks "Autofire only" is read off each weapon's own modes
+  rather than a hardcoded list, so a new full-auto gun takes Tracer on its own.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ### P02-017: A deck runs on the Hacking program slotted into it
 - **Type:** correctness
 - **Steps:** none — the Check builds its own characters.

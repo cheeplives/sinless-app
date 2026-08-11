@@ -2722,13 +2722,13 @@ function shOverview(body) {
     c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
     c.soak_bonus ? statLine("Soak bonus", `+${c.soak_bonus}`, (c.soak_sources || []).join(" · ")) : null,
     statLine("Carried weight", String(c.carried_weight)));
-  // Dodging is a roll, not a counter. The big number used to be play.dodge_dice
-  // — a scratch value nothing in the app ever wrote but its own ± — so it sat
-  // at 0 forever and told you nothing. It's now the passive dodge dice your
-  // build actually grants, and clicking it opens the roll: Finesse out of the
-  // pool, these dice free. Situational dice (Full Defense, cover) are what the
-  // roller's own Bonus ± is for, and they last exactly one roll, which is what
-  // "gained in play" always meant.
+  // Dodging is a roll, not a counter, so this card has no number to stare at —
+  // it works like Soak: a button that opens the roller pointed at Finesse with
+  // your passive dodge dice already in, and a note saying how many those are.
+  // (The big number was play.dodge_dice, a scratch value nothing ever wrote but
+  // its own ±, so it sat at 0 forever and told you nothing.) Situational dice
+  // (Full Defense, cover) are what the roller's own Bonus ± is for, and they
+  // last exactly one roll, which is what "gained in play" always meant.
   const dodgeTracked = play.dodge_dice || 0;      // legacy hand-tracked dice, still counted
   const dodgeFree = (c.dodge_bonus || 0) + dodgeTracked;
   const dodgeRoll = () => openPoolRoller({ dice: 0, bonus: dodgeFree, pool: "Finesse",
@@ -2737,11 +2737,6 @@ function shOverview(body) {
       + "dial in the Finesse you're spending" });
   const dodgeCard = el("div", { class: "card sh-card sh-counter" },
     el("h3", {}, "Dodge"),
-    ro ? el("div", { class: "big" }, String(dodgeFree))
-       : rollable(el("div", { class: "big" }, String(dodgeFree)),
-           { dice: 0, bonus: dodgeFree, pool: "Finesse", label: "Dodge",
-             title: `Roll to dodge — ${dodgeFree} free dodge ${dodgeFree === 1 ? "die" : "dice"}`
-               + " plus whatever Finesse you spend" }),
     el("div", { class: "sub" },
       (c.dodge_sources || []).length ? (c.dodge_sources || []).join(" · ")
         : "No passive dodge dice — dodging is Finesse out of the pool"),
@@ -2758,8 +2753,17 @@ function shOverview(body) {
     // to a pool, but it is a thing to remember at exactly this moment (#38).
     ...(c.drone_dodge_notes || []).map(n => el("div", { class: "sub", style: "color:var(--manon)" },
       `${n.text} (${n.source})`)),
-    ro ? null : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
-      el("button", { class: "btn", title: "Roll to dodge", onclick: dodgeRoll }, "⚄ Dodge")));
+    ro
+      ? (dodgeFree ? el("div", { class: "sub" },
+          `+${dodgeFree} dodge ${dodgeFree === 1 ? "die" : "dice"}`) : null)
+      : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
+          el("button", { class: "btn",
+            title: `Roll to dodge — ${dodgeFree} free dodge ${dodgeFree === 1 ? "die" : "dice"}`
+              + " plus whatever Finesse you spend",
+            onclick: dodgeRoll }, "⚄ Dodge"),
+          el("span", { class: "sub", style: "align-self:center" },
+            dodgeFree ? `+${dodgeFree} dodge ${dodgeFree === 1 ? "die" : "dice"}`
+                      : "Finesse pool")));
 
   // --- drones on station, sized to sit in the card flow beside Dodge Dice and
   // Combat rather than as a full-width band. The hotseat unit gets a compact

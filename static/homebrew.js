@@ -59,6 +59,8 @@ const HOMEBREW_CONFIG = {
     { key: "Time", hint: "e.g. 10 min" },
     { key: "Effect", ta: true },
     { key: "Description", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   speaker_spirits: { label: "Spirits", nameKey: "Spirit", fields: [
     { key: "Spirit" },
@@ -82,6 +84,8 @@ const HOMEBREW_CONFIG = {
     { key: "Statblock Of", hint: "blank unless the stats are a summoned cohort's" },
     { key: "Attacks", ta: true },
     { key: "Special", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   spells: { label: "Spells", nameKey: "Name", fields: [
     { key: "Name" },
@@ -92,6 +96,8 @@ const HOMEBREW_CONFIG = {
     { key: "Cost", hint: "number" },
     { key: "Effect", ta: true },
     { key: "Description", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   misc_gear: { label: "Gear", nameKey: "Item", fields: [
     { key: "Item" },
@@ -107,6 +113,8 @@ const HOMEBREW_CONFIG = {
     { key: "Mount ZP", hint: "ZP capacity for mounted augments (exempt from the character's ZP)" },
     { key: "Effect", ta: true },
     { key: "Notes", ta: true, hint: "restrictions or usage notes (e.g. which guns take this ammo)" },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   augments: { label: "Augments", nameKey: "Name", fields: [
     { key: "Name", hint: "end with a number (“Reflex Booster 2”) for rank logic" },
@@ -140,6 +148,8 @@ const HOMEBREW_CONFIG = {
       hint: "what the AltMove is — e.g. Flight, Water, Tracked" },
     { key: "Effect", ta: true },
     { key: "Description", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   weapons: { label: "Weapons", nameKey: "Weapon", fields: [
     { key: "Weapon" },
@@ -180,6 +190,8 @@ const HOMEBREW_CONFIG = {
       hint: "augment types this can mount — comma-separated, or Any; blank = none" },
     { key: "Mount ZP", hint: "ZP capacity for mounted augments (exempt from the character's ZP)" },
     { key: "Notes", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   armor: { label: "Armor", nameKey: "Armor", fields: [
     { key: "Armor" },
@@ -197,6 +209,8 @@ const HOMEBREW_CONFIG = {
         ...hbDistinct("augments", "Type").filter(t => t !== "Bioware")],
       hint: "augment types this can mount — comma-separated, or Any; blank = none" },
     { key: "Mount ZP", hint: "ZP capacity for mounted augments (exempt from the character's ZP)" },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   vehicles: { label: "Vehicles", nameKey: "Vehicle", fields: [
     { key: "Vehicle" },
@@ -211,6 +225,8 @@ const HOMEBREW_CONFIG = {
     { key: "Armor" },
     { key: "Impact", hint: "number" },
     { key: "Ballistic", hint: "number" },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   drones: { label: "Drones", nameKey: "Drone", fields: [
     { key: "Drone" },
@@ -228,6 +244,8 @@ const HOMEBREW_CONFIG = {
     { key: "Impact", hint: "number" },
     { key: "Ballistic", hint: "number" },
     { key: "Effect", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   weapon_mods: { label: "Weapon Mods", nameKey: "Modification", fields: [
     { key: "Modification" },
@@ -243,6 +261,8 @@ const HOMEBREW_CONFIG = {
     { key: "Conceal Mod", hint: "+/-N" },
     { key: "Req Type", select: () => ["", ...Object.keys(WEAPON_TYPE_LABELS)],
       optionLabel: k => k ? `${WEAPON_TYPE_LABELS[k]} (${k}) only` : "(any weapon type)" },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   vehicle_ballistic_weapons: { label: "Vehicle Ballistic", nameKey: "Vehicle Ballistic Weapon", fields: [
     { key: "Vehicle Ballistic Weapon" },
@@ -258,6 +278,8 @@ const HOMEBREW_CONFIG = {
     { key: "Pen", hint: "armor penetration" },
     { key: "Effect", ta: true },
     { key: "ModeEffect", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   vehicle_energy_weapons: { label: "Vehicle Energy", nameKey: "Vehicle Energy Weapon", fields: [
     { key: "Vehicle Energy Weapon" },
@@ -272,6 +294,8 @@ const HOMEBREW_CONFIG = {
     { key: "Weight", hint: "number" },
     { key: "Pen", hint: "armor penetration" },
     { key: "ModeEffect", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   drone_ballistic_weapons: { label: "Drone Ballistic", nameKey: "Drone Ballistic Weapon", fields: [
     { key: "Drone Ballistic Weapon" },
@@ -287,6 +311,8 @@ const HOMEBREW_CONFIG = {
     { key: "Pen", hint: "armor penetration" },
     { key: "Effect", ta: true },
     { key: "ModeEffect", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   drone_energy_weapons: { label: "Drone Energy", nameKey: "Drone Energy Weapon", fields: [
     { key: "Drone Energy Weapon" },
@@ -301,6 +327,8 @@ const HOMEBREW_CONFIG = {
     { key: "Weight", hint: "number" },
     { key: "Pen", hint: "armor penetration" },
     { key: "ModeEffect", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   vehicle_mods: { label: "Vehicle Mods", nameKey: "Vehicle Mod", fields: [
     { key: "Vehicle Mod" },
@@ -311,6 +339,8 @@ const HOMEBREW_CONFIG = {
     { key: "Target", select: () => ["", "weapon"],
       optionLabel: v => v === "weapon" ? "weapon (fits a mounted gun)" : "(fits the vehicle itself)" },
     { key: "ModeEffect", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
   drone_mods: { label: "Drone Mods", nameKey: "Drone Mod", fields: [
     { key: "Drone Mod" },
@@ -321,6 +351,8 @@ const HOMEBREW_CONFIG = {
     { key: "Target", select: () => ["", "weapon"],
       optionLabel: v => v === "weapon" ? "weapon (fits a mounted gun)" : "(fits the drone itself)" },
     { key: "ModeEffect", ta: true },
+    { key: "Skill Bonus", hint: "flat dice folded into the rating, e.g. \u201cFascination +1\u201d \u2014 comma-separate several" },
+    { key: "Skill Note", hint: "situational text shown beside the skill, e.g. \u201cShadow: reroll 1s/2s in urban environments\u201d \u2014 pipe-separate several" },
   ]},
 };
 

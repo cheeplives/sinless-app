@@ -200,6 +200,44 @@ is not optional, and a leftover QA pack will confuse every later pass.
   rating, which is different from "unstated".
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P09-012: Homebrew can grant skill dice and situational notes
+- **Type:** correctness
+- **Check:**
+
+      (() => { const row = { Name: "QA Empathy Weave", Type: "Bioware", ZR: "0.5", BI: "0", Cost: "9000", Body: "1", Charisma: "1", "Skill Bonus": "Fascination +1", "Skill Note": "Shadow: reroll 1s and 2s in urban environments", Custom: "Y" }; DATA.tables.augments.push(row); const typo = { Name: "QA Typo", Type: "Headware", ZR: "0", BI: "0", Cost: "1", "Skill Bonus": "Fascinaton +1", "Skill Note": "Shadow reroll 1s", Custom: "Y" }; DATA.tables.augments.push(typo); const mk = names => { const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; for (const a of RULES.ATTRIBUTES) c.attributes[a] = 3; c.skills = { Fascination: 2, Shadow: 2, Observation: 2 }; c.augments = names.map(n => ({ name: n })); return RULES.calculate(c); }; const off = mk([]), on = mk(["QA Empathy Weave"]), sf = mk(["Sound Filter"]); return { before: off.skills.Fascination.final, after: on.skills.Fascination.final, note: on.skills.Shadow.notes, body: on.attributes.Body.final, bodyMax: on.attributes.Body.max, charisma: on.attributes.Charisma.final, soundFilter: sf.skills.Observation.final, typoWarnings: mk(["QA Typo"]).warnings.filter(w => /QA Typo/.test(w)) }; })()
+
+- **Expected:**
+
+      { "before": 2, "after": 3,
+        "note": ["reroll 1s and 2s in urban environments (QA Empathy Weave)"],
+        "body": 4, "bodyMax": 20, "charisma": 4, "soundFilter": 3,
+        "typoWarnings": ["QA Typo: Skill Bonus — no skill called \"Fascinaton\".",
+                         "QA Typo: Skill Note — \"Shadow reroll 1s\" is not \"Skill: note\"."] }
+
+- **Note:** `Skill Bonus` ("Fascination +1", comma-separated for several) is flat
+  dice folded into the rating; `Skill Note` ("Shadow: reroll 1s/2s in urban
+  environments", pipe-separated) is situational text shown beside the skill and
+  never summed. Both columns are on **all sixteen** homebrew tables and are read
+  from anything the character has active — worn armor, carried gear, equipped
+  weapons and their mods, installed and gear-mounted augments, known spells and
+  rituals, owned vehicles and drones, and a spirit that is infused or bonded.
+
+  `bodyMax` at **20** is part of the case: attribute columns raise the value, not
+  the maximum, unless the name matches `AUGMENTS_THAT_RAISE_MAX` — which a
+  homebrew name never will.
+
+  `soundFilter` at 3 guards the migration. Sound Filter's +1 Observation used to
+  be a hardcoded `names.has("Sound Filter")` check in `rules.js`, alongside four
+  situational notes (Rocket Boots, Compartment, Covert Synthskin, Amplification).
+  All five now live in their own rows' columns, so core and homebrew go through
+  one mechanism. If this reads 2, the migration dropped a core effect.
+
+  `typoWarnings` is the reason these are columns rather than parsed prose: a
+  misspelled skill produces a bonus that never lands, so it is reported. Silence
+  here means a typo would fail invisibly — the exact bug this mechanism exists
+  to prevent.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Clean up — required

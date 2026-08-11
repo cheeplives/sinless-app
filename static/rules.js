@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "197";
+const APP_VERSION = "198";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -450,7 +450,6 @@ function hackActionSkill(skillCode) {
 // NB: the cyber ZR *value* (raw minus eyes/ears/limb absorption) is the same
 // under both ZR house rules; only how that ZR is *applied* differs — see the
 // zpRemaining / casting-penalty branches in calculate() gated on houseRule("zr").
-const SOUND_FILTER_OBSERVATION_BONUS = 1;
 const MOVEMENT_ENHANCEMENT_METERS_PER_RATING = 2;
 
 // --- gear & money --------------------------------------------------------------
@@ -1530,19 +1529,15 @@ function augmentEffectSums(owned) {
   }
   const wiredReflexesRank = maxOf(
     [...names].filter(n => n.startsWith("Wired Reflexes")).map(augmentLevel), 0);
+  // Skill bonuses and situational per-skill notes used to be five hardcoded
+  // name checks here (Sound Filter, Rocket Boots, Compartment, Covert
+  // Synthskin, Amplification). They now live in the rows' own "Skill Bonus" and
+  // "Skill Note" columns and are collected by gearSkillEffects, so homebrew can
+  // do exactly what the core rows do. Left empty here: mergeSkillEffects fills
+  // them from the data, and mergeMountedAugments still merges a mounted host's
+  // share through the same fields.
   const skillBonus = {};
-  if (names.has("Sound Filter")) {
-    skillBonus["Observation"] = SOUND_FILTER_OBSERVATION_BONUS;
-  }
-  // Situational skill dice that can't be a flat bonus (jump-only, conceal-only,
-  // reroll effects) surface as per-skill notes instead of inflating the rank.
   const skillNotes = {};
-  const addSkillNote = (skill, note) =>
-    (skillNotes[skill] = skillNotes[skill] || []).push(note);
-  if (names.has("Rocket Boots")) addSkillNote("Athletics", "+8d & reroll 1s/2s when jumping (Rocket Boots)");
-  if (names.has("Compartment")) addSkillNote("Subterfuge", "+6d to conceal an item in the body compartment");
-  if (names.has("Covert Synthskin")) addSkillNote("Shadow", "reroll 1s/2s while hiding in appropriate gear (Covert Synthskin)");
-  if (names.has("Amplification")) addSkillNote("Observation", "reroll 1s (Amplification)");
   // Situational firearm/optics modifiers, shown as reminders by the weapons UI.
   const combatNotes = [];
   if (names.has("Smartlink")) combatNotes.push("Smartlink: +1 Accuracy on smart guns (already applied)");
@@ -3611,6 +3606,139 @@ function blingEtiquette(character, data) {
   return Object.values(found).sort((x, y) => y.bonus - x.bonus);
 }
 
+/* ---- skill bonuses and notes from anything you own -------------------------
+ * Two columns every homebrew-eligible table carries:
+ *
+ *   Skill Bonus  "Fascination +1"            flat dice, folded into the rating
+ *                "Shadow +1, Observation +2"  several, comma-separated
+ *   Skill Note   "Shadow: reroll 1s/2s in urban environments"
+ *                situational text, shown beside the skill and never summed
+ *
+ * Structured rather than parsed out of Effect prose, deliberately. "+1 bonus
+ * die to Fascination" and "+1 to Body" are the same shape in English, so a
+ * prose parser would have to guess which nouns are skills and which are
+ * attributes. Making the author name the column removes the guess — and the
+ * check in tools/check_data.py then guarantees the editor exposes it.
+ *
+ * Unknown skill names are reported rather than silently dropped: a typo here
+ * produces a bonus that never lands, which is exactly the failure this whole
+ * mechanism exists to stop. */
+function parseSkillBonuses(text, warn) {
+  const out = [];
+  for (const part of String(text || "").split(",")) {
+    const s = part.trim();
+    if (!s) continue;
+    const m = /^(.+?)\s*([+-]\s*\d+)$/.exec(s);
+    if (!m) { if (warn) warn(`"${s}" is not "Skill +N"`); continue; }
+    const skill = canonicalSkillName(m[1].trim());
+    if (!skill) { if (warn) warn(`no skill called "${m[1].trim()}"`); continue; }
+    out.push({ skill, bonus: toInt(asNumber(m[2].replace(/\s+/g, ""))) });
+  }
+  return out;
+}
+
+function parseSkillNotes(text, warn) {
+  const out = [];
+  for (const part of String(text || "").split("|")) {
+    const s = part.trim();
+    if (!s) continue;
+    const m = /^(.+?)\s*:\s*(.+)$/.exec(s);
+    if (!m) { if (warn) warn(`"${s}" is not "Skill: note"`); continue; }
+    const skill = canonicalSkillName(m[1].trim());
+    if (!skill) { if (warn) warn(`no skill called "${m[1].trim()}"`); continue; }
+    out.push({ skill, note: m[2].trim() });
+  }
+  return out;
+}
+
+/* Skill names are matched case-insensitively so an author needn't reproduce the
+ * exact capitalisation of "Computer: Hacking". */
+function canonicalSkillName(name) {
+  const want = String(name || "").trim().toLowerCase();
+  return Object.keys(SKILLS).find(s => s.toLowerCase() === want) || null;
+}
+
+/* Every Skill Bonus / Skill Note the character is currently getting.
+ *
+ * The active tests are the ones the rest of the engine already uses: armor must
+ * be worn, weapons equipped, gear carried, augments are installed and always
+ * count, and a spirit must be infused or bonded rather than merely known.
+ * Vehicles and drones count as owned — a rigger's kit isn't "worn".
+ *
+ * Returns { bonus: {skill: n}, notes: {skill: [text]}, sources: [...] }. */
+function gearSkillEffects(character, data, warnings) {
+  const bonus = {}, notes = {}, sources = [];
+  const nameOf = x => (x && typeof x === "object") ? x.name : x;
+  const apply = (row, label) => {
+    if (!row) return;
+    const warn = msg => warnings && warnings.push(`${label}: Skill Bonus — ${msg}.`);
+    for (const b of parseSkillBonuses(row["Skill Bonus"], warn)) {
+      bonus[b.skill] = (bonus[b.skill] || 0) + b.bonus;
+      sources.push({ skill: b.skill, bonus: b.bonus, label });
+    }
+    const warnNote = msg => warnings && warnings.push(`${label}: Skill Note — ${msg}.`);
+    for (const n of parseSkillNotes(row["Skill Note"], warnNote)) {
+      (notes[n.skill] = notes[n.skill] || []).push(`${n.note} (${label})`);
+    }
+  };
+  const rowsOf = (entries, table, column, active) => {
+    for (const e of entries || []) {
+      if (active && !active(e)) continue;
+      const name = nameOf(e);
+      if (!name) continue;
+      apply(findRow(data[table], column, name), name);
+    }
+  };
+
+  rowsOf(character.augments, "augments", "Name");
+  rowsOf(character.armor, "armor", "Armor", e => e.active !== false);
+  rowsOf(character.gear, "misc_gear", "Item", e => e.carried !== false);
+  rowsOf(character.weapons, "weapons", "Weapon", e => e.equipped !== false);
+  rowsOf(character.decks, "decks", "Name");
+  rowsOf(character.programs, "programs", "Name");
+  rowsOf(character.rigs, "rigs", "Rig Type");
+  rowsOf(character.vehicles, "vehicles", "Vehicle");
+  rowsOf(character.drones, "drones", "Drone");
+  rowsOf((character.magic || {}).spells, "spells", "Name");
+  rowsOf(character.rituals, "rituals", "Name");
+  // Mods fitted to an equipped weapon, and augments mounted in worn hosts.
+  for (const w of character.weapons || []) {
+    if (w.equipped === false) continue;
+    for (const mod of w.mods || [])
+      apply(findRow(data.weapon_mods, "Modification", nameOf(mod)), `${nameOf(mod)} on ${w.name}`);
+  }
+  for (const [entries, test] of [[character.armor, e => e.active !== false],
+                                 [character.weapons, e => e.equipped !== false],
+                                 [character.gear, e => e.carried !== false]]) {
+    for (const host of entries || []) {
+      if (!test(host)) continue;
+      for (const m of host.mounted || [])
+        apply(findRow(data.augments, "Name", nameOf(m)), `${nameOf(m)} on ${host.name}`);
+    }
+  }
+  // Spirits, on the same terms etiquette uses: the infusion slot picks the
+  // column, a bond reads Bound Services. The Skill columns sit on the row
+  // itself, so a spirit grants them whenever it is actually doing something.
+  const engaged = new Set();
+  for (const e of resolveInfusions(character, data).list) engaged.add(e.spirit);
+  for (const b of ((character.play || {}).bond_slots || [])
+                    .slice(0, speakerBondCount(character)))
+    if (b && b.spirit) engaged.add(b.spirit);
+  for (const spirit of engaged)
+    apply(findRow(data.speaker_spirits, "Spirit", spirit), spirit);
+
+  return { bonus, notes, sources };
+}
+
+/* Fold gear skill effects into the augment tally, which is already the place
+ * every skill bonus and note is aggregated before scoreSkills reads it. */
+function mergeSkillEffects(augments, gear) {
+  for (const [skill, n] of Object.entries(gear.bonus))
+    augments.skill_bonus[skill] = (augments.skill_bonus[skill] || 0) + n;
+  for (const [skill, list] of Object.entries(gear.notes))
+    (augments.skill_notes[skill] = augments.skill_notes[skill] || []).push(...list);
+}
+
 /* ---- etiquette modifiers ---------------------------------------------------
  * Gear that changes how a room reads you. The data states these in prose, in a
  * handful of shapes:
@@ -4346,6 +4474,10 @@ function calculate(character) {
   const augments = tallyAugments(character, data, warnings, errors, playErrors);
   mergeMountedAugments(augments,
                        tallyMountedAugments(character, data, warnings, errors));
+  // Skill Bonus / Skill Note from every owned source, folded in here because
+  // `augments` is already where scoreSkills reads bonuses and notes from.
+  const gearSkills = gearSkillEffects(character, data, warnings);
+  mergeSkillEffects(augments, gearSkills);
   const amp = tallyAmpPowers(character, data, magicType, warnings, errors);
 
   let replicantAttrBonus = 0, replicantSkillBonus = 0;

@@ -559,6 +559,8 @@ path by which play could reach into the creation record.
   out: the Kismet tab spends ZP (and now shows the effective value beside the
   base, which is what Force is measured against), the Augments tab shows ZR in
   context, and the MAGIC/AMP OFFLINE notes already fire when ZP goes bad.
+  Ghost moved to the attribute line (P06-027) and Armor took its slot, being
+  the thing you read on every incoming hit.
 
   `hurtStrip` matters as much as the header: the compact strip is what's on
   screen while you're actually playing, and the wound penalty sitting beside the
@@ -587,6 +589,34 @@ path by which play could reach into the creation record.
   never sees it. Note the magic priority has to allow the type: setting
   `chosen_type` to Hedge at magic priority 3 resolves to Amp, so test the
   mundane case with a mundane character.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-027: Every attribute shows its cap, and Ghost rides the same line
+- **Type:** correctness
+- **Steps:** Overview tab on a finalized character.
+- **Check:**
+
+      (async () => { sheetTab = "overview"; renderSheet(); const chips = [...document.querySelectorAll(".sh-attrs .sh-attr")].map(c => ({ k: c.querySelector(".k").textContent, v: c.querySelector(".v").textContent, cap: c.querySelector(".cap") ? c.querySelector(".cap").textContent : null, atMax: c.classList.contains("at-max"), ghost: c.classList.contains("ghost") })); const s = CHAR.play.attribute_advances ? JSON.parse(JSON.stringify(CHAR.play.attribute_advances)) : {}; return { count: chips.length, everyAttrHasCap: chips.filter(c => !c.ghost).every(c => c.cap && +c.cap > 0), capsMatchEngine: chips.filter(c => !c.ghost).every((c, i) => +c.cap === CALC.attributes[RULES.ATTRIBUTES[i]].max), last: chips[chips.length - 1], ghostInHeader: [...document.querySelectorAll(".sheet-head .sh-meter .k")].some(k => /Ghost/.test(k.textContent)) }; })()
+
+- **Expected:**
+
+      { "count": 7, "everyAttrHasCap": true, "capsMatchEngine": true,
+        "last": { "k": "GHOST", "v": "2d6", "cap": null, "atMax": false, "ghost": true },
+        "ghostInHeader": false }
+
+- **Note:** Seven chips — the six attributes plus Ghost, which is a standing
+  figure you read off the character rather than a play meter, so it belongs
+  beside them and not in the header. Armor took the header slot it vacated.
+
+  `capsMatchEngine` is the point of the case. The corner number reads
+  `CALC.attributes[x].max`, **not** a constant, so an augment that raises a
+  maximum moves it: Dermal Plating 2 shows Body at `6` with a cap of `22`, not
+  20. A hardcoded 20 would pass a casual glance and be wrong for exactly the
+  characters who care.
+
+  `last.cap` is `null` on purpose — Ghost has no maximum, so it gets no corner.
+  `atMax` turns the corner red once value meets cap, which is why being maxed
+  reads without doing the comparison yourself.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

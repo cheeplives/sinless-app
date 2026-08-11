@@ -1606,9 +1606,14 @@ function sheetHeader() {
         + (init.notes.length ? ` (${init.notes.join("; ")})` : "") },
       el("div", { class: "k" }, "Initiative"),
       el("div", { class: "v" }, `${init.dice}d+${init.bonus}`)),
-    el("div", { class: "sh-meter zoetic", title: "Ghost Rating" },
-      el("div", { class: "k" }, "Ghost"),
-      el("div", { class: "v" }, z.ghost_rating || "2d6")),
+    // Consulted on every incoming hit, so it earns the slot Ghost gave up —
+    // Ghost is a standing signature and now sits on the attribute line.
+    el("div", { class: "sh-meter armor",
+      title: `Ballistic ${CALC.combat.ballistic_armor} / Impact ${CALC.combat.impact_armor}`
+        + " — ballistic lowers damage, impact applies to melee" },
+      el("div", { class: "k" }, "Armor"),
+      el("div", { class: "v" }, `${CALC.combat.ballistic_armor} / ${CALC.combat.impact_armor}`),
+      el("span", { class: "sub" }, "bal · imp")),
     el("div", { class: "sh-meter cash", role: "button", tabindex: "0",
       title: `Adjust ${RULES.currencyName().toLowerCase()}`, onclick: adjustCash,
       onkeydown: e => { if (e.key === "Enter") adjustCash(); } },
@@ -2744,11 +2749,26 @@ function shOverview(body) {
   const attrsRow = el("div", { class: "sh-attrs" });
   for (const [full, abbr] of ATTR_ABBR) {
     const a = CALC.attributes[full];
-    attrsRow.append(el("div", { class: "sh-attr", title: full },
+    // The cap floats in the corner rather than sitting in the stack: it's
+    // reference, not a reading, and a "12 / 20" would compete with the value.
+    // Turns red at the cap so being maxed reads without doing the comparison.
+    attrsRow.append(el("div", {
+      class: "sh-attr" + (a.final >= a.max ? " at-max" : ""),
+      title: `${full} ${a.final} of a maximum ${a.max}`
+        + (a.adjust ? ` (${a.adjust > 0 ? "+" : ""}${a.adjust} from augments and gear)` : ""),
+    },
+      el("span", { class: "cap" }, String(a.max)),
       el("div", { class: "k" }, abbr),
       el("div", { class: "v" }, String(a.final)),
       a.adjust ? el("div", { class: "adj" }, (a.adjust > 0 ? "+" : "") + a.adjust) : null));
   }
+  // Ghost Rating rides the attribute line: it's a standing figure you read off
+  // the character, not a play meter, and it was the least-earning header chip.
+  // Marked `wide` and `ghost` so it reads as adjacent to the six, not one of them.
+  attrsRow.append(el("div", { class: "sh-attr ghost wide",
+    title: "Ghost Rating — the dice you roll to stay off the grid" },
+    el("div", { class: "k" }, "GHOST"),
+    el("div", { class: "v" }, CALC.zoetics.ghost_rating || "2d6")));
   const poolCard = el("div", { class: "card sh-card" }, kismetRow,
     el("h4", { class: "sh-h4" }, "Attributes"), attrsRow);
   if (expandedPool) poolCard.append(poolSkillList(expandedPool));

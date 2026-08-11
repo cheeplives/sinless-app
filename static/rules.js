@@ -568,6 +568,10 @@ function defaultCharacter() {
       initiative: 0,
       dodge_dice: 0,
       replicant_lifespan_months: null,   // Replicant only: (1d6+1)×12, rolled once
+      // Wildling only. The shift is a play fact, so the pool swing it causes is
+      // applied by the sheet on top of CALC rather than baked into it.
+      beast_form: false,                 // man-beast form currently active
+      beast_dice: WILDLING_BEAST_DICE,   // "Beast" dice left this round
       pool_used: {},
       // Actions spent so far this round, keyed "simple" or an exploit kind
       // ("Melee", "Rigging", …). Cleared by New Round alongside the pools.
@@ -3358,6 +3362,15 @@ function deriveInitiative(pools, finalAttributes, heritage, augments, amp, marti
 
 const ADRENAL_PUMP_POOLS = ["Brawn", "Finesse", "Resolve"];
 
+/* Wildling's man-beast form: what the shift does to the pools, and how many
+ * "Beast" dice it grants. The sheet's form toggle applies exactly this table
+ * (see beastFormMod in sheet.js), and the pool notes below are generated from
+ * it, so the number you read on a pool tile and the number the toggle adds can
+ * never drift apart. Whether the shift is ON is play state, not a build fact,
+ * so calculate() has no opinion about it — these are the terms, not the total. */
+const WILDLING_BEAST_POOLS = { Brawn: 6, Finesse: 6, Focus: -3, Resolve: -3 };
+const WILDLING_BEAST_DICE = 6;    // refresh each round while shifted
+
 function derivePoolNotes(heritage, augments, amp, martialArt) {
   const notes = {};
   for (const pool of POOL_NAMES) notes[pool] = [];
@@ -3369,10 +3382,9 @@ function derivePoolNotes(heritage, augments, amp, martialArt) {
     notes.Brawn.push("Reroll 1s on Soak (Unstoppable)");
   }
   if (traitNames.has("Wildling")) {
-    notes.Brawn.push("+6 in man-beast form (Wildling)");
-    notes.Finesse.push("+6 in man-beast form (Wildling)");
-    notes.Focus.push("−3 in man-beast form (Wildling)");
-    notes.Resolve.push("−3 in man-beast form (Wildling)");
+    for (const [pool, n] of Object.entries(WILDLING_BEAST_POOLS)) {
+      notes[pool].push(`${n > 0 ? "+" : "−"}${Math.abs(n)} in man-beast form (Wildling)`);
+    }
   }
   if (heritage.specialization_pool in notes) {
     notes[heritage.specialization_pool].push("+1d to all tests (Specialization)");
@@ -4286,6 +4298,7 @@ return {
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,
   weaponBaseCost, weaponModCost, weaponModCostPercent,
   DEFAULT_HARDENING, hardeningOf,
+  WILDLING_BEAST_POOLS, WILDLING_BEAST_DICE,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage, augmentTier, augmentStacks,

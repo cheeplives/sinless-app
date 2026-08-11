@@ -1696,10 +1696,16 @@ function poolState(pool) {
   const kismetDice = Math.max(0, play.pool_kismet[pool] || 0);   // permanent, never removed
   const base = CALC.pools[pool];   // already includes permanent Kismet dice
   const boost = play.pool_boost[pool] || 0;   // temporary bonus/penalty dice (may be negative)
-  const max = Math.max(0, base + boost);      // effective pool never drops below 0
+  // Wildling's shift, applied here rather than in the engine: it's a play fact
+  // that flips several times a fight, and it has to leave the player's own temp
+  // dice alone so shifting back doesn't eat them (issue #31).
+  const beast = beastFormMod(pool);           // 0 unless shifted into man-beast
+  const max = Math.max(0, base + boost + beast);   // effective pool never drops below 0
+  // Spent dice are clamped for reading but never written down, so a shift that
+  // shrinks Focus/Resolve doesn't destroy dice you get back on shifting out.
   const used = Math.max(0, Math.min(play.pool_used[pool] || 0, max));
   return {
-    kismetDice, boost, max, used, remaining: max - used,
+    kismetDice, boost, beast, max, used, remaining: max - used,
     setUsed: v => { play.pool_used[pool] = Math.max(0, Math.min(max, v)); playChanged(); },
     setBoost: v => { play.pool_boost[pool] = v; playChanged(); },   // negatives allowed (penalties)
   };
@@ -1717,10 +1723,13 @@ function kismetPoolState() {
 }
 
 function headerPoolTile(pool) {
-  const { kismetDice, boost, max, used, remaining, setUsed, setBoost } = poolState(pool);
+  const { kismetDice, boost, beast, max, used, remaining, setUsed, setBoost } = poolState(pool);
   const btn = (label, fn, title) => el("button", { class: "mini-btn", title,
     onclick: e => { e.stopPropagation(); fn(); } }, label);
-  const notes = (CALC.pool_notes || {})[pool] || [];
+  // While shifted, the standing "in man-beast form" note is replaced by a live
+  // one saying the swing is actually in the number above it.
+  const notes = ((CALC.pool_notes || {})[pool] || [])
+    .filter(n => !(beast && /man-beast form/.test(n)));
   return el("div", {
     class: `sh-pool ${pool.toLowerCase()}` + (expandedPool === pool ? " open" : ""),
     role: "button", tabindex: "0",
@@ -1752,6 +1761,12 @@ function headerPoolTile(pool) {
         boost > 0 ? `+${boost}` : boost < 0 ? `−${Math.abs(boost)}` : "+0"),
       btn("+", () => setBoost(boost + 1), "Add temporary dice"),
       boost ? btn("↺", () => setBoost(0), "Reset temporary dice to 0") : null),
+    beast
+      ? el("div", { class: "sh-pool-note",
+          style: `color:var(--${beast > 0 ? "ok" : "bad"})`,
+          title: "Man-beast form is active — this is already in the pool above" },
+          `🐺 man-beast ${beast > 0 ? "+" : "−"}${Math.abs(beast)} applied`)
+      : null,
     ...notes.map(n => el("div", { class: "sh-pool-note" }, n)));
 }
 
@@ -2594,6 +2609,10 @@ function shOverview(body) {
   // Replicants have a fixed remaining lifespan, rolled once and ticked down.
   const lifespan = replicantLifespanTracker();
   if (lifespan) body.append(lifespan);
+  // Wildlings shift in and out of man-beast form; the toggle sits above the
+  // pools because it moves four of them.
+  const beast = beastFormTracker();
+  if (beast) body.append(beast);
 
   // --- kismet + pools
   const kismetRow = el("div", { class: "sh-kismet" },
@@ -2646,7 +2665,7 @@ function shOverview(body) {
     // Soaking is Brawn out of the pool plus whatever soak dice you're owed, so
     // it opens the roller pointed at Brawn with those already in (issue #39).
     ro ? null : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
-      el("button", { class: "btn",
+      el("button", { class: "btn roll",
         title: "Roll to soak — Brawn pool dice, plus any passive soak dice",
         onclick: () => openPoolRoller({ dice: 0, bonus: CALC.combat.soak_bonus || 0,
           pool: "Brawn", label: "Soak",
@@ -2683,8 +2702,8 @@ function shOverview(body) {
     ...(init.notes || []).map(n =>
       el("div", { class: "sub", style: "color:var(--amber);margin-top:4px" }, "★ " + n)),
     el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
-      el("button", { class: "btn sh-init-roll", title: "Roll initiative in the die roller",
-        onclick: openInitiativeRoller }, "⚄ Roll"),
+      el("button", { class: "btn roll sh-init-roll", title: "Roll initiative in the die roller",
+        onclick: openInitiativeRoller }, "⚄ Initiative"),
       el("span", { class: "sub", style: "align-self:center" }, "Rolled:"), initInput));
 
   const c = CALC.combat;
@@ -2757,7 +2776,7 @@ function shOverview(body) {
       ? (dodgeFree ? el("div", { class: "sub" },
           `+${dodgeFree} dodge ${dodgeFree === 1 ? "die" : "dice"}`) : null)
       : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
-          el("button", { class: "btn",
+          el("button", { class: "btn roll",
             title: `Roll to dodge — ${dodgeFree} free dodge ${dodgeFree === 1 ? "die" : "dice"}`
               + " plus whatever Finesse you spend",
             onclick: dodgeRoll }, "⚄ Dodge"),
@@ -3403,6 +3422,7 @@ function actionsCard() {
       ro ? null : counterBtn("↻ New Round", () => {
         for (const p of POOL_ORDER) poolState(p).setUsed(0);
         CHAR.play.actions_used = {};
+        refreshBeastDice();     // Wildling's Beast dice refresh each round too
         playChanged();
       }, "good")));
   for (const r of rows) {
@@ -6933,34 +6953,85 @@ function heritageTraitsCard() {
   entries.forEach(([name, effect]) =>
     t.append(el("tr", {}, el("td", {}, el("b", {}, name)), el("td", { class: "sub" }, effect))));
   card.append(t);
-  const beast = beastDiceTracker();
+  // The live control is on the Overview; repeat it here, where the trait text
+  // that explains it is, rather than describing a switch that lives elsewhere.
+  const beast = beastFormTracker();
   if (beast) card.append(beast);
   return card;
 }
 
-/* Wildling's beast dice: six of them, spent through a shift and back to six
- * when it ends. There's nothing in the engine to derive them from — they're a
- * pool you burn at the table — so they live in play state and get a stepper and
- * a reset right where the trait is described (issue #31). */
-const BEAST_DICE_MAX = 6;
-function beastDiceTracker() {
-  if (CHAR.heritage.type !== "Green"
-      || !(CHAR.heritage.features || []).includes("Wildling")) return null;
+/* ------------------------------------------------ Wildling: man-beast form */
+/* The shift is a switch, not a note. Flipping it applies RULES.WILDLING_BEAST_POOLS
+ * to the live pools through poolState(), so Brawn and Finesse grow by 6 and
+ * Focus and Resolve shrink by 3 the moment you're in form, and every one of
+ * those terms disappears again on the way out — nothing is written into the
+ * player's own temp dice, which is what makes shifting back lossless.
+ *
+ * The Beast dice are the other half of the trait: six of them, refreshing each
+ * round while you're shifted (so New Round tops them up, same as the pools),
+ * and hidden entirely while human because there's nothing to spend (issue #31). */
+const BEAST_DICE_MAX = RULES.WILDLING_BEAST_DICE;
+
+function isWildling() {
+  return CHAR.heritage.type === "Green"
+    && (CHAR.heritage.features || []).includes("Wildling");
+}
+
+/* The pool swing the shift is currently worth. 0 for everyone else, and 0 for a
+ * Wildling standing in human form — this is the single place the form is read. */
+function beastFormMod(pool) {
+  if (!CHAR.play || !CHAR.play.beast_form || !isWildling()) return 0;
+  return RULES.WILDLING_BEAST_POOLS[pool] || 0;
+}
+
+/* Beast dice refresh each round, but only while there's a beast to refresh. */
+function refreshBeastDice() {
+  if (isWildling() && CHAR.play.beast_form) CHAR.play.beast_dice = BEAST_DICE_MAX;
+}
+
+function setBeastForm(on) {
+  CHAR.play.beast_form = !!on;
+  if (on) CHAR.play.beast_dice = BEAST_DICE_MAX;   // a fresh shift arrives full
+  playChanged();
+}
+
+/* Sits in the Overview callout strip beside the Replicant lifespan tracker —
+ * a shift is the sort of thing you flip mid-fight, so it lives above the pools
+ * it changes rather than on the Notes tab where the trait is merely described. */
+function beastFormTracker() {
+  if (!isWildling()) return null;
   const play = CHAR.play;
   if (play.beast_dice == null) play.beast_dice = BEAST_DICE_MAX;
-  const left = Math.max(0, Math.min(BEAST_DICE_MAX, play.beast_dice));
+  const on = !!play.beast_form;
   const ro = !!(activeTabObj() && activeTabObj().readonly);
-  return el("div", { class: "sh-advrow", style: "border:0;padding:8px 0 0" },
-    el("div", { class: "stat-line" },
-      el("span", {}, "Beast dice",
-        el("div", { class: "sub" }, "+6 Brawn/Finesse, −3 Focus/Resolve in man-beast form")),
-      el("span", { style: "text-align:right;display:inline-flex;align-items:center;gap:8px" },
+  const left = Math.max(0, Math.min(BEAST_DICE_MAX, play.beast_dice));
+  const swing = Object.entries(RULES.WILDLING_BEAST_POOLS)
+    .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" · ");
+
+  const row = el("div", { class: "sh-beast-row" },
+    el("span", { class: "sh-beast-state" }, on ? "🐺 Man-beast form" : "🧍 Human form"),
+    ro ? null : counterBtn(on ? "Human Form" : "Beast Form",
+      () => setBeastForm(!on), on ? "" : "good"));
+
+  const card = el("div", { class: `sh-callout sh-beast ${on ? "warn" : "info"}` }, row);
+
+  if (on) {
+    card.append(el("div", { class: "sh-beast-dice" },
+      el("span", {}, "Beast dice ",
         el("b", { style: left ? "color:var(--ok)" : "color:var(--bad)" },
-          `${left} / ${BEAST_DICE_MAX}`),
-        ro ? null : miniCounter("", () => play.beast_dice ?? BEAST_DICE_MAX,
-          v => { play.beast_dice = v; }, 0, BEAST_DICE_MAX),
-        ro ? null : counterBtn("↻", () => { play.beast_dice = BEAST_DICE_MAX; playChanged(); },
-          "good"))));
+          `${left} / ${BEAST_DICE_MAX}`)),
+      ro ? null : miniCounter("", () => play.beast_dice ?? BEAST_DICE_MAX,
+        v => { play.beast_dice = v; }, 0, BEAST_DICE_MAX),
+      ro ? null : counterBtn("↻", () => { play.beast_dice = BEAST_DICE_MAX; playChanged(); },
+        "good")));
+    card.append(el("div", { class: "sub" },
+      `${swing} — applied to the pools now. Beast dice refresh each round.`));
+  } else {
+    card.append(el("div", { class: "sub" },
+      `Shift is a Complex Action: ${swing}, ${BEAST_DICE_MAX} Beast dice each round, `
+      + "and heals 1d6 wounds."));
+  }
+  return card;
 }
 
 /* ------------------------------------------------ markdown export (scabard.com) */

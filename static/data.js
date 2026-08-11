@@ -418,7 +418,7 @@ const DATA_BUNDLE ={
 ],
 "martial_arts":[
 {"Style":"Gun-Kata","Level":"1","Effect":"Always Low Cover (-1d)"},
-{"Style":"Weirding Way","Level":"1","Effect":"+1d to Dodge"},
+{"Style":"Weirding Way","Level":"1","Effect":"+1d to Dodge. Reach 0 weapons may use Unarmed Combat instead of Melee Weapons or Cybertech Combat"},
 {"Style":"Way of the Tank","Level":"1","Effect":"Fight in 0-G w/ no penalties"},
 {"Style":"Shibumi","Level":"1","Effect":"Use Shibumi for Astral Sense. +1d to Soak"},
 {"Style":"Gun-Kata","Level":"2","Effect":"Can fire +1 bullet (+1d for 1 ammo)"},

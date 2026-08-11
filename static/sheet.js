@@ -103,8 +103,29 @@ function specAdjustFor(skill, weaponName, weaponType) {
  * roller loads as skill dice and what the pool pays for. The Overview's dice
  * chip renders this and the Fire button loads the roller from it, so the number
  * you click and the number you shoot with cannot drift apart. */
-function weaponRollSpec(name, type, accuracy, bonuses = []) {
-  const skill = RULES.weaponSkillName(name, type);
+/* Weirding Way 1: a weapon with no reach is close enough to a fist that the
+ * style lets you swing it as one — "Reach 0 weapons may use Unarmed Combat
+ * instead of Melee Weapons or Cybertech Combat" (issue #34). Only ever an
+ * upgrade: it applies when Unarmed is the better rating, so a specialist in
+ * either of the other two is never dragged down to it. */
+const MD_UNARMED_SWAPPABLE = ["Melee Weapons", "Cybertech Combat"];
+function weirdingWayRank() {
+  const ma = (CALC.martial_arts || []).find(m => /^weirding\s*way$/i.test(m.style || ""));
+  return ma ? (+ma.rank || 0) : 0;
+}
+function unarmedSwapFor(skill, reach) {
+  if (!MD_UNARMED_SWAPPABLE.includes(skill)) return null;
+  if (reach == null || parseInt(reach, 10) !== 0) return null;
+  if (weirdingWayRank() < 1) return null;
+  const unarmed = ((CALC.skills || {})["Unarmed Combat"] || {}).final || 0;
+  const current = ((CALC.skills || {})[skill] || {}).final || 0;
+  return unarmed > current ? "Unarmed Combat" : null;
+}
+
+function weaponRollSpec(name, type, accuracy, bonuses = [], reach = null) {
+  const mapped = RULES.weaponSkillName(name, type);
+  const swapped = unarmedSwapFor(mapped, reach);
+  const skill = swapped || mapped;
   const s = skill && (CALC.skills || {})[skill];
   if (!s) return null;
   const spec = specAdjustFor(skill, name, type);
@@ -115,6 +136,7 @@ function weaponRollSpec(name, type, accuracy, bonuses = []) {
   const limitDice = skillDice + acc;
   const bonus = bonuses.reduce((n, b) => n + (+b.dice || 0), 0);
   const why = [`${skill} ${s.final}`];
+  if (swapped) why.push(`(Weirding Way: Reach 0, so ${mapped} gives way to Unarmed)`);
   if (spec.delta > 0) why.push(`+1 specialized in ${spec.term}`);
   if (spec.delta < 0) why.push(`−1 outside your specialty (${spec.term})`);
   why.push(`= ${skillDice} skill`);
@@ -124,8 +146,9 @@ function weaponRollSpec(name, type, accuracy, bonuses = []) {
   return { skill, pool: s.pool, spec, locked, skillDice, acc, limitDice, bonus, why, bwhy };
 }
 
-function weaponRollParts(type, weaponName, accuracy = 0) {
-  const skill = WEAPON_SKILL_BY_TYPE[type] || "Firearms";
+function weaponRollParts(type, weaponName, accuracy = 0, reach = null) {
+  const mapped = WEAPON_SKILL_BY_TYPE[type] || "Firearms";
+  const skill = unarmedSwapFor(mapped, reach) || mapped;
   const s = CALC.skills[skill] || {};
   const pool = s.pool || "Finesse";
   // final already folds in group-fallback dice, so no "grp" notation needed
@@ -2684,6 +2707,9 @@ function shOverview(body) {
     // Standing cover from martial arts and/or infusions — best tier wins. No
     // cover stat in the engine, so it's reported here and played at the table.
     c.cover ? statLine("Cover", c.cover.label, c.cover.sources.join(" · ")) : null,
+    // A Shield-Wall Drone's mobile cover is the same kind of standing rider,
+    // and belongs beside it rather than on the Rigging tab (issue #38).
+    ...(c.drone_cover_notes || []).map(n => statLine("Cover (drone)", n.text, n.source)),
     // Bling: one line for the whole look, because a blinged gun and a blinged
     // ride are the same show — best single source, never the sum.
     ...(c.bling_etiquette || []).map(b => statLine(
@@ -2696,24 +2722,44 @@ function shOverview(body) {
     c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
     c.soak_bonus ? statLine("Soak bonus", `+${c.soak_bonus}`, (c.soak_sources || []).join(" · ")) : null,
     statLine("Carried weight", String(c.carried_weight)));
+  // Dodging is a roll, not a counter. The big number used to be play.dodge_dice
+  // — a scratch value nothing in the app ever wrote but its own ± — so it sat
+  // at 0 forever and told you nothing. It's now the passive dodge dice your
+  // build actually grants, and clicking it opens the roll: Finesse out of the
+  // pool, these dice free. Situational dice (Full Defense, cover) are what the
+  // roller's own Bonus ± is for, and they last exactly one roll, which is what
+  // "gained in play" always meant.
+  const dodgeTracked = play.dodge_dice || 0;      // legacy hand-tracked dice, still counted
+  const dodgeFree = (c.dodge_bonus || 0) + dodgeTracked;
+  const dodgeRoll = () => openPoolRoller({ dice: 0, bonus: dodgeFree, pool: "Finesse",
+    label: "Dodge",
+    note: (dodgeFree ? `${dodgeFree} dodge dice free — ` : "")
+      + "dial in the Finesse you're spending" });
   const dodgeCard = el("div", { class: "card sh-card sh-counter" },
-    el("h3", {}, "Dodge Dice"),
-    el("div", { class: "big" }, String(play.dodge_dice || 0)),
+    el("h3", {}, "Dodge"),
+    ro ? el("div", { class: "big" }, String(dodgeFree))
+       : rollable(el("div", { class: "big" }, String(dodgeFree)),
+           { dice: 0, bonus: dodgeFree, pool: "Finesse", label: "Dodge",
+             title: `Roll to dodge — ${dodgeFree} free dodge ${dodgeFree === 1 ? "die" : "dice"}`
+               + " plus whatever Finesse you spend" }),
     el("div", { class: "sub" },
-      c.dodge_bonus ? `+ ${c.dodge_bonus} passive dodge bonus` : "Bonus dice gained in play (Full Defense, cover, …)"),
-    miniCounter("Dodge dice", () => play.dodge_dice || 0, v => { play.dodge_dice = v; }, 0, 99),
-    // Dodging spends Finesse; the passive bonus and anything tracked above ride
-    // along free (issue #39).
+      (c.dodge_sources || []).length ? (c.dodge_sources || []).join(" · ")
+        : "No passive dodge dice — dodging is Finesse out of the pool"),
+    dodgeTracked
+      ? el("div", { class: "sub", style: "color:var(--amber)" },
+          `includes ${dodgeTracked} hand-tracked — clear it with the counter below`)
+      : null,
+    dodgeTracked && !ro
+      ? miniCounter("Tracked dodge dice", () => play.dodge_dice || 0,
+          v => { play.dodge_dice = v; }, 0, 99)
+      : null,
+    // A deployed drone whose rider is about dodging says so here, where you
+    // roll it — a Shield Drone's "reroll 1s" is not a number the engine can add
+    // to a pool, but it is a thing to remember at exactly this moment (#38).
+    ...(c.drone_dodge_notes || []).map(n => el("div", { class: "sub", style: "color:var(--manon)" },
+      `${n.text} (${n.source})`)),
     ro ? null : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
-      el("button", { class: "btn",
-        title: "Roll to dodge — Finesse pool dice, plus your dodge bonus dice",
-        onclick: () => openPoolRoller({ dice: 0,
-          bonus: (c.dodge_bonus || 0) + (play.dodge_dice || 0),
-          pool: "Finesse", label: "Dodge",
-          note: [(c.dodge_bonus ? `${c.dodge_bonus} passive` : ""),
-                 (play.dodge_dice ? `${play.dodge_dice} tracked` : "")].filter(Boolean).join(" + ")
-            + (c.dodge_bonus || play.dodge_dice ? " dodge dice — " : "")
-            + "dial in the Finesse you're spending" }) }, "⚄ Dodge")));
+      el("button", { class: "btn", title: "Roll to dodge", onclick: dodgeRoll }, "⚄ Dodge")));
 
   // --- drones on station, sized to sit in the card flow beside Dodge Dice and
   // Combat rather than as a full-width band. The hotseat unit gets a compact
@@ -2806,7 +2852,8 @@ function shOverview(body) {
   // Flat card list in a balanced multi-column flow (see .sh-ov-grid): columns
   // fill to equal height and reflow 3→2→1 by width, so no column is overloaded.
   body.append(el("div", { class: "sh-ov-grid" },
-    ...[poolCard, cond, maCard, infCard, initCard, dodgeCard, stationCard, combatCard].filter(Boolean)));
+    ...[poolCard, cond, actionsCard(), maCard, infCard, initCard, dodgeCard,
+        stationCard, combatCard].filter(Boolean)));
 
   // Heritage / uplift special abilities (e.g. a Bat's Echolocation) — surfaced
   // here on the Overview, not just buried on the Notes tab.
@@ -2847,8 +2894,8 @@ function shOverview(body) {
     // the Skills tab shows. The chip shows the LIMIT (skill + Accuracy) beside
     // the free dice, because that's the line that matters: the limit comes out
     // of a pool and the bonus dice don't.
-    const weaponSkillDice = (name, type, accuracy, bonuses = []) => {
-      const rs = weaponRollSpec(name, type, accuracy, bonuses);
+    const weaponSkillDice = (name, type, accuracy, bonuses = [], reach = null) => {
+      const rs = weaponRollSpec(name, type, accuracy, bonuses, reach);
       if (!rs) return null;
       const { skill, limitDice, bonus, spec, why, bwhy } = rs;
       // The bladed cyber implants roll Cybertech Combat, which is trained only —
@@ -2902,7 +2949,7 @@ function shOverview(body) {
           ? el("b", { class: "wpn-dice", title:
               `${gw.dice} dice — a fixed pool from the implant, not a skill rating` },
               `(${gw.dice}d)`)
-          : weaponSkillDice(gw.name, "Natural", 0);
+          : weaponSkillDice(gw.name, "Natural", 0, [], gw.reach);
         // Same one-press roll the equipped weapons get, off whichever number
         // this row is showing: a skill rating for claws and blades, or the
         // implant's own fixed pool, which rolls off no skill and so spends none
@@ -2910,7 +2957,7 @@ function shOverview(body) {
         const rs = gw.dice != null
           ? { skillDice: Math.max(0, +gw.dice || 0), bonus: 0, pool: "", locked: false,
               skill: "", why: [`${gw.dice} dice from the implant`], bwhy: [] }
-          : weaponRollSpec(gw.name, "Natural", 0);
+          : weaponRollSpec(gw.name, "Natural", 0, [], gw.reach);
         const attack = gro ? null : el("td", {},
           attackButton(gw.name, rs, gw.dice != null
             ? { note: `${gw.dice} dice — a fixed pool from the implant, not a skill rating`,
@@ -2952,7 +2999,7 @@ function shOverview(body) {
             ? { class: "wpn-ammo-mod", title: `${mAmmo.name} loaded` } : {},
           `${label} ${mShot[key]}`);
         const stats = g.kind === "weapon" && w
-          ? [`${w.Type || ""}`, weaponSkillDice(w.Weapon, w.Type, mShot.acc),
+          ? [`${w.Type || ""}`, weaponSkillDice(w.Weapon, w.Type, mShot.acc, [], w.Reach),
              " · ", mBit("Acc", "acc"), " · ", mBit("DMG", "damage"),
              " · ", mBit("Pen", "pen"),
              mBase.bar ? " · " : "", mBase.bar ? mBit("Barrier", "bar") : "",
@@ -2977,7 +3024,7 @@ function shOverview(body) {
         if (mMd.dice) mBonuses.push({ label: mMode, dice: mMd.dice });
         if (mKata && mount && mount.kata) mBonuses.push({ label: "Gun-Kata", dice: 1 });
         const rs = (g.kind === "weapon" && w)
-          ? weaponRollSpec(w.Weapon, w.Type, mShot.acc, mBonuses) : null;
+          ? weaponRollSpec(w.Weapon, w.Type, mShot.acc, mBonuses, w.Reach) : null;
         const attack = ro ? null : el("td", {},
           (modes.length && mount)
             ? firingModeControls(mount, w, {}, modes, mMode, mKata, rs, g.label)
@@ -3062,7 +3109,7 @@ function shOverview(body) {
               // Mirror the full Gear-tab stat line (issue #15): rate of fire /
               // Reach, ZR, Weight, Hardening, Rarity all included.
               `${r.Type || ""}`,
-              weaponSkillDice(w.name, r.Type, shot.acc, bonuses),
+              weaponSkillDice(w.name, r.Type, shot.acc, bonuses, r.Reach),
               " · ",
               r.Type === "Melee" ? `Reach ${r.Reach || 0}` : statBit("Acc", "acc"),
               " · ", statBit("DMG", "damage"), " · ", statBit("Pen", "pen"),
@@ -3078,7 +3125,7 @@ function shOverview(body) {
               munNotes.length
                 ? el("div", { class: "sub wpn-ammo-note" }, `${munName}: ${munNotes.join(" · ")}`) : null),
             fire: el("td", { class: "sub" }, (() => {
-              const rs = weaponRollSpec(w.name, r.Type, shot.acc, bonuses);
+              const rs = weaponRollSpec(w.name, r.Type, shot.acc, bonuses, r.Reach);
               if (modes.length)
                 return firingModeControls(w, r, calcRow, modes, mode, kataOffered, rs);
               // Melee, thrown and anything else without a firing mode: no
@@ -3326,6 +3373,50 @@ function exploitLines(actions) {
         el("div", { class: "sub", style: "font-weight:400" }, sources.join(" · "))));
   });
 }
+/* What a round costs you, tracked as it's spent (issue #32).
+ *
+ * Actions come from the engine — `simple_actions` plus the exploit actions each
+ * source grants — so only the SPENT count is play state, keyed by "simple" or
+ * the exploit kind. Everything derived stays derived: gain an exploit mid-play
+ * and the total moves on its own.
+ *
+ * New Round (issue #37) is here rather than in the header because it belongs
+ * with what it clears: every pool back to full and every action unspent, which
+ * between them is what a fresh round actually means. */
+function actionsCard() {
+  const play = CHAR.play;
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const used = (play.actions_used = play.actions_used || {});
+  const rows = [{ key: "simple", label: "Simple", total: CALC.combat.simple_actions || 0 }];
+  const byKind = {};
+  for (const a of CALC.combat.exploit_actions || [])
+    byKind[a.kind] = (byKind[a.kind] || 0) + a.count;
+  for (const kind of EXPLOIT_KIND_ORDER)
+    if (byKind[kind]) rows.push({ key: kind, label: `${kind} exploit`, total: byKind[kind] });
+
+  const card = el("div", { class: "card sh-card" },
+    el("div", { class: "sh-card-head" }, el("h3", {}, "Actions This Round"),
+      ro ? null : counterBtn("↻ New Round", () => {
+        for (const p of POOL_ORDER) poolState(p).setUsed(0);
+        CHAR.play.actions_used = {};
+        playChanged();
+      }, "good")));
+  for (const r of rows) {
+    const spent = Math.max(0, Math.min(used[r.key] || 0, r.total));
+    const left = r.total - spent;
+    card.append(el("div", { class: "stat-line" + (left ? "" : " dim") },
+      el("span", {}, r.label),
+      el("span", { style: "text-align:right;display:inline-flex;align-items:center;gap:8px" },
+        el("b", { style: left ? "" : "color:var(--dim)" }, `${left} / ${r.total}`),
+        ro ? null : miniCounter("", () => used[r.key] || 0,
+          v => { used[r.key] = v; }, 0, r.total))));
+  }
+  card.append(el("p", { class: "hint" },
+    "Spent actions and pool dice both clear on New Round. Totals come from your "
+    + "build, so anything that grants an exploit shows up here on its own."));
+  return card;
+}
+
 function miniCounter(label, get, set, min = 0, max = 9999) {
   const clamp = n => Math.max(min, Math.min(max, n));
   const val = el("b", { title: "Click to type a value", style: "cursor:text" }, String(get()));
@@ -4566,7 +4657,7 @@ function shGear(body) {
           (() => {   // the roll hint doubles as the roll button
             // Skill + Accuracy is the limit, so both load; the firing mode's
             // free dice are picked on the Overview, where the mode is chosen.
-            const roll = weaponRollParts(r.Type, w.name, calcRow.Accuracy ?? r.Accuracy ?? 0);
+            const roll = weaponRollParts(r.Type, w.name, calcRow.Accuracy ?? r.Accuracy ?? 0, r.Reach);
             const hint = el("div", { class: "sub", style: "color:var(--manon)" }, roll.text);
             return roll.dice
               ? rollable(hint, { dice: roll.dice, label: w.name, pool: roll.pool,
@@ -6838,7 +6929,34 @@ function heritageTraitsCard() {
   entries.forEach(([name, effect]) =>
     t.append(el("tr", {}, el("td", {}, el("b", {}, name)), el("td", { class: "sub" }, effect))));
   card.append(t);
+  const beast = beastDiceTracker();
+  if (beast) card.append(beast);
   return card;
+}
+
+/* Wildling's beast dice: six of them, spent through a shift and back to six
+ * when it ends. There's nothing in the engine to derive them from — they're a
+ * pool you burn at the table — so they live in play state and get a stepper and
+ * a reset right where the trait is described (issue #31). */
+const BEAST_DICE_MAX = 6;
+function beastDiceTracker() {
+  if (CHAR.heritage.type !== "Green"
+      || !(CHAR.heritage.features || []).includes("Wildling")) return null;
+  const play = CHAR.play;
+  if (play.beast_dice == null) play.beast_dice = BEAST_DICE_MAX;
+  const left = Math.max(0, Math.min(BEAST_DICE_MAX, play.beast_dice));
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  return el("div", { class: "sh-advrow", style: "border:0;padding:8px 0 0" },
+    el("div", { class: "stat-line" },
+      el("span", {}, "Beast dice",
+        el("div", { class: "sub" }, "+6 Brawn/Finesse, −3 Focus/Resolve in man-beast form")),
+      el("span", { style: "text-align:right;display:inline-flex;align-items:center;gap:8px" },
+        el("b", { style: left ? "color:var(--ok)" : "color:var(--bad)" },
+          `${left} / ${BEAST_DICE_MAX}`),
+        ro ? null : miniCounter("", () => play.beast_dice ?? BEAST_DICE_MAX,
+          v => { play.beast_dice = v; }, 0, BEAST_DICE_MAX),
+        ro ? null : counterBtn("↻", () => { play.beast_dice = BEAST_DICE_MAX; playChanged(); },
+          "good"))));
 }
 
 /* ------------------------------------------------ markdown export (scabard.com) */

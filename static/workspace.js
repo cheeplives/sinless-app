@@ -174,7 +174,8 @@ function renderWorkspaceBar() {
         return chip;
       })),
     el("button", { class: "ws-new", title: "Open a new character",
-      "aria-label": "New character tab", onclick: newCharacterTab }, "+"));
+      "aria-label": "New tab — load a character or start a new one",
+      onclick: newTabPicker }, "+"));
 }
 
 /* Re-render after a global-menu action. The ☰ menu lives in the workspace
@@ -260,6 +261,45 @@ async function openCharacter(char) {
   await recalc();
   showActiveTab();
   persistWorkspace();
+}
+
+/* The + button asks first: a new tab is as often "open the character I already
+ * have" as "start a fresh one", and the Load list was buried in the ☰ menu on
+ * the sheet — unreachable while you're mid-chargen (issue #36). Cancelling, or
+ * pressing + with nothing saved, falls straight through to a new character. */
+async function newTabPicker() {
+  const saved = STORAGE.listCharacters();
+  if (!saved.length) return newCharacterTab();
+  const pick = await promptNewTab(saved);
+  if (!pick) return;
+  if (pick.type === "new") return newCharacterTab();
+  const loaded = STORAGE.loadCharacter(pick.name);
+  if (!loaded) return;
+  await openCharacter(RULES.mergeDefaults(loaded));
+}
+
+/* Load-or-new, in the modal shape the rest of the app uses. Resolves to
+ * {type:"new"} | {type:"load", name} | null. */
+function promptNewTab(saved) {
+  return new Promise(resolve => {
+    const backdrop = el("div", { class: "mount-modal-backdrop" });
+    const done = v => { document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") done(null); };
+    const list = el("div", { class: "sh-newtab-list" },
+      ...saved.map(name => el("button", { class: "btn sh-newtab-row",
+        onclick: () => done({ type: "load", name }) }, name)));
+    const modal = el("div", { class: "card mount-modal", style: "max-width:460px" },
+      el("h3", {}, "New tab"),
+      el("p", { class: "hint" }, "Open a character you've saved, or start a new one."),
+      list,
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:14px" },
+        el("button", { class: "btn-add", onclick: () => done({ type: "new" }) }, "New character"),
+        el("button", { class: "btn ghost", onclick: () => done(null) }, "Cancel")));
+    backdrop.append(modal);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) done(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(backdrop);
+  });
 }
 
 async function newCharacterTab() {

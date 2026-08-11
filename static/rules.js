@@ -558,6 +558,9 @@ function defaultCharacter() {
       dodge_dice: 0,
       replicant_lifespan_months: null,   // Replicant only: (1d6+1)×12, rolled once
       pool_used: {},
+      // Actions spent so far this round, keyed "simple" or an exploit kind
+      // ("Melee", "Rigging", …). Cleared by New Round alongside the pools.
+      actions_used: {},
       effects: [],
       modifiers: [],
       notes: "",
@@ -2318,6 +2321,41 @@ function droneSkillDice(character, data) {
   return bonus;
 }
 
+/* What a deployed drone gives the character beyond skill dice (issue #38).
+ *
+ * droneSkillDice already turns "+1 to Observation/Recon" into real dice. The
+ * rest of an Effect column is either another countable rider — "+2d Initiative"
+ * — or prose no engine can apply ("Reroll 1s on dodge tests", "Provides mobile
+ * High Cover"). Count the first, and hand back the second as notes tagged with
+ * the drone that grants it, so the sheet can report them where they matter
+ * instead of leaving them on the Rigging tab.
+ *
+ * Deployed is linked OR Active, matching droneSkillDice — a drone is out there
+ * or it isn't; how it's being flown doesn't change what it does for you. */
+function droneCombatBonuses(character, data) {
+  const rigging = ((character.play || {}).rigging || {});
+  const deployed = {};
+  for (const map of [rigging.linked || {}, rigging.active || {}])
+    for (const [key, on] of Object.entries(map)) if (on) deployed[key] = true;
+  const out = { initiative_dice: 0, dodge_notes: [], cover_notes: [], other_notes: [] };
+  for (const key of Object.keys(deployed)) {
+    if (!key.startsWith("drones:")) continue;
+    const unit = (character.drones || [])[+key.split(":")[1]];
+    if (!unit) continue;
+    const label = unit.label || unit.name;
+    const effect = (findRow(data.drones, "Drone", unit.name) || {}).Effect || "";
+    for (const clause of effect.split(/[,.;]/)) {
+      const c = clause.trim();
+      if (!c) continue;
+      const init = /([+-]?\d+)\s*d?\s*(?:to\s+)?Initiative/i.exec(c);
+      if (init) { out.initiative_dice += toInt(init[1]); continue; }
+      if (/dodge/i.test(c)) { out.dodge_notes.push({ text: c, source: label }); continue; }
+      if (/cover/i.test(c)) { out.cover_notes.push({ text: c, source: label }); continue; }
+    }
+  }
+  return out;
+}
+
 function scoreKnowledgeSkills(character, finalIntelligence, finalCharisma,
                              knowledgePointsBonus, warnings, errors) {
   const knowledgeBudget = KNOWLEDGE_POINTS_PER_INTELLIGENCE * finalIntelligence
@@ -4063,6 +4101,16 @@ function calculate(character) {
   const martialArt = aggregateMartialArts(martialArtsList);   // combined, for combat consumers
   const initiative = deriveInitiative(pools, finalAttributes, heritage, augments, amp,
                                       martialArt, data);
+  // A deployed drone's countable riders are real: its Initiative dice join the
+  // roll, and its prose riders (dodge rerolls, mobile cover) ride along as
+  // notes for the sheet to place (issue #38).
+  const droneBonus = droneCombatBonuses(character, data);
+  if (droneBonus.initiative_dice) {
+    initiative.dice += droneBonus.initiative_dice;
+    initiative.notes.push(`Drones: +${droneBonus.initiative_dice}d`);
+  }
+  combat.drone_dodge_notes = droneBonus.dodge_notes;
+  combat.drone_cover_notes = droneBonus.cover_notes;
   const poolNotes = derivePoolNotes(heritage, augments, amp, martialArt);
   // Name the spirit behind each pool bonus that was folded in above, so the
   // number and its reason sit together.

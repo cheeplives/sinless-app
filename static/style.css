@@ -1015,6 +1015,10 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-bonusrow .sub:last-child{margin-left:auto}
 .sh-roller-bonuscount{font-family:var(--mono);font-size:13px;font-weight:600;
   min-width:18px;text-align:center}
+/* + tab picker: saved characters as a scrollable stack of full-width buttons */
+.sh-newtab-list{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow-y:auto;
+  border:1px solid var(--line);border-radius:6px;padding:6px;background:var(--ink)}
+.sh-newtab-row{text-align:left;justify-content:flex-start}
 /* the standing wound penalty the roller has already taken off */
 .sh-roller-wound{font-family:var(--mono);font-size:11px;color:var(--bad);margin:-2px 0 8px}
 /* what the roll actually cost, once it's thrown */

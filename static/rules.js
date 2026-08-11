@@ -568,10 +568,11 @@ function defaultCharacter() {
       initiative: 0,
       dodge_dice: 0,
       replicant_lifespan_months: null,   // Replicant only: (1d6+1)×12, rolled once
-      // Wildling only. The shift is a play fact, so the pool swing it causes is
-      // applied by the sheet on top of CALC rather than baked into it.
-      beast_form: false,                 // man-beast form currently active
-      beast_dice: WILDLING_BEAST_DICE,   // "Beast" dice left this round
+      // Which of CALC.pool_effects are switched on right now (id -> true). The
+      // swing they add is applied by the sheet on top of CALC, never baked into
+      // it — see derivePoolEffects.
+      pool_effects: {},
+      beast_dice: WILDLING_BEAST_DICE,   // Wildling: "Beast" dice left this round
       pool_used: {},
       // Actions spent so far this round, keyed "simple" or an exploit kind
       // ("Melee", "Rigging", …). Cleared by New Round alongside the pools.
@@ -3360,18 +3361,84 @@ function deriveInitiative(pools, finalAttributes, heritage, augments, amp, marti
   return { dice: pools.Focus, bonus: finalAttributes.Reaction, notes };
 }
 
-const ADRENAL_PUMP_POOLS = ["Brawn", "Finesse", "Resolve"];
-
-/* Wildling's man-beast form: what the shift does to the pools, and how many
- * "Beast" dice it grants. The sheet's form toggle applies exactly this table
- * (see beastFormMod in sheet.js), and the pool notes below are generated from
- * it, so the number you read on a pool tile and the number the toggle adds can
- * never drift apart. Whether the shift is ON is play state, not a build fact,
- * so calculate() has no opinion about it — these are the terms, not the total. */
-const WILDLING_BEAST_POOLS = { Brawn: 6, Finesse: 6, Focus: -3, Resolve: -3 };
+/* Wildling's shift is an ordinary conditional pool effect (its dice fall out of
+ * the trait text like everyone else's), but the Beast dice it grants are a
+ * counter the sheet has to know the size of. */
+const WILDLING_EFFECT_ID = "heritage:Wildling";
 const WILDLING_BEAST_DICE = 6;    // refresh each round while shifted
 
-function derivePoolNotes(heritage, augments, amp, martialArt) {
+/* ---------------------------------------------- conditional pool effects
+ * Things the build owns that are only worth dice some of the time: an Adrenal
+ * Pump you've triggered, a drug you're dosed on, the Wildling shift. None of
+ * them belong in `pools` — a total that silently assumed your pump was running
+ * would be wrong for most of a session — so the engine enumerates what the
+ * character COULD switch on and what each is worth, and stops there. Which are
+ * actually ON is play state; the sheet adds the live ones in poolState().
+ *
+ * The dice are read out of the same effect text the player reads, so homebrew
+ * gets toggles for free and nothing is hardcoded per item.
+ *
+ * Infused spirits are deliberately NOT here: placing a spirit in a slot is
+ * already the switch, and resolveInfusions folds those dice into the totals.
+ */
+const POOL_ALT = POOL_NAMES.join("|");
+const POOL_LIST_RE = `(?:${POOL_ALT})(?:\\s*(?:[/,&]|,?\\s*and)\\s*(?:${POOL_ALT}))*`;
+const POOL_DICE_RE = new RegExp(
+  // a SIGNED number — "Brawn Pool (3) to avoid knockdown" is a target number,
+  // not a bonus, and an unsigned match would turn it into one
+  `([+\\u2212-]\\s*\\d+)\\s*(?:d\\b|dice)?\\s*(?:in\\s+)?(?:bonus\\s+)?(?:dice\\s+)?`
+  + `(?:to\\s+)?(?:the\\s+|their\\s+)?(${POOL_LIST_RE})`, "gi");
+
+/* Pull "+2 to Resolve, Brawn, and Finesse Pools" / "-3 Focus/Resolve" out of an
+ * effect line. First clause per pool wins, because a second mention is a
+ * different condition rather than more of the same one: "+4d Focus pool for 3
+ * hrs. If addicted instead at -2d Focus w/o it" is a +4 you can switch on, not
+ * a +4 and a -2 netted into +2. Returns null when the text grants no dice. */
+function parsePoolDice(text) {
+  if (!text) return null;
+  const out = {};
+  POOL_DICE_RE.lastIndex = 0;
+  let m;
+  while ((m = POOL_DICE_RE.exec(text))) {
+    const n = toInt(m[1].replace(/−/g, "-").replace(/\s+/g, ""));
+    if (!n) continue;
+    for (const raw of m[2].split(/[/,&]|\band\b/)) {
+      const pool = raw.trim();
+      if (POOL_NAMES.includes(pool) && !(pool in out)) out[pool] = n;
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function derivePoolEffects(character, data, heritage, augments, amp) {
+  const seen = new Set();
+  const effects = [];
+  const add = (id, label, source, text) => {
+    if (!text || seen.has(id)) return;
+    const pools = parsePoolDice(text);
+    if (!pools) return;
+    seen.add(id);
+    effects.push({ id, label, source, text: String(text).trim(), pools });
+  };
+  for (const row of heritage.traits) add(`heritage:${row.Name}`, row.Name, "Heritage", row.Effects);
+  for (const [row] of augments.rows) add(`augment:${row.Name}`, row.Name, "Augment", row.Effect);
+  for (const item of character.gear || []) {
+    if (item.carried === false) continue;
+    const row = findRow(data.misc_gear, "Item", item.name);
+    if (row) add(`gear:${item.name}`, item.name, "Gear", row.Effect);
+  }
+  for (const name of amp.powers_taken) {
+    const row = findRow(data.amp_powers, "Name", name);
+    if (row) add(`amp:${name}`, name, "Amp power", row.Effect);
+  }
+  for (const name of ((character.magic || {}).spells) || []) {
+    const row = findRow(data.spells, "Name", name);
+    if (row) add(`spell:${name}`, name, "Spell", row.Effect);
+  }
+  return effects;
+}
+
+function derivePoolNotes(heritage, augments, amp, martialArt, poolEffects) {
   const notes = {};
   for (const pool of POOL_NAMES) notes[pool] = [];
   if (heritage.soak_bonus) {
@@ -3381,19 +3448,11 @@ function derivePoolNotes(heritage, augments, amp, martialArt) {
   if (traitNames.has("Unstoppable")) {
     notes.Brawn.push("Reroll 1s on Soak (Unstoppable)");
   }
-  if (traitNames.has("Wildling")) {
-    for (const [pool, n] of Object.entries(WILDLING_BEAST_POOLS)) {
-      notes[pool].push(`${n > 0 ? "+" : "−"}${Math.abs(n)} in man-beast form (Wildling)`);
-    }
-  }
+  // Conditional effects describe themselves on the tile with their own on/off
+  // state (see conditionalPoolLines in sheet.js), so they get no standing note
+  // here — one would say the same thing without saying whether it's live.
   if (heritage.specialization_pool in notes) {
     notes[heritage.specialization_pool].push("+1d to all tests (Specialization)");
-  }
-  const ownedNames = new Set(augments.rows.map(([row]) => row.Name));
-  if (ownedNames.has("Hyper Adrenal Pump")) {
-    for (const pool of ADRENAL_PUMP_POOLS) notes[pool].push("+4 while Hyper Adrenal Pump active");
-  } else if (ownedNames.has("Adrenal Pump")) {
-    for (const pool of ADRENAL_PUMP_POOLS) notes[pool].push("+2 while Adrenal Pump active");
   }
   if (amp.powers_taken.has("Perfect Situational Awareness")) {
     notes.Brawn.push("+3d dodge/soak/resistance (Perfect Situational Awareness)");
@@ -4134,7 +4193,8 @@ function calculate(character) {
   }
   combat.drone_dodge_notes = droneBonus.dodge_notes;
   combat.drone_cover_notes = droneBonus.cover_notes;
-  const poolNotes = derivePoolNotes(heritage, augments, amp, martialArt);
+  const poolEffects = derivePoolEffects(character, data, heritage, augments, amp);
+  const poolNotes = derivePoolNotes(heritage, augments, amp, martialArt, poolEffects);
   // Name the spirit behind each pool bonus that was folded in above, so the
   // number and its reason sit together.
   for (const a of infusions.mods.applied) {
@@ -4262,6 +4322,9 @@ function calculate(character) {
     combat: combatOut,
     initiative,
     pool_notes: poolNotes,
+    // Everything the build could switch on for extra (or fewer) pool dice.
+    // Enumerated, never applied — see derivePoolEffects.
+    pool_effects: poolEffects,
     // Spirits currently placed in infusion slots: the resolved list plus which
     // of their effects were folded into the numbers and which stay situational.
     infusions: infusions.list,
@@ -4298,7 +4361,7 @@ return {
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,
   weaponBaseCost, weaponModCost, weaponModCostPercent,
   DEFAULT_HARDENING, hardeningOf,
-  WILDLING_BEAST_POOLS, WILDLING_BEAST_DICE,
+  WILDLING_EFFECT_ID, WILDLING_BEAST_DICE, parsePoolDice,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage, augmentTier, augmentStacks,

@@ -255,6 +255,36 @@ The currency glyph in error messages is `ㄓ` (U+3113). Copy it verbatim.
   without rewording the data.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P01-018: Conditional pool dice are enumerated, never applied
+- **Type:** correctness
+- **Check:**
+
+      (() => { const c = RULES.defaultCharacter(); c.name = "FX"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.heritage = { ...c.heritage, type: "Green", features: ["Wildling"] }; c.augments = [{ name: "Adrenal Pump" }]; c.gear = [{ name: "Sixgun", qty: 1 }]; const k = RULES.calculate(c); const P = RULES.parsePoolDice; return { effects: k.pool_effects.map(e => [e.id, e.pools]), pools: k.pools, targetNumber: P("make Brawn Pool (3) to avoid knockdown"), theirPool: P("resist by rolling dice from their Focus pool"), secondClause: P("+4d Focus pool for 3 hrs. If addicted instead at -2d Focus w/o it"), oxfordList: P("+2 to Resolve, Brawn, and Finesse Pools") }; })()
+
+- **Expected:**
+
+      { "effects": [["heritage:Wildling", {"Brawn":6,"Finesse":6,"Focus":-3,"Resolve":-3}],
+                    ["augment:Adrenal Pump", {"Resolve":2,"Brawn":2,"Finesse":2}],
+                    ["gear:Sixgun", {"Focus":4}]],
+        "pools": {"Brawn":2,"Finesse":1,"Focus":1,"Resolve":2},
+        "targetNumber": null, "theirPool": null,
+        "secondClause": {"Focus":4}, "oxfordList": {"Resolve":2,"Brawn":2,"Finesse":2} }
+
+- **Note:** `pools` is the load-bearing half. A character who owns a pump, a
+  Sixgun patch and a shift has base pools and *nothing else* — the engine
+  enumerates what could be switched on and stops. If those totals ever move,
+  someone folded a conditional into `pools` and every pool tile is now wrong for
+  the majority of a session in which none of it is running.
+
+  The four parser cases are the ones that cost blood. `targetNumber` must stay
+  `null` — "Brawn Pool (3)" is a difficulty, and an unsigned match turns it into
+  a bonus. `theirPool` must stay `null` — plenty of programs and spells describe
+  dice the *target* rolls. `secondClause` is +4 and not +2: the "if addicted"
+  clause is a different condition, not more of the same one, so the first clause
+  per pool wins rather than summing. `oxfordList` catches the ", and " separator,
+  which an earlier `[/,&]`-only split silently dropped, losing Finesse.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

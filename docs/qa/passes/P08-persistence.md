@@ -146,16 +146,19 @@ run `localStorage.clear()`.
 - **Expected:**
 
       { "onlyInDefault": [],
-        "onlyInEnsure": ["armor_worn","bond_slots","images","infusion_spirits","pool_boost","pool_kismet"] }
+        "onlyInEnsure": ["bond_slots","images","infusion_spirits","pool_boost","pool_kismet"] }
 
 - **Note:** JC-019, ruled **A**. `onlyInDefault` being **empty** is the whole
   case: `ensurePlay` spreads `RULES.defaultCharacter().play`, so there is one
   definition of the shape and a character created fresh carries the same keys as
   one topped up on entry to the sheet. It used to also list `dodge_dice`,
   `martial_art_advances`, `replicant_lifespan_months` and `ritual_advances`.
-  `onlyInEnsure` is expected to stay non-empty — those six are play-sheet fields
+  `onlyInEnsure` is expected to stay non-empty — those five are play-sheet fields
   the engine has no opinion about, and each is commented in `ensurePlay` saying
   so. A key appearing in `onlyInDefault` again means the spread was dropped.
+  `armor_worn` was a sixth until the `play.kit` bright line retired it (see the
+  preamble to P06-018); a *new* name showing up in `onlyInEnsure` means someone
+  added a field to `ensurePlay` that belongs in `defaultCharacter().play`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

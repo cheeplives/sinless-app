@@ -289,8 +289,11 @@ to weigh.
   `ownedWeapons()` / `ownedArmor()`, which tag each entry with the array it lives
   in — so removing and reordering hit the right one. Reordering is confined to
   the owning array, since dragging a play purchase above a chargen one would
-  change which budget paid for it. `play.armor_worn` still indexes `CHAR.armor`
-  alone and stays correct, because Revert clears the purchases anyway.
+  change which budget paid for it. (`play.armor_worn` indexed `CHAR.armor` alone
+  and stayed correct here because Revert clears the purchases anyway; the
+  `play.kit` bright line has since retired that field entirely — worn flags now
+  live on the kit copy, so there is no index into a chargen array left to keep
+  in step.)
 - **Note:** decks, programs, rigs, drones and vehicles bought in play still push
   straight onto the chargen arrays. That is the same leak and was not part of
   this ruling — filed as **JC-024**.
@@ -490,10 +493,11 @@ to weigh.
 - **Raised by:** P08-007
 - **RULING (owner only):** **A.**
 - **Applied:** `ensurePlay` now spreads `RULES.defaultCharacter().play` and adds
-  only the six fields the engine has no opinion about (`armor_worn`,
-  `pool_boost`, `pool_kismet`, `images`, `infusion_spirits`, `bond_slots`), each
-  commented. A character created fresh and one topped up on entry now carry the
-  same keys.
+  only the fields the engine has no opinion about (`pool_boost`, `pool_kismet`,
+  `images`, `infusion_spirits`, `bond_slots`), each commented. A character
+  created fresh and one topped up on entry now carry the same keys. `armor_worn`
+  was a sixth of these when this was ruled; the `play.kit` bright line (JC-024)
+  later retired it, which is why P08-007 now expects five.
 - **Still open from the follow-up:** the heritage half of P08-005 didn't turn out
   to be a disagreement — `defaultCharacter()` sets `heritage.type: "Human"`, and
   `mergeDefaults` fills an *absent* heritage from that same default, so the two

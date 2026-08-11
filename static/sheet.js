@@ -210,6 +210,12 @@ function ensurePlay() {
       for (const [k2, v2] of Object.entries(v))
         if (CHAR.play[k][k2] == null) CHAR.play[k][k2] = v2;
   }
+  // The Wildling shift had its own boolean for exactly one release before the
+  // generic conditional-effect store existed. Fold it in and clear it.
+  if (CHAR.play.beast_form) {
+    CHAR.play.pool_effects[RULES.WILDLING_EFFECT_ID] = true;
+    CHAR.play.beast_form = false;
+  }
   // The play shape is complete now, so the ledger exists and the one-time
   // repairs can log what they change. Both are guarded — each runs at most once.
   reconcileLifestyles();
@@ -1696,10 +1702,11 @@ function poolState(pool) {
   const kismetDice = Math.max(0, play.pool_kismet[pool] || 0);   // permanent, never removed
   const base = CALC.pools[pool];   // already includes permanent Kismet dice
   const boost = play.pool_boost[pool] || 0;   // temporary bonus/penalty dice (may be negative)
-  // Wildling's shift, applied here rather than in the engine: it's a play fact
-  // that flips several times a fight, and it has to leave the player's own temp
-  // dice alone so shifting back doesn't eat them (issue #31).
-  const beast = beastFormMod(pool);           // 0 unless shifted into man-beast
+  // Conditional effects (the Wildling shift, a triggered Adrenal Pump, a drug
+  // you're dosed on) are applied here rather than in the engine: they flip
+  // several times a session, and they have to leave the player's own temp dice
+  // alone so switching one off doesn't eat them (issue #31).
+  const beast = poolEffectMod(pool);          // 0 when nothing is switched on
   const max = Math.max(0, base + boost + beast);   // effective pool never drops below 0
   // Spent dice are clamped for reading but never written down, so a shift that
   // shrinks Focus/Resolve doesn't destroy dice you get back on shifting out.
@@ -1726,10 +1733,7 @@ function headerPoolTile(pool) {
   const { kismetDice, boost, beast, max, used, remaining, setUsed, setBoost } = poolState(pool);
   const btn = (label, fn, title) => el("button", { class: "mini-btn", title,
     onclick: e => { e.stopPropagation(); fn(); } }, label);
-  // While shifted, the standing "in man-beast form" note is replaced by a live
-  // one saying the swing is actually in the number above it.
-  const notes = ((CALC.pool_notes || {})[pool] || [])
-    .filter(n => !(beast && /man-beast form/.test(n)));
+  const notes = (CALC.pool_notes || {})[pool] || [];
   return el("div", {
     class: `sh-pool ${pool.toLowerCase()}` + (expandedPool === pool ? " open" : ""),
     role: "button", tabindex: "0",
@@ -1761,12 +1765,15 @@ function headerPoolTile(pool) {
         boost > 0 ? `+${boost}` : boost < 0 ? `−${Math.abs(boost)}` : "+0"),
       btn("+", () => setBoost(boost + 1), "Add temporary dice"),
       boost ? btn("↺", () => setBoost(0), "Reset temporary dice to 0") : null),
-    beast
-      ? el("div", { class: "sh-pool-note",
-          style: `color:var(--${beast > 0 ? "ok" : "bad"})`,
-          title: "Man-beast form is active — this is already in the pool above" },
-          `🐺 man-beast ${beast > 0 ? "+" : "−"}${Math.abs(beast)} applied`)
-      : null,
+    // Only the effects that are switched ON get a line here — the rest live in
+    // the Conditional Effects panel, where you'd go to switch them on.
+    ...activePoolEffects().map(e => {
+      const n = e.pools[pool] || 0;
+      return n ? el("div", { class: "sh-pool-note",
+        style: `color:var(--${n > 0 ? "ok" : "bad"})`,
+        title: `${e.label} is switched on — this is already in the number above` },
+        `⚡ ${e.label} ${n > 0 ? "+" : "−"}${Math.abs(n)}`) : null;
+    }).filter(Boolean),
     ...notes.map(n => el("div", { class: "sh-pool-note" }, n)));
 }
 
@@ -2609,10 +2616,11 @@ function shOverview(body) {
   // Replicants have a fixed remaining lifespan, rolled once and ticked down.
   const lifespan = replicantLifespanTracker();
   if (lifespan) body.append(lifespan);
-  // Wildlings shift in and out of man-beast form; the toggle sits above the
-  // pools because it moves four of them.
-  const beast = beastFormTracker();
-  if (beast) body.append(beast);
+  // Anything the build can switch on for extra pool dice — the Wildling shift,
+  // a triggered Adrenal Pump, a drug you're dosed on. Sits above the pools
+  // because that is what it moves.
+  const fx = poolEffectsPanel();
+  if (fx) body.append(fx);
 
   // --- kismet + pools
   const kismetRow = el("div", { class: "sh-kismet" },
@@ -6953,83 +6961,131 @@ function heritageTraitsCard() {
   entries.forEach(([name, effect]) =>
     t.append(el("tr", {}, el("td", {}, el("b", {}, name)), el("td", { class: "sub" }, effect))));
   card.append(t);
-  // The live control is on the Overview; repeat it here, where the trait text
-  // that explains it is, rather than describing a switch that lives elsewhere.
-  const beast = beastFormTracker();
-  if (beast) card.append(beast);
   return card;
 }
 
-/* ------------------------------------------------ Wildling: man-beast form */
-/* The shift is a switch, not a note. Flipping it applies RULES.WILDLING_BEAST_POOLS
- * to the live pools through poolState(), so Brawn and Finesse grow by 6 and
- * Focus and Resolve shrink by 3 the moment you're in form, and every one of
- * those terms disappears again on the way out — nothing is written into the
- * player's own temp dice, which is what makes shifting back lossless.
+/* ------------------------------------------- conditional pool effects */
+/* Every "+2 to your pools while X" the character owns, as a switch.
  *
- * The Beast dice are the other half of the trait: six of them, refreshing each
- * round while you're shifted (so New Round tops them up, same as the pools),
- * and hidden entirely while human because there's nothing to spend (issue #31). */
+ * CALC.pool_effects enumerates what the build COULD switch on (parsed out of
+ * each thing's own effect text, so homebrew is covered too); `play.pool_effects`
+ * says which are on; poolState() adds the live ones on top of CALC.pools. That
+ * split is the whole design: an Adrenal Pump that's been in your chest since
+ * chargen shouldn't inflate the pool totals for the 99% of the session it isn't
+ * running, and a pool total you have to mentally subtract from is worse than no
+ * total at all.
+ *
+ * Switching one off is lossless — the swing is never written into the player's
+ * own temp dice, and spent dice are clamped for reading but never stored down —
+ * so a pump wearing off gives back exactly the pool you had (issue #31).
+ *
+ * Wildling is one of these like any other, but it carries a second thing to
+ * track: six Beast dice, refreshing each round while shifted (so New Round tops
+ * them up, same as the pools) and hidden while human, since there's nothing to
+ * spend. */
 const BEAST_DICE_MAX = RULES.WILDLING_BEAST_DICE;
 
-function isWildling() {
-  return CHAR.heritage.type === "Green"
-    && (CHAR.heritage.features || []).includes("Wildling");
+function poolEffects() { return (CALC && CALC.pool_effects) || []; }
+
+function poolEffectOn(id) {
+  return !!((CHAR.play.pool_effects || {})[id]);
 }
 
-/* The pool swing the shift is currently worth. 0 for everyone else, and 0 for a
- * Wildling standing in human form — this is the single place the form is read. */
-function beastFormMod(pool) {
-  if (!CHAR.play || !CHAR.play.beast_form || !isWildling()) return 0;
-  return RULES.WILDLING_BEAST_POOLS[pool] || 0;
+function activePoolEffects() {
+  return poolEffects().filter(e => poolEffectOn(e.id));
+}
+
+/* The total swing every switched-on effect is worth to this pool right now. */
+function poolEffectMod(pool) {
+  if (!CHAR.play) return 0;
+  let n = 0;
+  for (const e of activePoolEffects()) n += e.pools[pool] || 0;
+  return n;
+}
+
+function setPoolEffect(id, on) {
+  CHAR.play.pool_effects = CHAR.play.pool_effects || {};
+  if (on) CHAR.play.pool_effects[id] = true;
+  else delete CHAR.play.pool_effects[id];
+  // A fresh shift arrives with a full set of Beast dice.
+  if (on && id === RULES.WILDLING_EFFECT_ID) CHAR.play.beast_dice = BEAST_DICE_MAX;
+  playChanged();
 }
 
 /* Beast dice refresh each round, but only while there's a beast to refresh. */
 function refreshBeastDice() {
-  if (isWildling() && CHAR.play.beast_form) CHAR.play.beast_dice = BEAST_DICE_MAX;
+  if (poolEffectOn(RULES.WILDLING_EFFECT_ID)) CHAR.play.beast_dice = BEAST_DICE_MAX;
 }
 
-function setBeastForm(on) {
-  CHAR.play.beast_form = !!on;
-  if (on) CHAR.play.beast_dice = BEAST_DICE_MAX;   // a fresh shift arrives full
-  playChanged();
-}
+/* Most of these are a switch you flip: on, off, done. A Wildling's shift isn't —
+ * it's a shape you're in, and "Human Form / Beast Form" is what a player at the
+ * table actually says. Anything named here gets that wording and an icon that
+ * tracks the state; everything else falls through to plain On/Off. */
+const POOL_EFFECT_FORMS = {
+  [RULES.WILDLING_EFFECT_ID]: {
+    onIcon: "🐺", offIcon: "🧍",
+    onState: "Man-beast form", offState: "Human form",
+    onBtn: "Human Form", offBtn: "Beast Form",   // the button says where it takes you
+  },
+};
 
-/* Sits in the Overview callout strip beside the Replicant lifespan tracker —
- * a shift is the sort of thing you flip mid-fight, so it lives above the pools
- * it changes rather than on the Notes tab where the trait is merely described. */
-function beastFormTracker() {
-  if (!isWildling()) return null;
+/* One row per effect: what it is, what it's worth, and the switch. Sits in the
+ * Overview callout strip beside the Replicant lifespan tracker, because these
+ * are things you flip mid-fight and they belong above the pools they move. */
+function poolEffectsPanel() {
+  const list = poolEffects();
+  if (!list.length) return null;
   const play = CHAR.play;
-  if (play.beast_dice == null) play.beast_dice = BEAST_DICE_MAX;
-  const on = !!play.beast_form;
   const ro = !!(activeTabObj() && activeTabObj().readonly);
-  const left = Math.max(0, Math.min(BEAST_DICE_MAX, play.beast_dice));
-  const swing = Object.entries(RULES.WILDLING_BEAST_POOLS)
-    .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" · ");
+  const anyOn = list.some(e => poolEffectOn(e.id));
 
-  const row = el("div", { class: "sh-beast-row" },
-    el("span", { class: "sh-beast-state" }, on ? "🐺 Man-beast form" : "🧍 Human form"),
-    ro ? null : counterBtn(on ? "Human Form" : "Beast Form",
-      () => setBeastForm(!on), on ? "" : "good"));
+  const card = el("div", { class: `sh-callout sh-fx ${anyOn ? "warn" : "info"}` },
+    el("div", { class: "sh-fx-head" },
+      el("b", {}, "Conditional Effects"),
+      el("span", { class: "sub" },
+        anyOn ? `${list.filter(e => poolEffectOn(e.id)).length} of ${list.length} active`
+              : `${list.length} available — none active`)));
 
-  const card = el("div", { class: `sh-callout sh-beast ${on ? "warn" : "info"}` }, row);
+  for (const e of list) {
+    const on = poolEffectOn(e.id);
+    const form = POOL_EFFECT_FORMS[e.id];
+    const swing = Object.entries(e.pools)
+      .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" · ");
+    const state = form ? (on ? form.onState : form.offState) : (on ? "On" : "Off");
+    const row = el("div", { class: "sh-fx-row" + (on ? " on" : "") },
+      el("div", { class: "sh-fx-what" },
+        el("span", { class: "sh-fx-name" },
+          form ? `${on ? form.onIcon : form.offIcon} ` : "",
+          e.label,
+          el("span", { class: "sub" }, ` · ${form ? state : e.source}`)),
+        el("div", { class: "sh-fx-swing" + (on ? " on" : "") }, swing),
+        el("div", { class: "sh-fx-text sub", title: e.text }, e.text)),
+      ro
+        ? el("span", { class: "sub" }, state)
+        // A form button names where it takes you, so green means "go there" and
+        // amber means "you're currently altered" — the opposite of the plain
+        // On/Off chips, where green simply means live.
+        : el("button", { class: "btn " + (form ? (on ? "warn" : "good") : (on ? "good" : "")),
+            title: on ? `${e.label} is on — click to switch it off (${swing} comes back out)`
+                      : `Switch ${e.label} on — adds ${swing} to the pools`,
+            onclick: () => setPoolEffect(e.id, !on) },
+            form ? (on ? form.onBtn : form.offBtn) : (on ? "On" : "Off")));
+    card.append(row);
 
-  if (on) {
-    card.append(el("div", { class: "sh-beast-dice" },
-      el("span", {}, "Beast dice ",
-        el("b", { style: left ? "color:var(--ok)" : "color:var(--bad)" },
-          `${left} / ${BEAST_DICE_MAX}`)),
-      ro ? null : miniCounter("", () => play.beast_dice ?? BEAST_DICE_MAX,
-        v => { play.beast_dice = v; }, 0, BEAST_DICE_MAX),
-      ro ? null : counterBtn("↻", () => { play.beast_dice = BEAST_DICE_MAX; playChanged(); },
-        "good")));
-    card.append(el("div", { class: "sub" },
-      `${swing} — applied to the pools now. Beast dice refresh each round.`));
-  } else {
-    card.append(el("div", { class: "sub" },
-      `Shift is a Complex Action: ${swing}, ${BEAST_DICE_MAX} Beast dice each round, `
-      + "and heals 1d6 wounds."));
+    // Wildling's other half — only worth showing once you're actually shifted.
+    if (on && e.id === RULES.WILDLING_EFFECT_ID) {
+      if (play.beast_dice == null) play.beast_dice = BEAST_DICE_MAX;
+      const left = Math.max(0, Math.min(BEAST_DICE_MAX, play.beast_dice));
+      card.append(el("div", { class: "sh-fx-dice" },
+        el("span", {}, "Beast dice ",
+          el("b", { style: left ? "color:var(--ok)" : "color:var(--bad)" },
+            `${left} / ${BEAST_DICE_MAX}`)),
+        ro ? null : miniCounter("", () => play.beast_dice ?? BEAST_DICE_MAX,
+          v => { play.beast_dice = v; }, 0, BEAST_DICE_MAX),
+        ro ? null : counterBtn("↻", () => { play.beast_dice = BEAST_DICE_MAX; playChanged(); },
+          "good"),
+        el("span", { class: "sub" }, "refresh each round")));
+    }
   }
   return card;
 }

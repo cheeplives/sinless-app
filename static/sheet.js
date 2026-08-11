@@ -2766,7 +2766,8 @@ function shOverview(body) {
     if (traitGear.length) {
       const tt = el("table");
       tt.append(el("tr", {}, el("th", {}, "Trait-mounted"),
-        el("th", {}, "Stats"), el("th", {}, "From trait")));
+        el("th", {}, "Stats"), el("th", {}, "From trait"),
+        ro ? null : el("th", {}, "")));
       traitGear.forEach(g => {
         const w = g.weapon;
         const stats = g.kind === "weapon" && w
@@ -2775,10 +2776,19 @@ function shOverview(body) {
              + barrierBit(w, w.Bar)
              + ` · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`]
           : ["Extra limb (free mount)"];
+        // Mounted guns roll the same attack as any other, off the same spec the
+        // chip beside them shows. No magazine here — a free mount has no round
+        // count on the sheet — so it's Attack rather than Fire/Reload, and an
+        // extra limb is a mount, not a weapon, so it gets nothing to press.
+        const attack = ro ? null : el("td", {},
+          (g.kind === "weapon" && w)
+            ? attackButton(g.label, weaponRollSpec(w.Weapon, w.Type, w.Accuracy))
+            : "—");
         tt.append(el("tr", {},
           el("td", {}, el("b", {}, g.label)),
           el("td", { class: "sub" }, ...stats),
-          el("td", { class: "sub" }, g.source)));
+          el("td", { class: "sub" }, g.source),
+          attack));
       });
       loadout.append(tt);
     }

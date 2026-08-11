@@ -163,6 +163,67 @@ run `localStorage.clear()`.
 
 ---
 
+## Provenance and import inspection
+
+### P08-007b: A character says which build made it, and an old file doesn't lie
+- **Type:** correctness
+- **Check:**
+
+      (() => { const M = o => RULES.mergeDefaults(JSON.parse(JSON.stringify(o))); const bare = { name: "x", attributes: {} }; return { fresh: RULES.defaultCharacter().app_version, current: RULES.APP_VERSION, unstamped: M(bare).app_version, unstampedHasKey: "app_version" in M(bare), stamped: M(Object.assign({ app_version: "150" }, bare)).app_version }; })()
+
+- **Expected:**
+
+      { "fresh": "194", "current": "194", "unstamped": null,
+        "unstampedHasKey": true, "stamped": "150" }
+
+- **Note:** `unstamped` must be **null, not the current version**. Every
+  character saved on or before 2026-08-11 has no stamp, and `mergeDefaults`
+  fills missing keys from `defaultCharacter()` — so without the explicit
+  pre-fill claim, every old file would import claiming this build made it, which
+  is worse than no answer at all. `unstampedHasKey` being `true` is what proves
+  the null is deliberate rather than the key merely being absent.
+
+  `fresh` and `current` move together on every release; if they ever differ,
+  `defaultCharacter` has been given a hardcoded version.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P08-007c: Import inspection names what it repairs and what no longer resolves
+- **Type:** correctness
+- **Check:**
+
+      (() => { const ghost = { name: "Ghost", app_version: "150", attributes: { Strength: 3, Body: 3, Reaction: 3, Intelligence: 3, Willpower: 3, Charisma: 3 }, lifestyles: [{ name: "Squatter", months: 1 }], weapons: [{ name: "Ares Predator IV", mods: ["Optical Scope"] }], augments: [{ name: "Wired Reflexes 9" }], gear: [{ name: "Autocannon HEI" }, { name: "Cram" }], heritage: { type: "Green", features: ["Wildling", "Frobnicator"] } }; const r = RULES.inspectCharacterFile(ghost, DATA.tables); const legacy = { name: "Old", finalized: true, attributes: {}, play: { armor_worn: [], hacking_rating: 0 }, hacking_rating: 2 }; const r2 = RULES.inspectCharacterFile(legacy, DATA.tables); return { madeWith: r.madeWith, orphans: r.unresolved.map(u => `${u.label}: ${u.name}`).sort(), legacyNoteCount: r2.legacy.length, kitNote: r2.legacy.some(n => /play kit/.test(n)), hackingNote: r2.legacy.some(n => /Hacking 2/.test(n)), badFile: RULES.inspectCharacterFile({ attributes: [] }, DATA.tables).ok }; })()
+
+- **Expected:**
+
+      { "madeWith": "150",
+        "orphans": ["Augment: Wired Reflexes 9", "Heritage feature: Frobnicator",
+                    "Weapon: Ares Predator IV"],
+        "legacyNoteCount": 4, "kitNote": true, "hackingNote": true,
+        "badFile": false }
+
+- **Note:** The three names that are **absent** from `orphans` are the case.
+  `Optical Scope`, `Cram` and `Wildling` resolve, so they must not be reported —
+  a checker that cries wolf gets dismissed. `Autocannon HEI` must not appear
+  either, and for a different reason: `mergeDefaults` renames it to
+  `Vehicle Autocannon HEI` (P02-016b) *before* the check runs, which is the
+  whole ordering contract — known renames are migrations, and this only reports
+  what no migration covers.
+
+  A name landing here isn't an error: it imports, it just prices at zero and
+  contributes nothing, and it is as likely to be homebrew this browser hasn't
+  installed as a retired row. That is precisely why it needs saying out loud
+  rather than blocking.
+
+  The four `legacy` notes on the second file are pre-kit Finalize, the retired
+  `play.armor_worn`, the flat hacking rating, and absent `house_rules`. Note
+  `play.hacking_rating: 0` alongside `hacking_rating: 2` — only a rating that
+  was actually bought migrates, so the count keys on the value, not on the
+  field's presence. Every current character still carries the field at 0 and
+  must produce no note at all.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+---
+
 ## Storage hygiene
 
 ### P08-008: Nothing secret is kept in localStorage

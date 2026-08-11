@@ -24,6 +24,20 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
   ? DATA_BUNDLE
   : require("./data.js");
 
+// ============================================================== app version
+/* The build that made a character. Stamped into the record at creation and into
+ * every export, so a file that turns up months later says what produced it.
+ *
+ * Bump alongside CACHE_VERSION in sw.js — they move together, and that cache
+ * number is the only other version this app has.
+ *
+ * A record with NO stamp predates versioning (anything saved on or before
+ * 2026-08-11). mergeDefaults writes `null` there rather than letting the
+ * default fill claim this build made it: "unknown" is a fact worth keeping,
+ * and a confidently wrong version is worse than none when you are working out
+ * why an old file behaves oddly. */
+const APP_VERSION = "194";
+
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
 
@@ -495,6 +509,9 @@ function defaultCharacter() {
     player: "",
     description: "",
     notes: "",
+    // The build this character was generated under. mergeDefaults deliberately
+    // does NOT let this default reach an older file — see APP_VERSION.
+    app_version: APP_VERSION,
     house_rules: defaultHouseRules(),   // per-character optional rule variants
     priorities: { heritage: 0, magic: 0, attributes: 0, skills: 0, resources: 0 },
     heritage: {
@@ -853,9 +870,160 @@ function validateCharacterShape(value) {
   return { ok: problems.length === 0, problems };
 }
 
+/* ---- import inspection -----------------------------------------------------
+ * A character stores NAMES, not rows. Every weapon, augment, spell and lifestyle
+ * is a string looked up in the data tables at calculate() time, so a row that
+ * gets renamed or retired silently empties whatever referenced it: the item
+ * stops pricing, stops contributing stats, and vanishes from the sheet without
+ * a word. Renames we knew about get migrations (RENAMED_AUGMENTS and friends);
+ * this is the net under everything else.
+ *
+ * The checks are SHAPE-based, not version-based, and deliberately so — the files
+ * that need this most are exactly the ones saved before there was a version to
+ * check. See APP_VERSION. */
+
+/* Which table each name-bearing list resolves against, and the column holding
+ * the name. Play purchases and the play kit are included: after Finalize the
+ * kit is where gear lives, and a name can rot there just as easily. */
+const CHARACTER_NAME_SOURCES = [
+  ["Weapon", "weapons", "Weapon", "weapons"],
+  ["Armor", "armor", "Armor", "armor"],
+  ["Gear", "misc_gear", "Item", "gear"],
+  ["Augment", "augments", "Name", "augments"],
+  ["Deck", "decks", "Name", "decks"],
+  ["Program", "programs", "Name", "programs"],
+  ["Rig", "rigs", "Rig Type", "rigs"],
+  ["Drone", "drones", "Drone", "drones"],
+  ["Vehicle", "vehicles", "Vehicle", "vehicles"],
+];
+
+function characterNameRefs(character) {
+  const arr = v => (Array.isArray(v) ? v : []);
+  const nameOf = x => (x && typeof x === "object") ? x.name : x;
+  const play = character.play || {};
+  const kit = play.kit || {};
+  const purchases = play.purchases || {};
+  // Chargen, the post-Finalize kit copy and anything bought in play. Duplicates
+  // are collapsed by the caller, so overlap between kit and chargen is free.
+  const owned = cat => [...arr(character[cat]), ...arr(kit[cat]), ...arr(purchases[cat])];
+  const refs = [];
+  const add = (label, table, column, names) => {
+    for (const raw of names) {
+      const name = nameOf(raw);
+      if (name) refs.push({ label, table, column, name: String(name) });
+    }
+  };
+  for (const [label, table, column, cat] of CHARACTER_NAME_SOURCES) {
+    add(label, table, column, owned(cat));
+  }
+  // Mods hang off their weapon rather than living in a list of their own.
+  add("Weapon mod", "weapon_mods", "Modification",
+      owned("weapons").flatMap(w => arr(w && w.mods)));
+  const magic = character.magic || {};
+  add("Spell", "spells", "Name", [...arr(magic.spells), ...arr(purchases.spells)]);
+  add("Amp power", "amp_powers", "Name",
+      [...arr(magic.amp_powers), ...arr(purchases.amp_powers)]);
+  add("Martial art", "martial_arts", "Style",
+      arr(character.martial_arts).map(m => m && m.style));
+  add("Heritage feature", "heritage_features", "Name",
+      arr((character.heritage || {}).features));
+  add("Lifestyle", "lifestyles", "Lifestyle",
+      [...arr(character.lifestyles), ...arr(play.lifestyles)]);
+  add("Spirit", "speaker_spirits", "Spirit",
+      arr((character.speaker || {}).relationships));
+  return refs;
+}
+
+/* Names the data tables no longer answer to. Run AFTER mergeDefaults so the
+ * known renames have already been applied — anything left is a genuine orphan. */
+function unresolvedCharacterRefs(character, data) {
+  const seen = new Set();
+  const out = [];
+  for (const ref of characterNameRefs(character)) {
+    const key = `${ref.label} ${ref.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rows = (data && data[ref.table]) || [];
+    if (!rows.some(row => String(row[ref.column]) === ref.name)) out.push(ref);
+  }
+  return out;
+}
+
+/* The legacy shapes worth telling a player about when their file lands. Each is
+ * something the app repairs on its own; the point is that the repair is visible
+ * rather than silent, because a character that quietly gains or loses a field is
+ * the hardest kind of bug to report. */
+function legacyShapeNotes(raw) {
+  const notes = [];
+  const play = (raw && raw.play) || {};
+  if (raw && raw.finalized && !play.kit) {
+    notes.push("Finalized before the play kit existed — its gear will be copied "
+      + "into the kit on open, leaving the creation record untouched.");
+  }
+  if ("armor_worn" in play) {
+    notes.push("Carries the retired `play.armor_worn`; worn flags now live on "
+      + "the kit copy and this is ignored.");
+  }
+  if (raw && "martial_art" in raw) {
+    notes.push("Carries the single `martial_art` field; it becomes an entry in "
+      + "the per-style `martial_arts` list.");
+  }
+  if (raw && raw.lifestyle && (raw.lifestyle.name || raw.lifestyle.months)) {
+    notes.push("Carries the single `lifestyle` field; lifestyles are a list now.");
+  }
+  // Only a rating that was actually bought migrates — the field still exists and
+  // sits at 0 on every current character, so its mere presence says nothing.
+  const legacyHacking = Number((raw && raw.hacking_rating) || 0)
+    + Number((play.purchases || {}).hacking_levels || 0);
+  if (legacyHacking > 0) {
+    notes.push(`Carries a flat hacking rating of ${legacyHacking}; it becomes a `
+      + `"Hacking ${Math.min(6, legacyHacking)}" program slotted into every deck, `
+      + "at the same cost.");
+  }
+  if (!(raw && raw.house_rules)) {
+    notes.push("No house rules recorded — this build's defaults apply, which may "
+      + "not be the ones it was made under.");
+  }
+  return notes;
+}
+
+/* One report for the import dialog: where the file came from, what will be
+ * repaired, what no longer resolves, and whether the engine accepts the result.
+ * Takes the RAW parsed file; merging is done here so the caller sees the same
+ * character the app will open. */
+function inspectCharacterFile(raw, data) {
+  const shape = validateCharacterShape(raw);
+  if (!shape.ok) return { ok: false, problems: shape.problems };
+  const character = mergeDefaults(deepCopy(raw));
+  const unresolved = unresolvedCharacterRefs(character, data);
+  let errors = [];
+  let threw = null;
+  try {
+    errors = calculate(deepCopy(character)).errors || [];
+  } catch (e) {
+    threw = String((e && e.message) || e);
+  }
+  return {
+    ok: true,
+    character,
+    // null means "made before the stamp existed", not "made by version null".
+    madeWith: character.app_version,
+    currentVersion: APP_VERSION,
+    legacy: legacyShapeNotes(raw),
+    unresolved,
+    errors,
+    threw,
+  };
+}
+
 function mergeDefaults(character) {
   const defaults = defaultCharacter();
   const isPlainObject = v => v && typeof v === "object" && !Array.isArray(v);
+
+  // Claim this record's provenance before the fill can invent it: a file with
+  // no stamp was made by a build that predates stamping, and saying so is the
+  // point. Must run before fill(), which would otherwise hand it APP_VERSION.
+  if (!("app_version" in character)) character.app_version = null;
 
   const fill = (target, source) => {
     for (const [key, value] of Object.entries(source)) {
@@ -4424,6 +4592,7 @@ return {
   validateCharacterShape,
   // exposed for the UI and tests
   asNumber, loadData,
+  APP_VERSION, inspectCharacterFile, unresolvedCharacterRefs, characterNameRefs,
   ATTRIBUTES, SKILLS, TRAINED_ONLY_SKILLS, ETIQUETTES, POOL_NAMES,
   MAGIC_TYPE_BY_PRIORITY, MAGIC_TYPES_ALLOWED_BY_PRIORITY,
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,

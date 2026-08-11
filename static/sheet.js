@@ -1808,6 +1808,62 @@ function adjustCash() {
   playChanged();
 }
 
+/* What a JSON import found, before it opens.
+ *
+ * A JSON file is an exact record, so unlike the Markdown importer there is
+ * nothing here to approximate — the dialog exists for the two things that are
+ * genuinely worth a player's attention. First, an old file gets repaired on
+ * open (gear copied into the kit, a hacking rating turned into a program), and
+ * a silent repair is the hardest kind of surprise to report later. Second, a
+ * name the tables no longer answer to prices at zero and contributes nothing,
+ * and until now it did that without saying a word.
+ *
+ * Resolves truthy to proceed, null to cancel. Mirrors mdReportModal so the two
+ * import paths read the same. */
+function importReportModal(report, fileName) {
+  return new Promise(resolve => {
+    const backdrop = el("div", { class: "mount-modal-backdrop" });
+    const done = val => { document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(val); };
+    const onKey = e => { if (e.key === "Escape") done(null); };
+
+    const group = (title, rows, colour) => rows.length
+      ? el("details", { class: "desc-expander", ...(colour ? { style: `color:${colour}` } : {}) },
+          el("summary", {}, `${title} (${rows.length})`),
+          el("div", { class: "desc-body" }, ...rows.map(r => el("div", { class: "sub" }, r))))
+      : null;
+
+    const orphans = report.unresolved.map(u => `${u.label}: “${u.name}”`);
+    const madeWith = report.madeWith
+      ? `made with v${report.madeWith}`
+      : "made before this app stamped a version into characters";
+
+    const modal = el("div", { class: "card mount-modal", style: "max-width:620px" },
+      el("h3", {}, "Import character"),
+      el("p", { class: "hint" },
+        `“${fileName}” — ${madeWith}. This build is v${report.currentVersion}.`),
+      ...[group("Brought up to date", report.legacy),
+          group("Names no longer in the data", orphans, "var(--amber)"),
+          group("The engine reports", report.errors, "var(--bad)")].filter(Boolean),
+      orphans.length ? el("p", { class: "hint", style: "color:var(--amber)" },
+        "These import, but nothing answers to them: they cost nothing, grant nothing and "
+        + "won't show their stats. Either the row was renamed or retired, or it's homebrew "
+        + "this browser doesn't have installed.") : null,
+      report.errors.length ? el("p", { class: "hint", style: "color:var(--bad)" },
+        "The character still opens — these are the same errors the rail shows, and they were "
+        + "either legal when it was built or a rule has moved since.") : null,
+      (!report.legacy.length && !orphans.length && !report.errors.length)
+        ? el("p", { class: "hint", style: "color:var(--ok)" },
+            "Nothing to repair — this file matches the current shape.") : null,
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:14px" },
+        el("button", { class: "btn-add", onclick: () => done({ ok: true }) }, "Open"),
+        el("button", { class: "btn ghost", onclick: () => done(null) }, "Cancel")));
+    backdrop.append(modal);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) done(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(backdrop);
+  });
+}
+
 /* Collapsible hamburger menu (upper-left of the sheet header) holding the
  * less-frequent whole-character actions: leaving/reverting chargen state,
  * Homebrew, and import/export. `act()` closes the menu and re-renders once
@@ -1822,14 +1878,18 @@ function sheetMenu() {
       if (!file) return;
       let parsed;
       try { parsed = JSON.parse(await file.text()); } catch { parsed = null; }
-      const shape = RULES.validateCharacterShape(parsed);
-      if (!shape.ok) {
+      const report = RULES.inspectCharacterFile(parsed, DATA.tables);
+      if (!report.ok) {
         alert("That file doesn't look like an exported Sinless character:\n\n"
-          + shape.problems.map(p => "  • " + p).join("\n"));
+          + report.problems.map(p => "  • " + p).join("\n"));
         return;
       }
+      // An old file opens either way — the repairs are automatic. The dialog
+      // exists so they're visible, and so an orphaned row gets said out loud
+      // instead of quietly pricing at zero.
+      if (!(await importReportModal(report, file.name))) return;
       sheetMenuOpen = false;
-      const merged = RULES.mergeDefaults(parsed);
+      const merged = report.character;
       if (merged.name) STORAGE.saveCharacter(merged);   // so it shows in the Load list
       await openCharacter(merged);                      // opens in its own tab
       if (typeof refreshLoadList === "function") refreshLoadList();
@@ -1906,7 +1966,16 @@ function sheetMenu() {
       title: "Rebuild a character from a Markdown (Scabard) export — opens in the character generator",
       onclick: () => importMdInput.click() }, "Import Markdown");
     const exportJsonBtn = el("button", { class: "btn sh-mi-save", onclick: act(() => {
-      const blob = new Blob([JSON.stringify(CHAR, null, 2)], { type: "application/json" });
+      // Two versions, because they answer different questions. `app_version` on
+      // the record is what BUILT this character and travels with it forever;
+      // `exported_with` is this build, and is the only one an older file can
+      // offer. Kept outside `app_version` so a round trip can't overwrite the
+      // character's own provenance with whoever last exported it.
+      const payload = Object.assign({}, CHAR, {
+        exported_with: RULES.APP_VERSION,
+        exported_at: new Date().toISOString(),
+      });
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const a = el("a", { href: URL.createObjectURL(blob),
         download: (CHAR.name || "character") + ".json" });
       a.click();
@@ -7372,7 +7441,17 @@ function buildMarkdown() {
     L.push(play.notes.trim());
     L.push("");
   }
-  L.push(`*Exported from the Sinless Character Dossier · ${new Date().toISOString().slice(0, 10)}*`);
+  // Provenance rides on the existing footer rather than a new line: the parser
+  // is coupled to the format of everything above the payload comment, and a
+  // line it has never seen would land in report.unparsedLines (P14-004).
+  // "made with" is the build that generated the character; older files have no
+  // stamp, so they get the export version alone — which is the fallback the
+  // request asked for.
+  const provenance = CHAR.app_version
+    ? `app v${RULES.APP_VERSION} · character made with v${CHAR.app_version}`
+    : `app v${RULES.APP_VERSION} · character predates version stamping`;
+  L.push(`*Exported from the Sinless Character Dossier · `
+    + `${new Date().toISOString().slice(0, 10)} · ${provenance}*`);
   // An exact copy of the build, base64'd inside an HTML comment: invisible in
   // Scabard and every markdown viewer, ~8KB, and it makes this file restorable
   // without guessing. Import reads it if it's there and falls back to reading

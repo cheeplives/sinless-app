@@ -62,6 +62,10 @@ function mdRestoreRecord(char) {
   const kitOrChargen = cat => (play.kit && play.kit[cat]) ? play.kit[cat] : (char[cat] || []);
   const rec = JSON.parse(JSON.stringify({
     name: char.name, player: char.player, description: char.description, notes: char.notes,
+    // Provenance travels with the build, not with whoever last exported it — a
+    // restore must not relabel an old character as made by today's version.
+    // A null survives stringify, so "unstamped" round-trips as unstamped.
+    app_version: char.app_version,
     house_rules: char.house_rules, priorities: char.priorities, heritage: char.heritage,
     attributes: char.attributes, cha_pool_choice: char.cha_pool_choice,
     skills: char.skills, skill_specializations: char.skill_specializations,

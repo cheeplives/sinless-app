@@ -91,11 +91,18 @@ function specAdjustFor(skill, weaponName, weaponType) {
   return RULES.weaponSpecAdjust(entry, skill, weaponName, weaponType, DATA.tables);
 }
 
-/* Everything needed to roll one attack with one weapon: the limit dice (skill
- * ± specialization), the free dice (Accuracy, firing mode, Gun-Kata) and the
- * pool it comes out of. The Overview's dice chip renders this, and the Fire
- * button loads the roller from it, so the number you click and the number you
- * shoot with cannot drift apart. */
+/* Everything needed to roll one attack with one weapon.
+ *
+ * The split follows the combat sequence: "total the number of dice, skill +
+ * accuracy to get your limit", then "total any bonus dice from firing mode,
+ * bright light, point-blank range". So Accuracy is part of the LIMIT — it comes
+ * out of the pool like the skill dice do — and only the firing mode, Gun-Kata
+ * and the like are free.
+ *
+ * `skillDice` and `acc` are kept apart for the tooltip; `limitDice` is what the
+ * roller loads as skill dice and what the pool pays for. The Overview's dice
+ * chip renders this and the Fire button loads the roller from it, so the number
+ * you click and the number you shoot with cannot drift apart. */
 function weaponRollSpec(name, type, accuracy, bonuses = []) {
   const skill = RULES.weaponSkillName(name, type);
   const s = skill && (CALC.skills || {})[skill];
@@ -105,32 +112,38 @@ function weaponRollSpec(name, type, accuracy, bonuses = []) {
   const locked = s.trained_only && !(s.final > 0 || s.dice_bonus);
   const skillDice = Math.max(0, s.final + spec.delta);
   const acc = +accuracy || 0;
-  const bonus = acc + bonuses.reduce((n, b) => n + (+b.dice || 0), 0);
+  const limitDice = skillDice + acc;
+  const bonus = bonuses.reduce((n, b) => n + (+b.dice || 0), 0);
   const why = [`${skill} ${s.final}`];
   if (spec.delta > 0) why.push(`+1 specialized in ${spec.term}`);
   if (spec.delta < 0) why.push(`−1 outside your specialty (${spec.term})`);
-  why.push(`= ${skillDice} skill dice`);
+  why.push(`= ${skillDice} skill`);
+  if (acc) why.push(`+ Accuracy ${acc} = ${limitDice} limit dice`);
   const bwhy = [];
-  if (acc) bwhy.push(`Accuracy ${acc}`);
   for (const b of bonuses) if (+b.dice) bwhy.push(`${b.label} +${b.dice}`);
-  return { skill, pool: s.pool, spec, locked, skillDice, bonus, why, bwhy };
+  return { skill, pool: s.pool, spec, locked, skillDice, acc, limitDice, bonus, why, bwhy };
 }
 
-function weaponRollParts(type, weaponName) {
+function weaponRollParts(type, weaponName, accuracy = 0) {
   const skill = WEAPON_SKILL_BY_TYPE[type] || "Firearms";
   const s = CALC.skills[skill] || {};
   const pool = s.pool || "Finesse";
   // final already folds in group-fallback dice, so no "grp" notation needed
   const spec = specAdjustFor(skill, weaponName, type);
   const rated = s.final > 0;
-  const dice = rated ? Math.max(0, s.final + spec.delta) : 0;
-  const rating = rated ? dice : "untrained";
+  const skillDice = rated ? Math.max(0, s.final + spec.delta) : 0;
+  // Accuracy is part of the limit, not a free bonus, so it rides with the skill
+  // dice here as it does on the Overview chip.
+  const acc = +accuracy || 0;
+  const dice = skillDice + (rated || acc ? acc : 0);
+  const rating = rated ? skillDice : "untrained";
   // Name the specialty rather than just moving the number, so a rating that
   // differs from the Skills tab explains itself.
   const note = (rated && spec.delta > 0) ? ` (+1 ${spec.term})`
     : (rated && spec.delta < 0) ? ` (−1 outside ${spec.term})` : "";
   return { skill, pool, dice,
-    text: `Roll ${pool} ${CALC.pools[pool]}d · ${skill} ${rating}${note}` };
+    text: `Roll ${pool} ${CALC.pools[pool]}d · ${skill} ${rating}${note}`
+      + (acc ? ` + Acc ${acc} = ${dice}d` : "") };
 }
 function weaponRoll(type, weaponName) { return weaponRollParts(type, weaponName).text; }
 
@@ -2305,16 +2318,18 @@ function heatSpec(row) {
  * gives, minus the ammo. Returns "—" when there's nothing to roll (an untrained
  * trained-only skill), which is what the cell used to show for all of them. */
 function attackButton(label, rs, opts = {}) {
-  if (!rs || rs.locked || (rs.skillDice + rs.bonus) <= 0) return "—";
-  const total = rs.skillDice + rs.bonus;
+  if (!rs || rs.locked || (rs.limitDice + rs.bonus) <= 0) return "—";
+  const total = rs.limitDice + rs.bonus;
   return el("div", { class: "sh-fire-btns" },
     el("button", { class: "btn small",
       title: opts.title || (`Roll ${total}d6 — ${rs.why.join(" ")}`
         + (rs.bwhy.length ? `, bonus ${rs.bwhy.join(" + ")}` : "")),
-      onclick: () => openPoolRoller({ dice: rs.skillDice, bonus: rs.bonus,
+      onclick: () => openPoolRoller({ dice: rs.limitDice, bonus: rs.bonus,
         pool: rs.pool, label,
         note: opts.note
-          || `${rs.skill}: ${rs.skillDice} skill${rs.bonus ? ` + ${rs.bonus} bonus` : ""}` }),
+          || `${rs.skill}: ${rs.skillDice} skill`
+             + (rs.acc ? ` + ${rs.acc} Accuracy` : "")
+             + (rs.bonus ? ` + ${rs.bonus} bonus` : "") }),
     }, "Attack"));
 }
 
@@ -2393,22 +2408,23 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
   // Fire and Reload sit together on their own line — they're the pair you reach
   // between, and the mode select and round count above are what you set once.
   const rollable = rollSpec && !rollSpec.locked
-    && (rollSpec.skillDice + rollSpec.bonus) > 0;
+    && (rollSpec.limitDice + rollSpec.bonus) > 0;
   wrap.append(el("div", { class: "sh-fire-btns" },
     el("button", { class: "btn small", disabled: dry ? "1" : null,
       title: dry ? `Not enough rounds loaded for ${mode} (needs ${cost})`
                  : `Fire ${mode} — spends ${cost} round${cost === 1 ? "" : "s"}`
                    + (kataOn ? " (includes the Gun-Kata bullet)" : "")
                    + (rollable
-                       ? ` and loads ${rollSpec.skillDice + rollSpec.bonus}d6 in the roller`
+                       ? ` and loads ${rollSpec.limitDice + rollSpec.bonus}d6 in the roller`
                        : ""),
       onclick: () => {
         // Same dice the chip beside it would load — firing IS the attack test,
         // so it spends the rounds and opens the roll in one press.
         if (rollable)
-          openPoolRoller({ dice: rollSpec.skillDice, bonus: rollSpec.bonus,
+          openPoolRoller({ dice: rollSpec.limitDice, bonus: rollSpec.bonus,
             pool: rollSpec.pool, label: fireLabel,
             note: `${rollSpec.skill}: ${rollSpec.skillDice} skill`
+              + (rollSpec.acc ? ` + ${rollSpec.acc} Accuracy` : "")
               + (rollSpec.bonus ? ` + ${rollSpec.bonus} bonus (${mode})` : "") });
         w.loaded = Math.max(0, loaded - cost);
         playChanged();
@@ -2695,12 +2711,13 @@ function shOverview(body) {
      * dropped straight into el(). */
     // A specialization is +1 on what it covers and −1 on everything else the
     // skill rolls, so it resolves per weapon rather than as the flat −1/+1 pair
-    // the Skills tab shows. Skill dice and bonus dice stay apart because they
-    // behave differently at the table — and only the skill dice cost pool.
+    // the Skills tab shows. The chip shows the LIMIT (skill + Accuracy) beside
+    // the free dice, because that's the line that matters: the limit comes out
+    // of a pool and the bonus dice don't.
     const weaponSkillDice = (name, type, accuracy, bonuses = []) => {
       const rs = weaponRollSpec(name, type, accuracy, bonuses);
       if (!rs) return null;
-      const { skill, skillDice, bonus, spec, why, bwhy } = rs;
+      const { skill, limitDice, bonus, spec, why, bwhy } = rs;
       // The bladed cyber implants roll Cybertech Combat, which is trained only —
       // with no dice in it the weapon can't be used at all, so say so rather than
       // showing an Accuracy-only dice count that implies you can swing it.
@@ -2708,11 +2725,11 @@ function shOverview(body) {
         return el("b", { class: "wpn-dice locked",
           title: `${skill} is trained only — needs at least 1 die in the skill or its group` },
           "(trained only)");
-      // Click the chip to load the roller: the limit and the bonus dice are all
-      // dice you roll, so it opens with skill + bonus already counted out.
+      // Click the chip to load the roller: limit dice go in as skill dice (they
+      // cost pool), free dice go in the bonus row.
       return rollable(el("span", { class: "wpn-dice-set" },
         el("b", { class: "wpn-dice" + (spec.delta ? (spec.delta > 0 ? " spec-on" : " spec-off") : ""),
-          title: why.join(" ") }, `(${skillDice}d`),
+          title: why.join(" ") }, `(${limitDice}d`),
         bonus
           ? el("b", { class: "wpn-bonus", title: `Bonus dice: ${bwhy.join(" + ")}` },
               ` +${bonus}b`)
@@ -2720,9 +2737,11 @@ function shOverview(body) {
         el("b", { class: "wpn-dice" }, ")")),
         // Weapon name alone in the header — it's a panel title, and the skill
         // that made the number is one line down in the hint.
-        { dice: skillDice, bonus, label: name, pool: rs.pool,
-          note: `${skill}: ${skillDice} skill${bonus ? ` + ${bonus} bonus` : ""}`,
-          title: `Roll ${skillDice + bonus}d6 — ${why.join(" ")}`
+        { dice: limitDice, bonus, label: name, pool: rs.pool,
+          note: `${skill}: ${rs.skillDice} skill`
+            + (rs.acc ? ` + ${rs.acc} Accuracy` : "")
+            + (bonus ? ` + ${bonus} bonus` : ""),
+          title: `Roll ${limitDice + bonus}d6 — ${why.join(" ")}`
             + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
     };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
@@ -4412,12 +4431,14 @@ function shGear(body) {
             wi > 0, wi < arr.length - 1),
           el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
           (() => {   // the roll hint doubles as the roll button
-            const roll = weaponRollParts(r.Type, w.name);
+            // Skill + Accuracy is the limit, so both load; the firing mode's
+            // free dice are picked on the Overview, where the mode is chosen.
+            const roll = weaponRollParts(r.Type, w.name, calcRow.Accuracy ?? r.Accuracy ?? 0);
             const hint = el("div", { class: "sub", style: "color:var(--manon)" }, roll.text);
             return roll.dice
               ? rollable(hint, { dice: roll.dice, label: w.name, pool: roll.pool,
-                  note: `${roll.skill}: ${roll.dice} skill — Accuracy and firing-mode `
-                    + "dice are counted on the Overview chip" })
+                  note: `${roll.skill}: ${roll.dice} limit dice — firing-mode bonus `
+                    + "dice are added on the Overview" })
               : hint;
           })(),
           shMountEditor(en, r, w.equipped !== false)),

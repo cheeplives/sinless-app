@@ -191,13 +191,26 @@ async function renderSharedList() {
 }
 
 function sharedRow(c) {
+  const isOwner = SYNC.user && (SYNC.user.name === c.owner || SYNC.user.display_name === c.owner);
+  const actions = el("div", { class: "admin-actions" });
+
+  if (isOwner) {
+    // For owned characters, show Unshare (destructive) and View
+    actions.append(
+      el("button", { class: "btn small warn", onclick: () => unshareCharacter(c) }, "Unshare"),
+      el("button", { class: "btn small good", onclick: () => viewShared(c.id) }, "View"));
+  } else {
+    // For other people's characters, show Save a copy and View
+    actions.append(
+      el("button", { class: "btn small", onclick: () => copyShared(c.id) }, "Save a copy"),
+      el("button", { class: "btn small good", onclick: () => viewShared(c.id) }, "View"));
+  }
+
   return el("div", { class: "admin-row" },
     el("div", { class: "admin-id" },
       el("div", { class: "admin-name" }, c.name || "(unnamed)"),
       el("div", { class: "admin-email" }, "by " + (c.owner || "member"))),
-    el("div", { class: "admin-actions" },
-      el("button", { class: "btn small", onclick: () => copyShared(c.id) }, "Save a copy"),
-      el("button", { class: "btn small good", onclick: () => viewShared(c.id) }, "View")));
+    actions);
 }
 
 async function viewShared(id) {
@@ -217,4 +230,21 @@ async function copyShared(id) {
   $("#shared").hidden = true;
   await openCharacter(copy);
   if (typeof refreshLoadList === "function") refreshLoadList();
+}
+
+async function unshareCharacter(c) {
+  if (!confirm(`Stop sharing "${c.name || '(unnamed)'}"?`)) return;
+
+  // Use the character slug from the name
+  const slug = STORAGE.sanitizeName(c.name);
+  const res = await SYNC.setVisibility(slug, false);
+
+  if (res === null) {
+    alert("Couldn't unshare the character. Try again in a moment.");
+    return;
+  }
+
+  // Character is now private; refresh the shared list to remove it
+  alert("Character unshared.");
+  await renderSharedList();
 }

@@ -603,6 +603,10 @@ function defaultCharacter() {
       // edited the build". Same rule as lifestyles: chargen wins, but only
       // where chargen actually changed.
       kit_baseline: null,
+      // Magazine / firing mode for trait-mounted weapons (Heavy Torso, No Head),
+      // keyed by the mount's label. They're derived from the heritage picks on
+      // every recalc, so unlike an owned weapon there's no entry to keep it on.
+      trait_mounts: {},
       // Legacy, read-only — replaced by `kit`, migrated once by ensureKit().
       disposed: {},
       fitted_mods: [],

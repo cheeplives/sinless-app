@@ -2276,6 +2276,16 @@ function unitGunControls(table, unit, wi, wn, wr, isEnergy) {
   return wrap;
 }
 
+/* Firing state for a trait-mounted weapon (a Heavy Torso / No Head free mount).
+ * Those aren't owned entries — they're derived from the heritage picks on every
+ * recalc — so the magazine, mode and Gun-Kata flag live in play state, keyed by
+ * the mount's label. Same shape firingModeControls expects of a weapon entry. */
+function traitMountState(label) {
+  const play = CHAR.play;
+  const mounts = (play.trait_mounts = play.trait_mounts || {});
+  return (mounts[label] = mounts[label] || {});
+}
+
 /* Gun-Kata rank, or 0. Level 2 is the one that matters here: "Can fire +1
    bullet (+1d for 1 ammo)". */
 function gunKataRank() {
@@ -2318,7 +2328,13 @@ function attackButton(label, rs, opts = {}) {
  * Energy weapons have no magazine. They're single-shot and run on Heat, stated
  * per shot and capped in their Notes, so they get a heat tracker instead of a
  * round count. Heat starts at 1. */
-function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rollSpec = null) {
+/* `label` names the thing being fired in the roller. It defaults to the entry's
+ * own name, which is right for an owned weapon — but a cybergun's entry is the
+ * augment that installed it ("Cybergun Installation") and a trait mount's is a
+ * bare play-state record with no name at all, so both pass their own. */
+function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rollSpec = null,
+                            label = null) {
+  const fireLabel = label || w.name || "Attack";
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const wrap = el("div", { class: "sh-fire" });
 
@@ -2391,7 +2407,7 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
         // so it spends the rounds and opens the roll in one press.
         if (rollable)
           openPoolRoller({ dice: rollSpec.skillDice, bonus: rollSpec.bonus,
-            pool: rollSpec.pool, label: w.name,
+            pool: rollSpec.pool, label: fireLabel,
             note: `${rollSpec.skill}: ${rollSpec.skillDice} skill`
               + (rollSpec.bonus ? ` + ${rollSpec.bonus} bonus (${mode})` : "") });
         w.loaded = Math.max(0, loaded - cost);
@@ -2776,14 +2792,27 @@ function shOverview(body) {
              + barrierBit(w, w.Bar)
              + ` · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`]
           : ["Extra limb (free mount)"];
-        // Mounted guns roll the same attack as any other, off the same spec the
-        // chip beside them shows. No magazine here — a free mount has no round
-        // count on the sheet — so it's Attack rather than Fire/Reload, and an
-        // extra limb is a mount, not a weapon, so it gets nothing to press.
+        // A mounted gun runs a magazine like any other, off its own weapon row's
+        // Ammo and Firing modes. Trait gear is derived fresh every recalc from
+        // the heritage picks, so there's no entry to hang the round count on —
+        // it lives in play state keyed by the mount's label instead. A mounted
+        // blade has no modes and keeps the plain Attack; an extra limb is a
+        // mount rather than a weapon and gets nothing to press.
+        const modes = (g.kind === "weapon" && w) ? RULES.weaponFiringModes(w) : [];
+        const mount = (g.kind === "weapon" && w) ? traitMountState(g.label) : null;
+        const mMode = modes.includes(mount && mount.mode) ? mount.mode : (modes[0] || "");
+        const mMd = mMode ? RULES.firingMode(mMode) : { dice: 0, ammo: 0 };
+        const mMag = Math.max(0, parseInt(w && w.Ammo, 10) || 0);
+        const mKata = gunKataRank() >= 2 && mMag > 0 && modes.length > 0;
+        const mBonuses = [];
+        if (mMd.dice) mBonuses.push({ label: mMode, dice: mMd.dice });
+        if (mKata && mount && mount.kata) mBonuses.push({ label: "Gun-Kata", dice: 1 });
+        const rs = (g.kind === "weapon" && w)
+          ? weaponRollSpec(w.Weapon, w.Type, w.Accuracy, mBonuses) : null;
         const attack = ro ? null : el("td", {},
-          (g.kind === "weapon" && w)
-            ? attackButton(g.label, weaponRollSpec(w.Weapon, w.Type, w.Accuracy))
-            : "—");
+          (modes.length && mount)
+            ? firingModeControls(mount, w, {}, modes, mMode, mKata, rs, g.label)
+            : (g.kind === "weapon" && w) ? attackButton(g.label, rs) : "—");
         tt.append(el("tr", {},
           el("td", {}, el("b", {}, g.label)),
           el("td", { class: "sub" }, ...stats),
@@ -2892,12 +2921,22 @@ function shOverview(body) {
         ins: 1000 + idx, getOrder: () => cg.src.lo, setOrder: v => { cg.src.lo = v; },
         cells: () => {
           const g = cg.gun;
-          // A cybergun loads ammo like any other firearm. The choice lives on
-          // the source augment entry, since the gun row itself is shared data.
-          const cgRow = { Type: "Cybergun", Weapon: cg.name, Damage: g.Dmg };
+          // A cybergun loads ammo and runs a magazine like any other firearm —
+          // the implant states its own Ammo and Modes. Both the choice and the
+          // round count live on the source augment entry, since the gun row
+          // itself is shared data.
+          const cgRow = { Type: "Cybergun", Weapon: cg.name, Damage: g.Dmg, Ammo: g.Ammo };
           const ammo = loadedAmmoFor(cg.src, cgRow);
           const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen, bar: g.Bar ?? "" };
           const shot = RULES.applyAmmoStats(base, ammo.mods);
+          const cgModes = RULES.weaponFiringModes(g);
+          const cgMode = cgModes.includes(cg.src.mode) ? cg.src.mode : (cgModes[0] || "");
+          const cgMd = cgMode ? RULES.firingMode(cgMode) : { dice: 0, ammo: 0 };
+          const cgMag = Math.max(0, parseInt(g.Ammo, 10) || 0);
+          const cgKataOffered = gunKataRank() >= 2 && cgMag > 0 && cgModes.length > 0;
+          const cgBonuses = [];
+          if (cgMd.dice) cgBonuses.push({ label: cgMode, dice: cgMd.dice });
+          if (cgKataOffered && cg.src.kata) cgBonuses.push({ label: "Gun-Kata", dice: 1 });
           const bit = (label, key) => el("span",
             (ammo.row && String(shot[key]) !== String(base[key]))
               ? { class: "wpn-ammo-mod", title: `${ammo.name} ammo` } : {},
@@ -2905,15 +2944,17 @@ function shOverview(body) {
           return {
             name: el("b", {}, cg.name + " (smart)"),
             stats: el("td", { class: "sub" },
-              "Cybergun", weaponSkillDice(cg.name, "Cybergun", shot.acc, []),
+              "Cybergun", weaponSkillDice(cg.name, "Cybergun", shot.acc, cgBonuses),
               " · ", bit("Acc", "acc"), " · ", bit("DMG", "damage"), " · ", bit("Pen", "pen"),
               base.bar ? " · " : null, base.bar ? bit("Barrier", "bar") : null,
               ` · Mag ${g.Ammo}`,
               el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab"),
               ammo.notes.length
                 ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
-            // Firing mode is fixed by the implant; ammo is not.
-            fire: el("td", { class: "sub" }, g.Modes || "—"),
+            fire: el("td", { class: "sub" }, cgModes.length
+              ? firingModeControls(cg.src, cgRow, {}, cgModes, cgMode, cgKataOffered,
+                  weaponRollSpec(cg.name, "Cybergun", shot.acc, cgBonuses), cg.name)
+              : "—"),
             ammo: el("td", { class: "sub" }, munitionPicker(cg.src, cgRow)),
           };
         },

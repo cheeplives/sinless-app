@@ -1420,8 +1420,9 @@ function tabStats(p) {
 function tabKnowledge(p) {
   p.append(el("h2", {}, "Etiquettes ", chip("etq")));
   p.append(el("p", { class: "hint" },
-    "2 \u00d7 Charisma points. How smoothly you move through each stratum of society \u2014 "
-    + "Wealthy lifestyle adds +1 die to all etiquette tests."));
+    "2 \u00d7 Charisma points. How smoothly you move through each stratum of society. "
+    + "Worn gear, a Wealthy lifestyle and an infused or bonded spirit add to the "
+    + "Total without spending points \u2014 see the Gear column."));
   CHAR.etiquettes ??= {};
   const ep = CALC.etiquette_points || {};
   const etqAdjust = ep.adjust || {};

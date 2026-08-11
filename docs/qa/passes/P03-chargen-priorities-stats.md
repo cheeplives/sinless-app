@@ -254,15 +254,13 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
 - **Type:** correctness
 - **Check:**
 
-      (() => { const base = () => { const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.attributes.Charisma = 3; return c; }; const two = base(); two.armor = [{ name: "Armored Coat", style: "Business wear", material: "", extras: [], active: true }, { name: "Leather jacket", style: "High Fashion", material: "", extras: [], active: true }]; const mixed = base(); mixed.armor = [{ name: "Armored Coat", style: "Business wear", material: "Superchic (personal designer)", extras: [], active: true }]; const bling = base(); bling.weapons = [{ name: "Militech Whisper 1000", mods: ["Bling"], equipped: true, qty: 1 }, { name: "Militech Whisper 1000", mods: ["Bling"], equipped: true, qty: 1 }]; const spirit = base(); spirit.speaker = { relationships: ["Eriphe the Menad"] }; return { twoCorpSources: RULES.calculate(two).etiquette_points.final.Corporate, styleAndMaterial: RULES.calculate(mixed).etiquette_points.adjust, twoBlingGuns: RULES.calculate(bling).etiquette_points.final.Street, spiritAll: RULES.calculate(spirit).etiquette_points.final }; })()
+      (() => { const base = () => { const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.attributes.Charisma = 3; return c; }; const two = base(); two.armor = [{ name: "Armored Coat", style: "Business wear", material: "", extras: [], active: true }, { name: "Leather jacket", style: "High Fashion", material: "", extras: [], active: true }]; const mixed = base(); mixed.armor = [{ name: "Armored Coat", style: "Business wear", material: "Superchic (personal designer)", extras: [], active: true }]; const bling = base(); bling.weapons = [{ name: "Militech Whisper 1000", mods: ["Bling"], equipped: true, qty: 1 }, { name: "Militech Whisper 1000", mods: ["Bling"], equipped: true, qty: 1 }]; const spirit = base(); spirit.speaker = { relationships: ["Eriphe the Menad"], bonds: 0, infusions: [] }; return { twoCorpSources: RULES.calculate(two).etiquette_points.final.Corporate, styleAndMaterial: RULES.calculate(mixed).etiquette_points.adjust, twoBlingGuns: RULES.calculate(bling).etiquette_points.final.Street, relationshipOnly: RULES.calculate(spirit).etiquette_points.adjust }; })()
 
 - **Expected:**
 
       { "twoCorpSources": 4,
         "styleAndMaterial": { "Aristocratic": 1, "Civic": 1, "Corporate": 2 },
-        "twoBlingGuns": 2,
-        "spiritAll": { "Aristocratic": 4, "Civic": 4, "Corporate": 4,
-                       "Criminal": 4, "Military": 4, "Street": 4, "Wasteland": 4 } }
+        "twoBlingGuns": 2, "relationshipOnly": {} }
 
 - **Note:** Two different rules, deliberately: ordinary sources **stack**
   (Business wear +2 Corp and High Fashion +2 Corp make 4), while **Bling** does
@@ -275,9 +273,38 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
   Aristocratic comes back as **2** the parser is attaching the Charisma number to
   the wrong clause.
 
-  `spiritAll` covers the "all" keyword. Eriphe the Menad's rider was "+4d to all
-  Etiquette Rolls" until v196; it is now stated as a standard modifier so it
-  applies like every other source rather than being prose nobody could use.
+  `relationshipOnly` is empty on purpose: knowing a spirit does nothing on its
+  own. Eriphe's rider needs the spirit infused or bonded — see P03-017.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P03-017: Wealthy lifestyle and spirits that are actually doing something
+- **Type:** correctness
+- **Check:**
+
+      (() => { const base = () => { const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.attributes.Charisma = 3; c.etiquettes = { Corporate: 2 }; c.lifestyles = [{ name: "Squatter", months: 1 }]; return c; }; const A = (c) => RULES.calculate(c).etiquette_points.adjust; const w = base(); w.lifestyles = [{ name: "Wealthy", months: 1 }]; const unpaid = base(); unpaid.lifestyles = [{ name: "Wealthy", months: 0 }]; const notLived = base(); notLived.lifestyles = []; notLived.play = Object.assign(notLived.play || {}, { lifestyles: [{ name: "Wealthy", months: 2, active: false }, { name: "Low", months: 1, active: true }] }); const phys = base(); phys.speaker = { relationships: ["Eriphe the Menad"], bonds: 0, infusions: [] }; phys.play = Object.assign(phys.play || {}, { infusion_spirits: { Physical: "Eriphe the Menad" } }); const gun = base(); gun.speaker = { relationships: ["Eriphe the Menad"], bonds: 0, infusions: [] }; gun.play = Object.assign(gun.play || {}, { infusion_spirits: { Firearm: "Eriphe the Menad" } }); return { wealthy: A(w).Corporate, unpaidMonths: A(unpaid), wealthyOwnedNotLived: A(notLived), infusedPhysical: A(phys).Military, infusedFirearm: A(gun) }; })()
+
+- **Expected:**
+
+      { "wealthy": 1, "unpaidMonths": {}, "wealthyOwnedNotLived": {},
+        "infusedPhysical": 4, "infusedFirearm": {} }
+
+- **Note:** Wealthy's listed effect is "+1 die to all etiquette tests (you may
+  roll a one-die test even with etiquette 0)" — a rating point by another name,
+  and its parenthetical is exactly the zero-bought case `final` already handles.
+  It lands on all seven.
+
+  Which lifestyle counts: play flags one `active`, and once any flag is set only
+  the active one counts — `wealthyOwnedNotLived` owns Wealthy but is living Low,
+  so it gets nothing. Before that flag exists (chargen) a lifestyle with prepaid
+  months is the one being lived, which is why `unpaidMonths` at 0 months is
+  empty.
+
+  The spirit half is the interesting one. A relationship alone grants nothing
+  (P03-015); the rider needs the spirit **infused or bonded**, and the column it
+  sits in says which service delivers it. Eriphe's "+4 to all Etiquettes" is in
+  the **Physical** column, so `infusedPhysical` is 4 and `infusedFirearm` — same
+  spirit, same character, wrong slot — is empty. If both come back 4 the slot's
+  column is being ignored and every infusion is granting every service.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P03-016: A Markdown round trip restores bought points, not the boosted total

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "196";
+const APP_VERSION = "197";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -145,6 +145,12 @@ const ATTRIBUTE_LEVEL_MIN = 1, ATTRIBUTE_LEVEL_MAX = 29;
 const MANDATORY_ATTRIBUTE_REFUND = 6;
 const ATTRIBUTE_MAX_BASELINE = 20;
 const HYPERTHYROID_LIFESTYLE_SURCHARGE = 1.10;
+/* Lifestyles that change how a room reads you. Wealthy's listed effect is "+1
+ * die to all etiquette tests (you may roll a one-die test even with etiquette
+ * 0)" — a rating point by another name, and the parenthetical is the
+ * zero-bought case. The prose lives in LIFESTYLE_EFFECTS (sheet.js); this is the
+ * number the engine applies. */
+const LIFESTYLE_ETIQUETTE_BONUS = { Wealthy: 1 };
 
 const AUGMENTS_THAT_RAISE_MAX = ["Dermal Plating", "Muscle Replacement", "Wired Reflexes",
                                  "Synaptic Enhancers", "Boosted Reflexes",
@@ -3723,15 +3729,42 @@ function etiquetteModifiers(character, data) {
     const row = findRow(data.augments, "Name", nameOf(aug)) || {};
     apply(row.Effect, nameOf(aug));
   }
-  // Speaker relationships. The spirit states its etiquette rider in whichever
-  // service column fits it, so read them all rather than guessing.
-  for (const spirit of (character.speaker || {}).relationships || []) {
-    const name = nameOf(spirit);
+  // Speaker spirits give nothing for the relationship alone — a spirit you know
+  // is not a spirit that is doing anything for you. The rider lands only when
+  // the spirit is INFUSED or BONDED, and the description says which is which:
+  //
+  //   infused — the slot picks the column (Physical, Firearm, Protection, …),
+  //             so Eriphe's "+4 to all Etiquettes" needs a Physical infusion
+  //   bonded  — "Bound Services", the list a bound spirit performs
+  //
+  // resolveInfusions already resolves slot -> column and drops stale or
+  // double-invoked placements, so reuse it rather than re-deriving it here.
+  for (const entry of resolveInfusions(character, data).list) {
+    apply(entry.effect, `${entry.spirit} (infused: ${entry.slot})`);
+  }
+  for (const bond of ((character.play || {}).bond_slots || [])
+                       .slice(0, speakerBondCount(character))) {
+    const name = bond && bond.spirit;
+    if (!name) continue;
     const row = findRow(data.speaker_spirits, "Spirit", name) || {};
-    for (const col of ["Physical", "Appearance", "Digital", "Protection",
-                       "Firearm", "Drone", "Bound Services", "Special"]) {
-      apply(row[col], name);
-    }
+    apply(row["Bound Services"], `${name} (bonded)`);
+  }
+
+  // Lifestyle. Wealthy states "+1 die to all etiquette tests (you may roll a
+  // one-die test even with etiquette 0)" — the same thing as a rating point,
+  // and the parenthetical is exactly the zero-bought case `final` already
+  // surfaces. Play flags one lifestyle active; before that flag exists (chargen)
+  // a lifestyle with prepaid months is the one you're living.
+  const allLifestyles = [...(character.lifestyles || []),
+                         ...((character.play || {}).lifestyles || [])];
+  const anyActive = allLifestyles.some(l => l && l.active);
+  for (const l of allLifestyles) {
+    const bonus = LIFESTYLE_ETIQUETTE_BONUS[l && l.name];
+    if (!bonus) continue;
+    const living = anyActive ? !!l.active : toInt(asNumber(l.months)) > 0;
+    if (!living) continue;
+    for (const e of ETIQUETTES) { adjust[e] += bonus; sources.push({ etiquette: e, bonus, label: `${l.name} lifestyle` }); }
+    break;                      // one lifestyle is lived at a time
   }
   // Bling last, already collapsed to one number per etiquette.
   for (const b of blingEtiquette(character, data)) {

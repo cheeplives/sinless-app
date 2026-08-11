@@ -1423,16 +1423,30 @@ function tabKnowledge(p) {
     "2 \u00d7 Charisma points. How smoothly you move through each stratum of society \u2014 "
     + "Wealthy lifestyle adds +1 die to all etiquette tests."));
   CHAR.etiquettes ??= {};
-  const etbl = el("table", { style: "max-width:480px" });
-  etbl.append(el("tr", {}, el("th", {}, "Etiquette"), el("th", { class: "num" }, "Pts")));
+  const ep = CALC.etiquette_points || {};
+  const etqAdjust = ep.adjust || {};
+  const etbl = el("table", { style: "max-width:600px" });
+  etbl.append(el("tr", {}, el("th", {}, "Etiquette"), el("th", { class: "num" }, "Pts"),
+    el("th", { class: "num" }, "Gear"), el("th", { class: "num" }, "Total")));
   for (const name of DATA.etiquettes) {
+    const bonus = etqAdjust[name] || 0;
+    const base = CHAR.etiquettes[name] || 0;
+    const from = (CALC.etiquette_sources || [])
+      .filter(s => s.etiquette === name).map(s => `${s.label} +${s.bonus}`);
     etbl.append(el("tr", {},
       el("td", {}, name),
       el("td", { class: "num" }, stepper(
         () => CHAR.etiquettes[name] || 0,
-        v => { CHAR.etiquettes[name] = v; }, 0, 6))));
+        v => { CHAR.etiquettes[name] = v; }, 0, 6)),
+      el("td", { class: "num", title: from.join(", ") || null },
+        bonus ? `+${bonus}` : "—"),
+      el("td", { class: "num" }, String(base + bonus))));
   }
   p.append(etbl);
+  if (Object.keys(etqAdjust).length)
+    p.append(el("p", { class: "hint" },
+      "Gear bonuses come from what's worn, carried or equipped — they don't spend "
+      + "points and they sit outside the cap of 6."));
 
   p.append(el("h2", {}, "Knowledge Skills ", chip("know")));
   p.append(el("p", { class: "hint" },

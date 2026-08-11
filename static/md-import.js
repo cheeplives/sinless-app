@@ -332,8 +332,14 @@ function mdParseCharacter(text) {
     }
     if ((m = /^\*\*Etiquettes:\*\* (.+)$/.exec(t))) {
       for (const item of m[1].split(" · ")) {
-        const em = /^(.+?)\s+(\d+)$/.exec(item.trim());
-        if (em) draft.etiquettes[em[1].trim()] = parseInt(em[2], 10);
+        // "Corporate 2" or "Corporate 2 (+2 gear = 4)". The leading number is
+        // what was bought; the parenthetical is derived and deliberately
+        // dropped, or re-applying the gear would count its bonus twice.
+        const em = /^(.+?)\s+(\d+)(?:\s*\([^)]*\))?$/.exec(item.trim());
+        // A gear-only etiquette exports as "Civic 0 (+1 gear = 1)". Zero bought
+        // points is the same as not having the entry, so don't create one --
+        // that keeps an export/import cycle byte-stable.
+        if (em && parseInt(em[2], 10) > 0) draft.etiquettes[em[1].trim()] = parseInt(em[2], 10);
       }
       count("Etiquettes", Object.keys(draft.etiquettes).length);
       continue;
@@ -360,9 +366,11 @@ function mdParseCharacter(text) {
       if (style) draft.martial_arts.push({ style, rank: parseInt(m[2], 10) });
       continue;
     }
-    // Derived: situational-dice list, the specialization footnote, Bling.
+    // Derived: situational-dice list, the specialization footnote, Bling, and
+    // the etiquette-bonus attribution (recomputed from the gear on import).
     if (/^\*Situational skill dice:\*$/.test(t) || /^- \*\*/.test(t)
-        || /^\*Specialized skills read/.test(t) || /^\*\*Bling:\*\*/.test(t)) continue;
+        || /^\*Specialized skills read/.test(t) || /^\*\*Bling:\*\*/.test(t)
+        || /^\*\*Etiquette bonuses\*\*/.test(t)) continue;
     report.unparsedLines.push({ section: "Skills", line: t });
   }
   count("Skills", Object.keys(skillFinals).length);

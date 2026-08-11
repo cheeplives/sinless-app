@@ -3948,12 +3948,30 @@ function shSkills(body) {
 
   const know = el("div", { class: "card sh-card" },
     el("h3", {}, "Knowledge & Etiquette"));
-  const etq = Object.entries(CHAR.etiquettes || {}).filter(([, v]) => v > 0);
+  // Rated off CALC, not CHAR: what you bought plus what you're currently
+  // wearing. An etiquette at 0 points still shows when gear is carrying it.
+  const ep = CALC.etiquette_points || {};
+  const etqFinal = ep.final || {};
+  const etqAdjust = ep.adjust || {};
+  const etq = Object.entries(etqFinal).filter(([, v]) => v > 0);
   if (etq.length) {
     const row = el("div", { class: "sh-tagrow" });
-    for (const [name, pts] of etq)
-      row.append(el("span", { class: "sh-tag magic" }, `${name} ${pts}`));
+    for (const [name, total] of etq) {
+      const bonus = etqAdjust[name] || 0;
+      const base = (ep.values || {})[name] || 0;
+      const from = (CALC.etiquette_sources || [])
+        .filter(s => s.etiquette === name)
+        .map(s => `${s.label} +${s.bonus}`);
+      row.append(el("span", {
+        class: "sh-tag magic" + (bonus ? " sh-tag-boosted" : ""),
+        title: bonus ? `${base} bought +${bonus} from ${from.join(", ")}` : null,
+      }, bonus ? `${name} ${total} (${base}+${bonus})` : `${name} ${total}`));
+    }
     know.append(el("h4", { class: "sh-h4" }, "Etiquettes"), row);
+    if (Object.keys(etqAdjust).length)
+      know.append(el("p", { class: "hint" },
+        "Bonuses come from what you're wearing and carrying — they drop when the "
+        + "gear does, and they sit outside the point cap."));
   } else {
     know.append(el("h4", { class: "sh-h4" }, "Etiquettes"),
       el("p", { class: "hint" }, "No etiquettes."));
@@ -7252,16 +7270,30 @@ function buildMarkdown() {
     skillNoteLines.forEach(line => L.push(line));
     L.push("");
   }
-  const etqList = Object.entries(CHAR.etiquettes || {}).filter(([, v]) => v > 0);
+  // The BOUGHT value leads and the gear total follows in parentheses. That
+  // order matters on the way back in: the importer reads the leading number, so
+  // a round trip restores the points that were actually purchased. Emitting the
+  // total there would bake the gear bonus into the points and double it the
+  // moment the gear was re-applied.
+  const ep = CALC.etiquette_points || {};
+  const etqAdjust = ep.adjust || {};
+  const etqList = Object.entries(ep.final || {}).filter(([, v]) => v > 0);
   if (etqList.length) {
-    L.push("**Etiquettes:** " + etqList.map(([n, v]) => `${n} ${v}`).join(" · "));
+    L.push("**Etiquettes:** " + etqList.map(([n, total]) => {
+      const bonus = etqAdjust[n] || 0;
+      const base = (ep.values || {})[n] || 0;
+      return bonus ? `${n} ${base} (+${bonus} gear = ${total})` : `${n} ${total}`;
+    }).join(" · "));
     L.push("");
-  }
-  // Bling reads as one bonus per etiquette however many blinged things you own.
-  for (const b of (c.bling_etiquette || [])) {
-    L.push(`**Bling:** +${b.bonus} ${b.etiquette} Etiquette when you're showing it off `
-      + `— best single source, not cumulative (${b.sources.join(", ")})`);
-    L.push("");
+    if (Object.keys(etqAdjust).length) {
+      const by = {};
+      for (const s of CALC.etiquette_sources || [])
+        (by[s.label] ||= []).push(`+${s.bonus} ${s.etiquette}`);
+      L.push("**Etiquette bonuses** (from worn/carried gear, outside the cap): "
+        + Object.entries(by).map(([label, list]) => `${list.join(", ")} — ${label}`)
+          .join(" · "));
+      L.push("");
+    }
   }
   const knows = allKnowledgeSkills().filter(k => k.name);
   if (knows.length) {

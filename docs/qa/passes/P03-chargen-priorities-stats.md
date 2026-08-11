@@ -218,6 +218,89 @@ Clicking the real buttons by hand is equally valid — the helper only saves tim
 
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P03-014: Gear etiquette bonuses apply, and only while the gear is worn
+- **Type:** correctness
+- **Check:**
+
+      (() => { const mk = active => { const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.attributes.Charisma = 3; c.etiquettes = { Corporate: 2 }; c.armor = [{ name: "Armored Coat", style: "Business wear", material: "", extras: [], active }]; return RULES.calculate(c).etiquette_points; }; const on = mk(true), off = mk(false); return { worn: on.final, notWorn: off.final, adjust: on.adjust, bought: on.values, spent: on.spent, budget: on.budget }; })()
+
+- **Expected:**
+
+      { "worn": { "Civic": 1, "Corporate": 4 }, "notWorn": { "Corporate": 2 },
+        "adjust": { "Civic": 1, "Corporate": 2 }, "bought": { "Corporate": 2 },
+        "spent": 2, "budget": 6 }
+
+- **Note:** Business wear states "+2 Corp, +1 Civic" in the `armor_styles`
+  `Etiquette Bonus` column. Three things are being asserted at once and all three
+  matter:
+
+  `notWorn` is the case. The same coat with `active: false` contributes nothing —
+  a wardrobe in a closet doesn't change how a room reads you. This mirrors the
+  host test `tallyMountedAugments` already uses (`e.active !== false` for armor,
+  `equipped` for weapons, `carried` for gear).
+
+  `Civic` appears in `worn` at 1 despite **zero** points bought. An etiquette you
+  can only roll because of what you're wearing still has to show up, or the bonus
+  is unusable.
+
+  `spent` (3) and `budget` (6) are unmoved by the bonus. Points are what Charisma
+  buys; a bonus is neither bought nor spent, so it sits outside both the budget
+  and the per-entry cap of 6 — the same way an augment can push an attribute past
+  what chargen would sell you. A `spent` of 5 here would mean bonuses are being
+  charged to the character.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P03-015: Sources stack, except Bling with itself
+- **Type:** correctness
+- **Check:**
+
+      (() => { const base = () => { const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.attributes.Charisma = 3; return c; }; const two = base(); two.armor = [{ name: "Armored Coat", style: "Business wear", material: "", extras: [], active: true }, { name: "Leather jacket", style: "High Fashion", material: "", extras: [], active: true }]; const mixed = base(); mixed.armor = [{ name: "Armored Coat", style: "Business wear", material: "Superchic (personal designer)", extras: [], active: true }]; const bling = base(); bling.weapons = [{ name: "Militech Whisper 1000", mods: ["Bling"], equipped: true, qty: 1 }, { name: "Militech Whisper 1000", mods: ["Bling"], equipped: true, qty: 1 }]; const spirit = base(); spirit.speaker = { relationships: ["Eriphe the Menad"] }; return { twoCorpSources: RULES.calculate(two).etiquette_points.final.Corporate, styleAndMaterial: RULES.calculate(mixed).etiquette_points.adjust, twoBlingGuns: RULES.calculate(bling).etiquette_points.final.Street, spiritAll: RULES.calculate(spirit).etiquette_points.final }; })()
+
+- **Expected:**
+
+      { "twoCorpSources": 4,
+        "styleAndMaterial": { "Aristocratic": 1, "Civic": 1, "Corporate": 2 },
+        "twoBlingGuns": 2,
+        "spiritAll": { "Aristocratic": 4, "Civic": 4, "Corporate": 4,
+                       "Criminal": 4, "Military": 4, "Street": 4, "Wasteland": 4 } }
+
+- **Note:** Two different rules, deliberately: ordinary sources **stack**
+  (Business wear +2 Corp and High Fashion +2 Corp make 4), while **Bling** does
+  not stack with itself — two blinged guns are still one look, so Street is 2 and
+  not 4. Bling's collapsed number then stacks with everything else like any other
+  source, so the no-stacking rule stays scoped to Bling.
+
+  `styleAndMaterial` shows a Style and a Material on one piece both landing.
+  Superchic reads "+2 to Charisma tests, +1 to Aristocratic etiquette" — if
+  Aristocratic comes back as **2** the parser is attaching the Charisma number to
+  the wrong clause.
+
+  `spiritAll` covers the "all" keyword. Eriphe the Menad's rider was "+4d to all
+  Etiquette Rolls" until v196; it is now stated as a standard modifier so it
+  applies like every other source rather than being prose nobody could use.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P03-016: A Markdown round trip restores bought points, not the boosted total
+- **Type:** correctness
+- **Check:** run on the **play sheet** (`buildMarkdown` lives in `sheet.js`), on a
+  finalized character wearing a Business wear piece with Corporate 2 bought.
+
+      (() => { const line = (buildMarkdown().split("\n").find(l => l.startsWith("**Etiquettes:**")) || ""); const parsed = {}; for (const item of line.replace("**Etiquettes:** ", "").split(" · ")) { const em = /^(.+?)\s+(\d+)(?:\s*\([^)]*\))?$/.exec(item.trim()); if (em && +em[2] > 0) parsed[em[1].trim()] = +em[2]; } return { line, parsed, bought: CALC.etiquette_points.values }; })()
+
+- **Expected:** `line` reads `**Etiquettes:** Civic 0 (+1 gear = 1) · Corporate 2
+  (+2 gear = 4)`, and `parsed` equals `bought` — `{ "Corporate": 2 }`.
+- **Note:** The **bought** value leads and the total follows in parentheses, and
+  that order is load-bearing. The importer reads the leading number, so a round
+  trip has to restore 2. Exporting the total there would bake the gear bonus into
+  the purchased points, and re-applying the gear would then count it twice —
+  Corporate 4 becomes 6, then 8, once per trip.
+
+  `Civic 0` parsing to nothing is deliberate: zero bought points is the same as
+  no entry, so the cycle stays byte-stable instead of accumulating explicit
+  zeroes. The separate `**Etiquette bonuses**` attribution line is derived and is
+  skipped on import — it must not appear in `report.unparsedLines` (P14-004).
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "195";
+const APP_VERSION = "196";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -2608,7 +2608,8 @@ function droneCombatBonuses(character, data) {
 }
 
 function scoreKnowledgeSkills(character, finalIntelligence, finalCharisma,
-                             knowledgePointsBonus, warnings, errors) {
+                             knowledgePointsBonus, warnings, errors,
+                             etiquetteAdjust) {
   const knowledgeBudget = KNOWLEDGE_POINTS_PER_INTELLIGENCE * finalIntelligence
                           + toInt(asNumber(knowledgePointsBonus));
   const knowledgeSpent = sumBy(character.knowledge_skills,
@@ -2638,10 +2639,26 @@ function scoreKnowledgeSkills(character, finalIntelligence, finalCharisma,
     }
   }
 
+  // Gear modifiers sit OUTSIDE the budget and the per-entry cap: both govern
+  // points you bought with Charisma, and a bonus you're wearing is neither
+  // bought nor spent. So `final` can exceed the rank cap of 6, exactly as an
+  // augment can push an attribute past what chargen would sell you.
+  const adjust = {};
+  const finalValues = {};
+  for (const name of ETIQUETTES) {
+    const bonus = toInt((etiquetteAdjust || {})[name]);
+    const base = etiquetteValues[name] || 0;
+    if (bonus) adjust[name] = bonus;
+    // Carry an etiquette you never bought but are currently getting a bonus to:
+    // rolling it at all is the whole point of the bonus.
+    if (base || bonus) finalValues[name] = base + bonus;
+  }
+
   return {
     knowledge: { budget: knowledgeBudget, spent: knowledgeSpent,
                  remaining: knowledgeBudget - knowledgeSpent },
-    etiquettes: { values: etiquetteValues, budget: etiquetteBudget,
+    etiquettes: { values: etiquetteValues, adjust, final: finalValues,
+                  budget: etiquetteBudget,
                   spent: etiquetteSpent,
                   remaining: etiquetteBudget - etiquetteSpent },
   };
@@ -3588,6 +3605,143 @@ function blingEtiquette(character, data) {
   return Object.values(found).sort((x, y) => y.bonus - x.bonus);
 }
 
+/* ---- etiquette modifiers ---------------------------------------------------
+ * Gear that changes how a room reads you. The data states these in prose, in a
+ * handful of shapes:
+ *
+ *   "Etiquette Bonus: +2 Corp, +1 Civic"                  armor_styles
+ *   "Etiquette Bonus: +2 to Corp, Aristocratic, and Criminal"   one N, several
+ *   "+2 to Charisma tests, +1 to Aristocratic etiquette"  armor_materials
+ *   "Street cred: +2 Street Etiquette"                    Bling weapon mod
+ *   "Gain +4 to all Etiquettes"                           speaker_spirits
+ *
+ * A number governs every etiquette named after it, up to the next number or the
+ * end of the clause — which is how "+2 to Charisma tests" contributes nothing
+ * while the "+1" beside it still lands on Aristocratic. Names match on prefix so
+ * "Corp" resolves to Corporate, and "all" means all seven.
+ *
+ * Nothing is parsed out of text that never says "etiquette": without that guard
+ * an augment reading "+2 Body. Opens Corporate doors." would score a Corporate
+ * bonus off its flavour text. */
+function parseEtiquetteBonuses(text) {
+  const s = String(text || "");
+  if (!/etiquette/i.test(s)) return [];
+  const marks = [];
+  const re = /[+-]?\d+/g;
+  let m;
+  while ((m = re.exec(s))) marks.push({ n: parseInt(m[0], 10), from: m.index, to: re.lastIndex });
+  const out = [];
+  for (let i = 0; i < marks.length; i++) {
+    const mark = marks[i];
+    if (!mark.n) continue;
+    // Everything up to the next number, stopping at a sentence break so prose
+    // after the bonus can't be read as more etiquette names.
+    let span = s.slice(mark.to, i + 1 < marks.length ? marks[i + 1].from : s.length);
+    const stop = span.search(/[.;]/);
+    if (stop >= 0) span = span.slice(0, stop);
+    const names = new Set();
+    if (/\ball\b/i.test(span)) {
+      for (const e of ETIQUETTES) names.add(e);
+    } else {
+      for (const word of span.match(/[A-Za-z]+/g) || []) {
+        if (word.length < 3) continue;      // too short to disambiguate C-words
+        const hit = ETIQUETTES.find(e => e.toLowerCase().startsWith(word.toLowerCase()));
+        if (hit) names.add(hit);
+      }
+    }
+    for (const etiquette of names) out.push({ etiquette, bonus: mark.n });
+  }
+  return out;
+}
+
+/* Every etiquette modifier the character is currently getting, and from what.
+ *
+ * Only worn / carried / equipped things count — the same host test
+ * tallyMountedAugments applies — because a wardrobe hanging in a closet doesn't
+ * change how anyone reads you. Installed augments and spirit relationships have
+ * no such flag and always count.
+ *
+ * Sources stack. The one exception is Bling, which collapses to its best single
+ * source first (a blinged gun and a blinged ride are one look, not two) and then
+ * adds to everything else like any other source — so the no-stacking rule stays
+ * scoped to Bling, where it belongs.
+ *
+ * Returns { adjust: {etiquette: n}, sources: [{etiquette, bonus, label}] }. */
+function etiquetteModifiers(character, data) {
+  const adjust = {};
+  for (const e of ETIQUETTES) adjust[e] = 0;
+  const sources = [];
+  const apply = (text, label) => {
+    for (const { etiquette, bonus } of parseEtiquetteBonuses(text)) {
+      adjust[etiquette] += bonus;
+      sources.push({ etiquette, bonus, label });
+    }
+  };
+  const nameOf = x => (x && typeof x === "object") ? x.name : x;
+  const isBling = name => /^bling/i.test(String(name || ""));
+
+  // Worn armor: the Style's dedicated column plus whatever the Material and
+  // Extras state in prose. Bling-named pieces are left to blingEtiquette.
+  for (const a of character.armor || []) {
+    if (a.active === false) continue;
+    for (const [value, table, column, effectCols] of [
+      [a.style, data.armor_styles, "Style", ["Etiquette Bonus"]],
+      [a.material, data.armor_materials, "Material", ["Effect"]],
+    ]) {
+      const name = nameOf(value);
+      if (!name || isBling(name)) continue;
+      const row = findRow(table, column, name) || {};
+      for (const col of effectCols) apply(row[col], `${name} on ${a.name}`);
+    }
+    for (const extra of a.extras || []) {
+      const name = nameOf(extra);
+      if (!name || isBling(name)) continue;
+      const row = findRow(data.armor_extras, "Extra", name) || {};
+      apply(row.Effects || row.Effect, `${name} on ${a.name}`);
+    }
+  }
+  // Equipped weapons and the mods fitted to them; carried gear; installed
+  // augments. None of these carry etiquette text in the core data today — the
+  // mechanism covers them so homebrew can, and so a future core row works
+  // without another engine change.
+  for (const w of character.weapons || []) {
+    if (w.equipped === false) continue;
+    for (const mod of w.mods || []) {
+      const name = nameOf(mod);
+      if (!name || isBling(name)) continue;
+      const row = findRow(data.weapon_mods, "Modification", name) || {};
+      apply(row.Effect, `${name} on ${w.name}`);
+    }
+  }
+  for (const g of character.gear || []) {
+    if (g.carried === false) continue;
+    const row = findRow(data.misc_gear, "Item", nameOf(g)) || {};
+    apply(row.Effect, nameOf(g));
+    apply(row.Notes, nameOf(g));
+  }
+  for (const aug of character.augments || []) {
+    const row = findRow(data.augments, "Name", nameOf(aug)) || {};
+    apply(row.Effect, nameOf(aug));
+  }
+  // Speaker relationships. The spirit states its etiquette rider in whichever
+  // service column fits it, so read them all rather than guessing.
+  for (const spirit of (character.speaker || {}).relationships || []) {
+    const name = nameOf(spirit);
+    const row = findRow(data.speaker_spirits, "Spirit", name) || {};
+    for (const col of ["Physical", "Appearance", "Digital", "Protection",
+                       "Firearm", "Drone", "Bound Services", "Special"]) {
+      apply(row[col], name);
+    }
+  }
+  // Bling last, already collapsed to one number per etiquette.
+  for (const b of blingEtiquette(character, data)) {
+    adjust[b.etiquette] += b.bonus;
+    sources.push({ etiquette: b.etiquette, bonus: b.bonus,
+                   label: `Bling (${b.sources.join(", ")})` });
+  }
+  return { adjust, sources };
+}
+
 function deriveInitiative(pools, finalAttributes, heritage, augments, amp, martialArt, data) {
   const notes = [];
 
@@ -4217,9 +4371,12 @@ function calculate(character) {
     if (skillScoring.skills[name]) skillScoring.skills[name].dice_bonus = dice;
   }
 
+  // Read straight off the character rather than off priced armor, so this stays
+  // independent of where priceArmor sits in this function.
+  const etiquetteMods = etiquetteModifiers(character, data);
   const knowledgeScoring = scoreKnowledgeSkills(
     character, finalAttributes.Intelligence, finalAttributes.Charisma,
-    augments.knowledge_points_bonus, warnings, errors);
+    augments.knowledge_points_bonus, warnings, errors, etiquetteMods.adjust);
   const knowledge = knowledgeScoring.knowledge;
   const etiquettePoints = knowledgeScoring.etiquettes;
 
@@ -4535,6 +4692,8 @@ function calculate(character) {
     skill_points: skillScoring.points,
     knowledge,
     etiquette_points: etiquettePoints,
+    // Named sources behind etiquettePoints.adjust, for the UI to attribute them.
+    etiquette_sources: etiquetteMods.sources,
     magic: {
       type: magicType,
       start_force: magicBudget.start_force,
@@ -4600,6 +4759,7 @@ return {
   // exposed for the UI and tests
   asNumber, loadData,
   APP_VERSION, inspectCharacterFile, unresolvedCharacterRefs, characterNameRefs,
+  etiquetteModifiers, parseEtiquetteBonuses,
   ATTRIBUTES, SKILLS, TRAINED_ONLY_SKILLS, ETIQUETTES, POOL_NAMES,
   MAGIC_TYPE_BY_PRIORITY, MAGIC_TYPES_ALLOWED_BY_PRIORITY,
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,

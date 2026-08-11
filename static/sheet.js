@@ -2532,9 +2532,16 @@ function gunKataRank() {
   return ma ? (+ma.rank || 0) : 0;
 }
 
-/* Per-shot heat and its cap, read out of an Energy weapon's Notes
-   ("Heat 3 / max 15"). Null when the row doesn't state it. */
+/* Per-shot heat and its cap for an Energy weapon. The structured "Heat" /
+   "Max Heat" columns win; failing those it parses the prose the core rows also
+   carry ("Heat 3 / max 15"). Columns first because they're what the homebrew
+   editor exposes — a custom weapon shouldn't have to phrase its Notes just so
+   to get a working heat tracker. Null when the row states neither, which is a
+   real answer: the Dazzleray has no heat rating at all. */
 function heatSpec(row) {
+  const per = parseInt(row && row.Heat, 10);
+  const max = parseInt(row && row["Max Heat"], 10);
+  if (Number.isFinite(per) && Number.isFinite(max)) return { per, max };
   const m = /heat\s*(\d+)\s*\/\s*max\s*(\d+)/i.exec((row && row.Notes) || "");
   return m ? { per: +m[1], max: +m[2] } : null;
 }

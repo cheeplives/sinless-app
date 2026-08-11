@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "194";
+const APP_VERSION = "195";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -1507,8 +1507,10 @@ function heritageNaturalWeapons(heritage, character, strength) {
 function augmentEffectSums(owned) {
   const names = new Set(owned.map(([row]) => row.Name));
   const attributeAdjustment = {}, attributeMaxAdjustment = {};
-  for (const name of ATTRIBUTES) { attributeAdjustment[name] = 0; attributeMaxAdjustment[name] = 0; }
-  for (const name of ["Strength", "Body", "Reaction", "Intelligence"]) {
+  // Every attribute, not just the four core rows happen to use: a column that
+  // no shipped augment carries reads as 0 through asNumber, so this costs
+  // nothing today and lets homebrew raise Willpower or Charisma the same way.
+  for (const name of ATTRIBUTES) {
     attributeAdjustment[name] = toInt(sumBy(owned,
       ([row, count]) => asNumber(row[name]) * count));
     attributeMaxAdjustment[name] = toInt(sumBy(owned,

@@ -1,7 +1,7 @@
 # P09 — Homebrew packs and custom content
 
 **Preconditions for every case:** P00 complete.
-**Effort:** 45 min. **Fixture:** none.
+**Effort:** 55 min. **Fixture:** none.
 
 Homebrew rows are spliced into `DATA_BUNDLE.tables` at boot by
 `mergeCustomContent()` and are then indistinguishable from core data to the rest
@@ -128,6 +128,76 @@ is not optional, and a leftover QA pack will confuse every later pass.
 - **Note:** The payload must appear as visible text and never as an element. A
   non-zero `imgCount` or a defined `xssFired` is a **critical FAIL** — report it
   immediately, do not finish the pass first.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P09-009: The editor exposes every column its tables carry
+- **Type:** correctness
+- **Check:**
+
+      (() => { const skip = new Set(["Custom", "PackId", "ReadOnly", "Source"]); const gaps = {}; for (const [key, cfg] of Object.entries(HOMEBREW_CONFIG)) { const fields = new Set(cfg.fields.map(f => f.key)); const cols = new Set(); for (const row of DATA.tables[key] || []) for (const c of Object.keys(row)) if (!skip.has(c)) cols.add(c); const missing = [...cols].filter(c => !fields.has(c)).sort(); if (missing.length) gaps[key] = missing; } return { tables: Object.keys(HOMEBREW_CONFIG).length, gaps }; })()
+
+- **Expected:**
+
+      { "tables": 16, "gaps": {} }
+
+- **Note:** This is the invariant that keeps homebrew able to author the same
+  gear the core data uses. A column in `data.js` that `HOMEBREW_CONFIG` omits is
+  invisible **twice**: the editor can't set it, and `mergePackData` rebuilds
+  imported rows from the field whitelist (P09-006), so a pack carrying that
+  column loses it on import. The result is a custom row that looks fine and
+  quietly behaves differently from the core row it was modelled on.
+
+  Any non-empty `gaps` is a FAIL naming exactly which columns to add. The four
+  skipped keys are stamped on by `mergeCustomContent`, not authored.
+
+  `tools/check_data.py` asserts the same thing from the command line and exits 1
+  on a gap — run it after any data.js edit. This case is the in-browser mirror,
+  and it reads the **merged** tables, so it also catches a subscribed pack that
+  introduces a column the editor has no field for.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P09-010: A homebrew augment can raise any of the six attributes
+- **Type:** correctness
+- **Check:**
+
+      (() => { const row = { Name: "QA Serenity Cortex", Type: "Headware", ZR: "0.5", BI: "0", Cost: "5000", Willpower: "2", Charisma: "1", Custom: "Y" }; DATA.tables.augments.push(row); const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; for (const a of RULES.ATTRIBUTES) c.attributes[a] = 3; c.augments = [{ name: "QA Serenity Cortex" }]; const k = RULES.calculate(c); const editable = HOMEBREW_CONFIG.augments.fields.map(f => f.key); return { will: k.attributes.Willpower.final, cha: k.attributes.Charisma.final, str: k.attributes.Strength.final, allSixEditable: RULES.ATTRIBUTES.every(a => editable.includes(a)) }; })()
+
+- **Expected:**
+
+      { "will": 5, "cha": 4, "str": 3, "allSixEditable": true }
+
+- **Note:** `augmentEffectSums` sums whichever attribute columns a row carries
+  and used to iterate a hardcoded four — Strength, Body, Reaction, Intelligence
+  — because those are the only ones core augments use. Everything downstream
+  (`mergeMountedAugments`, the final-attribute loop) already walked all six, so
+  the narrow loop was the only thing making Willpower and Charisma unreachable.
+
+  `str` staying at **3** is half the case: an untouched attribute must gain
+  nothing. If every attribute moves, the sum is reading the wrong column.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P09-011: An energy weapon's heat comes from its columns, not its prose
+- **Type:** correctness
+- **Check:**
+
+      (() => { const core = DATA.tables.weapons.find(w => w.Weapon === "Neon Fang LS"); return { core: heatSpec(core), columnsOnly: heatSpec({ Type: "Energy", Heat: "4", "Max Heat": "12", Notes: "Custom blaster." }), proseOnly: heatSpec({ Type: "Energy", Notes: "Heat 2 / max 8." }), neither: heatSpec({ Type: "Energy", Notes: "No rating." }), dazzleray: heatSpec(DATA.tables.weapons.find(w => w.Weapon === "Aztechnologies Dazzleray")) }; })()
+
+- **Expected:**
+
+      { "core": { "per": 1, "max": 3 }, "columnsOnly": { "per": 4, "max": 12 },
+        "proseOnly": { "per": 2, "max": 8 }, "neither": null, "dazzleray": null }
+
+- **Note:** Run this on the **play sheet** — `heatSpec` lives in `sheet.js`.
+
+  The `weapons` table states heat in `Heat` / `Max Heat` columns *and* repeats it
+  in `Notes` as "Heat 1 / max 3". The tracker used to read only the prose, so a
+  homebrew energy weapon authored through the editor's columns got no tracker at
+  all. Columns now win, prose is the fallback, and `core` proves the two agree on
+  the shipped rows — if it disagrees with the columns, the data is contradicting
+  itself and the row needs fixing, not the parser.
+
+  `dazzleray` is `null` on purpose: it states `-` for both, meaning no heat
+  rating, which is different from "unstated".
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

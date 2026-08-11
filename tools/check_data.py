@@ -22,7 +22,11 @@ What it checks:
      promote_homebrew.base_columns() would silently drop -- it takes the
      canonical column set from row 0 only.
   5. Every HOMEBREW_CONFIG field key actually exists in its table.
-  6. Only the four sanctioned non-ASCII glyphs appear (see ALLOWED_NON_ASCII).
+  6. And the reverse: every column a homebrew table's rows carry is exposed in
+     HOMEBREW_CONFIG. A column the editor omits can't be authored, and
+     mergePackData drops it from imported packs -- so adding a column to a table
+     means adding it to HOMEBREW_CONFIG in the same commit. This one is an error.
+  7. Only the four sanctioned non-ASCII glyphs appear (see ALLOWED_NON_ASCII).
 
 Exit status is 1 if any ERROR was reported (warnings alone still exit 0), so this
 can gate a commit. See docs/DATA.md for the table catalogue and conventions.
@@ -54,6 +58,12 @@ ALLOWED_NON_ASCII = {
     "×": "multiplication sign (cost multiplier prose)",
     "ㄓ": "currency glyph",
 }
+
+# Bookkeeping columns mergeCustomContent() stamps onto a custom row as it splices
+# it into the live table (homebrew.js). They are never authored, so the editor is
+# not expected to expose them -- but a promoted pack row carries them into
+# data.js, where they would otherwise read as columns nobody can edit.
+MERGE_ADDED_COLUMNS = {"Custom", "PackId", "ReadOnly", "Source"}
 
 # Same-name rows that are intentional and must not fail the uniqueness check.
 # weapon_mods carries Overbarrel and Underbarrel variants under one name; note
@@ -344,6 +354,36 @@ def check_homebrew_fields(report, tables, hb_config):
                          f"across {len(hb_config)} tables")
 
 
+def check_homebrew_coverage(report, tables, hb_config):
+    """The reverse of check_homebrew_fields: every data column is editable.
+
+    A column that data.js carries but HOMEBREW_CONFIG omits is invisible twice
+    over -- the editor can't author it, and mergePackData drops it from any pack
+    that has one, so an imported row loses the value silently. That is how a
+    column added for core rows quietly becomes homebrew-hostile, which is why
+    this is an ERROR rather than a warning: adding a column to a table means
+    adding it to HOMEBREW_CONFIG in the same commit.
+    """
+    section = "HOMEBREW_CONFIG covers every column"
+    if hb_config is None:
+        report.info(section, "skipped (HOMEBREW_CONFIG not readable)")
+        return
+    covered = 0
+    for table, (_, fields) in sorted(hb_config.items()):
+        rows = tables.get(table)
+        if rows is None:
+            continue                       # already reported by check_homebrew_fields
+        _, union = columns_of(rows)
+        missing = sorted(union - set(fields) - MERGE_ADDED_COLUMNS)
+        if missing:
+            report.error(section, f"{table}: column(s) the editor cannot author: "
+                                  + ", ".join(missing))
+        else:
+            covered += 1
+    report.info(section, f"{covered}/{len(hb_config)} homebrew tables expose every "
+                         "column their rows carry")
+
+
 def check_non_ascii(report, text):
     section = "Non-ASCII glyphs"
     counts = collections.Counter(c for c in text if ord(c) > 127)
@@ -412,6 +452,7 @@ def main():
     check_row_identity(report, tables)
     check_column_drift(report, tables)
     check_homebrew_fields(report, tables, hb_config)
+    check_homebrew_coverage(report, tables, hb_config)
     check_non_ascii(report, text)
 
     report.print()

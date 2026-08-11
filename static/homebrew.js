@@ -47,7 +47,11 @@ function hbOnline() {
  * Each nameKey must match NAME_KEYS in tools/promote_homebrew.py and the table
  * catalogue in docs/DATA.md -- tools/check_data.py enforces all three agree.
  * Fields listed here are the only ones an imported pack keeps (mergePackData
- * drops the rest), so adding a column to a table means adding it here too. */
+ * drops the rest), so adding a column to a table means adding it here too --
+ * tools/check_data.py fails on a column with no field, and P09-009 checks the
+ * same thing in the browser against the merged tables. A column the editor
+ * omits can't be authored AND is stripped from imported packs, which is how a
+ * custom row ends up quietly behaving unlike the core row it was modelled on. */
 const HOMEBREW_CONFIG = {
   rituals: { label: "Rituals", nameKey: "Name", fields: [
     { key: "Name" },
@@ -110,15 +114,30 @@ const HOMEBREW_CONFIG = {
     { key: "ZR", hint: "number" },
     { key: "BI", hint: "number" },
     { key: "Cost", hint: "number" },
+    { key: "Rarity", hint: "number" },
+    // All six attributes. Core augments only ever raise the first four, but the
+    // engine sums whichever columns a row carries (rules.js augmentEffectSums),
+    // so Willpower and Charisma work exactly the same way.
     { key: "Strength", hint: "+N" },
     { key: "Body", hint: "+N" },
     { key: "Reaction", hint: "+N" },
     { key: "Intelligence", hint: "+N" },
+    { key: "Willpower", hint: "+N" },
+    { key: "Charisma", hint: "+N" },
     { key: "Armor Slot", hint: "N or slot name" },
     { key: "Impact Armor" },
     { key: "ImpArmMin" },
     { key: "Ballistic Armor" },
     { key: "Ban", hint: "name prefixes this bans" },
+    { key: "Quality", select: () => ["", "Y"],
+      optionLabel: v => v === "Y" ? "Y (Fashionware quality tiers apply)" : "(fixed)" },
+    { key: "Req Limb", datalist: () => ["Arm", "Leg", "Any"],
+      hint: "Cyberlimbs only — which limb this mounts in; blank defaults to Any" },
+    { key: "Damage", hint: "implant attacks only (Spurs, Fangs) — base damage before STR" },
+    { key: "STR Mult", hint: "share of Strength added to Damage — default 0.5, 0 for fixed damage" },
+    { key: "AltMove", hint: "alternate movement in metres (Mobi augments)" },
+    { key: "MoveMode", datalist: () => hbDistinct("augments", "MoveMode"),
+      hint: "what the AltMove is — e.g. Flight, Water, Tracked" },
     { key: "Effect", ta: true },
     { key: "Description", ta: true },
   ]},
@@ -138,6 +157,10 @@ const HOMEBREW_CONFIG = {
     { key: "Damage Bonus", hint: "Melee only, e.g. +2d6" },
     { key: "Firing modes", hint: "e.g. SS, BF, FA" },
     { key: "Ammo", hint: "magazine size" },
+    // Energy weapons spend Heat instead of a magazine. The sheet reads these
+    // columns and falls back to parsing "Heat N / max N" out of Notes.
+    { key: "Heat", hint: "Energy only — heat built per shot" },
+    { key: "Max Heat", hint: "Energy only — heat capacity before it overheats" },
     { key: "Pen", hint: "armor penetration" },
     { key: "Bar", hint: "Barrier rating 0-5 — blank if it doesn't apply" },
     { key: "Conceal", hint: "number" },
@@ -148,6 +171,10 @@ const HOMEBREW_CONFIG = {
     { key: "Upgr1_Eff", hint: "Upgrade 1 effect, e.g. “Barrel Detailing (+1 damage)”" },
     { key: "Upgr2_Cost", hint: "Upgrade 2 cost — same format as Upgrade 1" },
     { key: "Upgr2_Eff", hint: "Upgrade 2 effect" },
+    { key: "Integrated Smart", select: () => ["", "1"],
+      optionLabel: v => v === "1" ? "1 (smart at no extra cost)" : "(opt-in smart pays the multiplier)" },
+    { key: "Requires", datalist: () => hbDistinct("weapons", "Weapon"),
+      hint: "another weapon that must be equipped to use this (under-barrel mounts)" },
     { key: "Mount Types", datalist: () => ["Any",
         ...hbDistinct("augments", "Type").filter(t => t !== "Bioware")],
       hint: "augment types this can mount — comma-separated, or Any; blank = none" },
@@ -214,6 +241,8 @@ const HOMEBREW_CONFIG = {
     { key: "MagMod", hint: "e.g. x1.5" },
     { key: "HardMod", hint: "+/-N" },
     { key: "Conceal Mod", hint: "+/-N" },
+    { key: "Req Type", select: () => ["", ...Object.keys(WEAPON_TYPE_LABELS)],
+      optionLabel: k => k ? `${WEAPON_TYPE_LABELS[k]} (${k}) only` : "(any weapon type)" },
   ]},
   vehicle_ballistic_weapons: { label: "Vehicle Ballistic", nameKey: "Vehicle Ballistic Weapon", fields: [
     { key: "Vehicle Ballistic Weapon" },
@@ -279,6 +308,8 @@ const HOMEBREW_CONFIG = {
     { key: "BI", hint: "number" },
     { key: "Cost", hint: "number" },
     { key: "Weight", hint: "number" },
+    { key: "Target", select: () => ["", "weapon"],
+      optionLabel: v => v === "weapon" ? "weapon (fits a mounted gun)" : "(fits the vehicle itself)" },
     { key: "ModeEffect", ta: true },
   ]},
   drone_mods: { label: "Drone Mods", nameKey: "Drone Mod", fields: [
@@ -287,6 +318,8 @@ const HOMEBREW_CONFIG = {
     { key: "BI", hint: "number" },
     { key: "Cost", hint: "number" },
     { key: "Weight", hint: "number" },
+    { key: "Target", select: () => ["", "weapon"],
+      optionLabel: v => v === "weapon" ? "weapon (fits a mounted gun)" : "(fits the drone itself)" },
     { key: "ModeEffect", ta: true },
   ]},
 };

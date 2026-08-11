@@ -348,11 +348,18 @@ noisy:
    Fashionware and Ammo were added — keep them that way.)
 3. **The row-0 hazard.** `promote_homebrew.base_columns()` takes a table's
    canonical column set from **row 0 alone**, so promoting a pack row into a ragged
-   table silently drops any column that only later rows carry — today that is
-   `Bar`, `Damage Bonus`, `Heat`, `Integrated Smart`, `Max Heat`, `Requires`,
-   `STR Mult` (`weapons`); `Req Type` (`weapon_mods`). `check_data.py` reports
-   these as warnings. If you need one of those columns to survive promotion, add
-   it to row 0 (empty string is fine) first.
+   table silently drops any column that only later rows carry. `check_data.py`
+   reports these as warnings ("promoted rows would LOSE …"). If you need one of
+   those columns to survive promotion, add it to row 0 (empty string is fine)
+   first.
+
+   **No homebrew-eligible table has a row-0 gap today** — `weapons` (`Damage
+   Bonus`, `Heat`, `Integrated Smart`, `Max Heat`, `Requires`, `STR Mult`) and
+   `weapon_mods` (`Req Type`) were filled in when those columns were added to
+   `HOMEBREW_CONFIG`, because an editable column that promotion drops is the
+   worst of both worlds. The one remaining gap is `heritage_features`
+   (`GearCostMultiplier`, `SmallUplift`), which homebrew does not cover.
+   Exposing a column in the editor and adding it to row 0 go together.
 
    **This bites scripts too.** Any tool that rewrites a table row-by-row must
    build its column list from the **union of every row**, never from row 0 — the
@@ -383,6 +390,8 @@ noisy:
 `check_data.py` checks: bundle parses (same split the promoter uses) · the three
 key registries agree with each other and the data · key columns present,
 non-empty and case-insensitively unique · column-set drift and row-0 losses ·
-`HOMEBREW_CONFIG` field keys exist · only the four sanctioned glyphs.
+`HOMEBREW_CONFIG` field keys exist · **and every column a homebrew table carries
+has a `HOMEBREW_CONFIG` field** (an error, not a warning) · only the four
+sanctioned glyphs.
 
-Expected clean run today: **0 errors, 10 warnings** — all drift, all pre-existing.
+Expected clean run today: **0 errors, 6 warnings** — all drift, all pre-existing.

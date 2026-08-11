@@ -2176,6 +2176,16 @@ function barrierBit(row, value) {
   if (!v && (row || {}).Type !== "GrenadeLauncher") return "";
   return ` · Barrier ${v || "—"}`;
 }
+/* Conceal, showing what the fitted mods did to it. Every mod bolted to a gun
+   carries a Concealability that adds onto the weapon's own rating, so the
+   number on a modded weapon is not the number in the data — say so, and say by
+   how much, rather than leaving the player to wonder which one they're reading.
+   Shared with sheet.js so chargen and play agree. */
+function concealBit(row, calcRow) {
+  const c = (calcRow || {}).Conceal ?? (row || {}).Conceal ?? 0;
+  const mod = (calcRow || {}).conceal_mod || 0;
+  return `${c || 0}${mod ? ` (+${mod} mods)` : ""}`;
+}
 function tabWeapons(p) {
   p.append(el("h2", {}, "Weapons ", chip("cash")));
   p.append(el("p", { class: "hint" },
@@ -2242,7 +2252,7 @@ function tabWeapons(p) {
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" },
-            `${r.Type} \u00b7 Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}${calcRow.smartlink ? " (smart)" : ""} \u00b7 DMG ${calcRow.Damage ?? r.Damage} \u00b7 ${r["Firing modes"] || "melee"} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 ZR ${r.ZR || 0} \u00b7 Weight ${r.Weight || 0}`
+            `${r.Type} \u00b7 Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}${calcRow.smartlink ? " (smart)" : ""} \u00b7 DMG ${calcRow.Damage ?? r.Damage} \u00b7 ${r["Firing modes"] || "melee"} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} \u00b7 Conceal ${concealBit(r, calcRow)} \u00b7 ZR ${r.ZR || 0} \u00b7 Weight ${r.Weight || 0}`
             + (isThrown ? ` \u00b7 \u00d7${it.qty || 1}` : "")),
           canMod ? fittedCategoryEditor({
             id: `wmods-${i}-${it.name}`,

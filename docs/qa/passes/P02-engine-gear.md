@@ -251,6 +251,30 @@ actually testing.
   grenade at all and P06's inheritance cases will fail too.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-012b: Fitted mods add their Concealability to the weapon's Conceal
+- **Type:** correctness
+- **Check:**
+
+      (() => { const mk = mods => { const c = RULES.defaultCharacter(); c.name = "G"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.weapons = [{ name: "Militech Whisper 1000", mods }]; const w = RULES.calculate(c).weapons[0]; return [w.Conceal, w.conceal_mod ?? 0]; }; return { base: DATA.tables.weapons.find(r => r.Weapon === "Militech Whisper 1000").Conceal, none: mk([]), optical: mk(["Optical Scope"]), three: mk(["Gyro-mount", "Optical Scope", "Bayonet"]), silencer: mk(["Silencer"]), blankRated: (() => { const c = RULES.defaultCharacter(); c.name = "G"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.weapons = [{ name: "Underbarrel mounted grenade launcher (40mm)", mods: [] }]; return RULES.calculate(c).weapons[0].Conceal; })() }; })()
+
+- **Expected:**
+
+      { "base": "4", "none": ["4", 0], "optical": ["5", 1], "three": ["8", 4],
+        "silencer": ["4", 0], "blankRated": "" }
+
+- **Note:** Concealability is the `Conceal Mod` column on `weapon_mods`, and it
+  adds — three mods worth 2, 1 and 1 make a Conceal-4 rifle a Conceal-8 one.
+  `silencer` is the case that says a `0` in the column really means zero rather
+  than "unset": a Silencer changes Accuracy and nothing else.
+
+  `blankRated` must stay `""`. A weapon whose data row states no Conceal at all
+  has no rating for a mod to add to, so it stays blank — if it ever prints a
+  bare mod total, the sheet is reporting a concealability that the weapon does
+  not have. `conceal_mod` is what the stat lines use to show " (+N mods)", so a
+  non-zero `Conceal` with a zero `conceal_mod` means the adjustment got baked in
+  somewhere it can no longer be explained.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ### P02-013: Every weapon row carries the Bar column
 - **Type:** correctness
 - **Check:**

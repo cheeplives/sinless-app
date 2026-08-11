@@ -2606,6 +2606,7 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
 
     const fittedMods = [];
     let accMod = 0;
+    let concealMod = 0;
     for (const modName of entry.mods || []) {
       const modRow = findRow(data.weapon_mods, "Modification", modName);
       if (modRow) {
@@ -2613,6 +2614,9 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
         // the running total — fitting two of them can't compound.
         cost += weaponModCost(modRow, baseCost);
         accMod += asNumber(modRow.AccMod);
+        // Concealability: bolting things to a gun makes it harder to hide, and
+        // the mods' numbers add straight onto the weapon's own Conceal rating.
+        concealMod += asNumber(modRow["Conceal Mod"]);
         fittedMods.push({ name: modName, slot: modRow.Slot, effect: modRow.Effect });
       }
     }
@@ -2665,6 +2669,13 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
       let acc = toInt(asNumber(item.Accuracy)) + toInt(accMod);
       if (item.smart && hasSmartlink) { acc += 1; item.smartlink = true; }
       item.Accuracy = String(acc);
+    }
+    // Conceal: base + every fitted mod's Concealability. A weapon whose data row
+    // states no Conceal at all (the underbarrel grenade launcher) has no rating
+    // to add to, so it stays blank rather than becoming a bare mod total.
+    if (concealMod && item.Conceal !== "" && item.Conceal != null) {
+      item.Conceal = String(toInt(asNumber(item.Conceal)) + toInt(concealMod));
+      item.conceal_mod = concealMod;
     }
     item.qty = qty;
     item.mods = fittedMods;

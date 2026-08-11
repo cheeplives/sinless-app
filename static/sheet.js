@@ -4699,7 +4699,7 @@ function shGear(body) {
           })(),
           shMountEditor(en, r, w.equipped !== false)),
         el("td", { class: "sub" },
-          `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
+          `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
           ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
         el("td", {},
           el("input", { type: "checkbox", ...(w.equipped !== false ? { checked: 1 } : {}),
@@ -7273,7 +7273,11 @@ function buildMarkdown() {
                      isMelee ? `Reach ${r.Reach || 0}` : `Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}`,
                      `Pen ${r.Pen || 0}`,
                      (bar || r.Type === "GrenadeLauncher") ? `Barrier ${bar || "—"}` : null,
-                     `Conceal ${r.Conceal || 0}`,
+                     // The effective rating, mods included — same as Acc above.
+                     // Kept a bare number: the importer uses "· Conceal " as its
+                     // owned-weapon discriminator and re-derives the mod share
+                     // from the mods list, so anything extra here would be noise.
+                     `Conceal ${calcRow.Conceal ?? r.Conceal ?? 0}`,
                      (!isMelee && ammo) ? `Ammo ${ammo}` : null,
                      (!isMelee && r["Firing modes"]) ? r["Firing modes"] : null].filter(Boolean).join(" · ");
       L.push(`- **${w.name}**${smart} — ${stats}`

@@ -2760,6 +2760,29 @@ function shOverview(body) {
       loadout.append(gt);
     }
 
+    // Heavy Torso / No Head free-mount gear — weapons (with stats) and extra
+    // limbs, each noting the granting trait. Bolted to the frame rather than
+    // carried, so it sits with the natural weapons above the loadout proper.
+    if (traitGear.length) {
+      const tt = el("table");
+      tt.append(el("tr", {}, el("th", {}, "Trait-mounted"),
+        el("th", {}, "Stats"), el("th", {}, "From trait")));
+      traitGear.forEach(g => {
+        const w = g.weapon;
+        const stats = g.kind === "weapon" && w
+          ? [`${w.Type || ""}`, weaponSkillDice(w.Weapon, w.Type, w.Accuracy),
+             ` · Acc ${w.Accuracy || 0} · DMG ${w.Damage || "—"} · Pen ${w.Pen || 0}`
+             + barrierBit(w, w.Bar)
+             + ` · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`]
+          : ["Extra limb (free mount)"];
+        tt.append(el("tr", {},
+          el("td", {}, el("b", {}, g.label)),
+          el("td", { class: "sub" }, ...stats),
+          el("td", { class: "sub" }, g.source)));
+      });
+      loadout.append(tt);
+    }
+
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table", { class: "sh-loadout" });
       // Mods are listed by name inside the stat line rather than getting a
@@ -2915,30 +2938,9 @@ function shOverview(body) {
           .filter(Boolean).join(" · ") || "—"))));
       loadout.append(amt);
     }
-    // (The natural / cyber weapons table is built and appended above the
-    // equipped weapons — what's always on you comes before what you picked up.)
-
-    // Heavy Torso / No Head free-mount gear — weapons (with stats) and extra
-    // limbs, each noting the granting trait.
-    if (traitGear.length) {
-      const tt = el("table");
-      tt.append(el("tr", {}, el("th", {}, "Trait-mounted"),
-        el("th", {}, "Stats"), el("th", {}, "From trait")));
-      traitGear.forEach(g => {
-        const w = g.weapon;
-        const stats = g.kind === "weapon" && w
-          ? [`${w.Type || ""}`, weaponSkillDice(w.Weapon, w.Type, w.Accuracy),
-             ` · Acc ${w.Accuracy || 0} · DMG ${w.Damage || "—"} · Pen ${w.Pen || 0}`
-             + barrierBit(w, w.Bar)
-             + ` · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`]
-          : ["Extra limb (free mount)"];
-        tt.append(el("tr", {},
-          el("td", {}, el("b", {}, g.label)),
-          el("td", { class: "sub" }, ...stats),
-          el("td", { class: "sub" }, g.source)));
-      });
-      loadout.append(tt);
-    }
+    // (Both the natural / cyber and trait-mounted tables are built and appended
+    // above the equipped weapons — what's part of you, then what's bolted to
+    // you, then what you picked up.)
     const armorSources = CALC.combat.armor_sources || [];
     if (wornArmor.length || armorSources.length) {
       // Worn armor + granted (cyber/bioware/heritage/amp) armor share ONE ordered

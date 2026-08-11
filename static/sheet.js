@@ -2710,6 +2710,56 @@ function shOverview(body) {
             + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
     };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
+
+    // Natural / implanted / power-granted weapons (Hand Razors, Spurs, Fangs,
+    // Iron Fist, an Eye Laser) lead the Loadout: they're the things that are
+    // always on you, can't be dropped or taken off you, and are what you're
+    // left holding when everything else is gone. Damage and Reach are
+    // Strength-derived, so they're computed rather than read off a row.
+    if (grantedWeapons.length) {
+      const gt = el("table");
+      const gro = ro;
+      gt.append(el("tr", {}, el("th", {}, "Natural / cyber weapon"),
+        el("th", {}, "Stats"), el("th", {}, "Source"),
+        gro ? null : el("th", {}, "")));
+      // These are attacks made with the body, so they resolve against the
+      // "Natural" pseudo-type (Unarmed Combat) unless weaponSkillName knows the
+      // name -- the bladed implants roll Cybertech Combat instead.
+      // `gw.stats` is a preformatted line (Snake's ranged Spit), so it's left be.
+      // `gw.dice` is a fixed pool the implant supplies itself (Eye Laser): show
+      // that number instead of asking for a skill rating it doesn't roll off,
+      // and let `kind`/`note` replace the Melee/Reach framing that doesn't fit.
+      grantedWeapons.forEach(gw => {
+        const dice = gw.dice != null
+          ? el("b", { class: "wpn-dice", title:
+              `${gw.dice} dice — a fixed pool from the implant, not a skill rating` },
+              `(${gw.dice}d)`)
+          : weaponSkillDice(gw.name, "Natural", 0);
+        // Same one-press roll the equipped weapons get, off whichever number
+        // this row is showing: a skill rating for claws and blades, or the
+        // implant's own fixed pool, which rolls off no skill and so spends none
+        // of a pool unless you pick one in the roller.
+        const rs = gw.dice != null
+          ? { skillDice: Math.max(0, +gw.dice || 0), bonus: 0, pool: "", locked: false,
+              skill: "", why: [`${gw.dice} dice from the implant`], bwhy: [] }
+          : weaponRollSpec(gw.name, "Natural", 0);
+        const attack = gro ? null : el("td", {},
+          attackButton(gw.name, rs, gw.dice != null
+            ? { note: `${gw.dice} dice — a fixed pool from the implant, not a skill rating`,
+                title: `Roll ${gw.dice}d6 — fixed pool from ${gw.source}` }
+            : {}));
+        gt.append(el("tr", {},
+          el("td", {}, el("b", {}, gw.name)),
+          gw.stats
+            ? el("td", { class: "sub" }, gw.stats)
+            : el("td", { class: "sub" }, gw.kind || "Melee", dice,
+                ` · DMG ${gw.damage}` + (gw.note ? ` · ${gw.note}` : ` · Reach ${gw.reach}`)),
+          el("td", { class: "sub" }, gw.source),
+          attack));
+      });
+      loadout.append(gt);
+    }
+
     if (equippedWeapons.length || cyberguns.length) {
       const wt = el("table", { class: "sh-loadout" });
       // Mods are listed by name inside the stat line rather than getting a
@@ -2865,51 +2915,9 @@ function shOverview(body) {
           .filter(Boolean).join(" · ") || "—"))));
       loadout.append(amt);
     }
-    // Natural / implanted / power-granted melee weapons (Hand Razors, Spurs,
-    // Fangs, Iron Fist, …) — auto-calculated Strength-based damage and Reach.
-    if (grantedWeapons.length) {
-      const gt = el("table");
-      const gro = !!(activeTabObj() && activeTabObj().readonly);
-      gt.append(el("tr", {}, el("th", {}, "Natural / cyber weapon"),
-        el("th", {}, "Stats"), el("th", {}, "Source"),
-        gro ? null : el("th", {}, "")));
-      // These are attacks made with the body, so they resolve against the
-      // "Natural" pseudo-type (Unarmed Combat) unless weaponSkillName knows the
-      // name -- the bladed implants roll Cybertech Combat instead.
-      // `gw.stats` is a preformatted line (Snake's ranged Spit), so it's left be.
-      // `gw.dice` is a fixed pool the implant supplies itself (Eye Laser): show
-      // that number instead of asking for a skill rating it doesn't roll off,
-      // and let `kind`/`note` replace the Melee/Reach framing that doesn't fit.
-      grantedWeapons.forEach(gw => {
-        const dice = gw.dice != null
-          ? el("b", { class: "wpn-dice", title:
-              `${gw.dice} dice — a fixed pool from the implant, not a skill rating` },
-              `(${gw.dice}d)`)
-          : weaponSkillDice(gw.name, "Natural", 0);
-        // Same one-press roll the loadout's Attack gives, off whichever number
-        // this row is showing: a skill rating for claws and blades, or the
-        // implant's own fixed pool, which rolls off no skill and so spends none
-        // of a pool unless you pick one in the roller.
-        const rs = gw.dice != null
-          ? { skillDice: Math.max(0, +gw.dice || 0), bonus: 0, pool: "", locked: false,
-              skill: "", why: [`${gw.dice} dice from the implant`], bwhy: [] }
-          : weaponRollSpec(gw.name, "Natural", 0);
-        const attack = gro ? null : el("td", {},
-          attackButton(gw.name, rs, gw.dice != null
-            ? { note: `${gw.dice} dice — a fixed pool from the implant, not a skill rating`,
-                title: `Roll ${gw.dice}d6 — fixed pool from ${gw.source}` }
-            : {}));
-        gt.append(el("tr", {},
-          el("td", {}, el("b", {}, gw.name)),
-          gw.stats
-            ? el("td", { class: "sub" }, gw.stats)
-            : el("td", { class: "sub" }, gw.kind || "Melee", dice,
-                ` · DMG ${gw.damage}` + (gw.note ? ` · ${gw.note}` : ` · Reach ${gw.reach}`)),
-          el("td", { class: "sub" }, gw.source),
-          attack));
-      });
-      loadout.append(gt);
-    }
+    // (The natural / cyber weapons table is built and appended above the
+    // equipped weapons — what's always on you comes before what you picked up.)
+
     // Heavy Torso / No Head free-mount gear — weapons (with stats) and extra
     // limbs, each noting the granting trait.
     if (traitGear.length) {

@@ -341,16 +341,22 @@ async function duplicateTab(i) {
  * collides with neither an open tab nor an existing save. An existing
  * "(copy)"/"(copy N)" suffix is stripped first so duplicating a copy yields
  * "Alice (copy 2)" rather than "Alice (copy) (copy)". */
-function uniqueCopyName(name) {
-  const base = name.replace(/\s*\(copy(?: \d+)?\)$/i, "");
+/* A name no open tab and no saved character is using, suffixed with `label`.
+ * The taken-set spans both because openCharacter() de-dupes tabs by sanitized
+ * name (replacing that tab's character) and commitTabChar() saves any named
+ * character on tab-leave — so a duplicate name loses work in two ways. */
+function uniqueTabName(name, label) {
+  const strip = new RegExp(`\\s*\\(${label}(?: \\d+)?\\)$`, "i");
+  const base = String(name || "").replace(strip, "") || "Unnamed";
   const taken = new Set(
     WORKSPACE.tabs.map(t => STORAGE.sanitizeName(t.char.name))
       .concat(STORAGE.listCharacters()));
-  let candidate = `${base} (copy)`;
+  let candidate = `${base} (${label})`;
   for (let n = 2; taken.has(STORAGE.sanitizeName(candidate)); n++)
-    candidate = `${base} (copy ${n})`;
+    candidate = `${base} (${label} ${n})`;
   return candidate;
 }
+function uniqueCopyName(name) { return uniqueTabName(name, "copy"); }
 
 /* Close a tab. Saved characters close silently (they stay in storage — Load
  * reopens them). Only an unnamed, non-default draft prompts, since it can't be

@@ -1728,6 +1728,20 @@ function sheetMenu() {
     },
   });
 
+  // A separate input rather than widening the one above: two formats, two
+  // failure messages, so "that isn't a character file" always names the right
+  // format. See static/md-import.js.
+  const importMdInput = el("input", {
+    type: "file", accept: ".md,.markdown,.txt,text/markdown", hidden: "1",
+    onchange: async e => {
+      const file = e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      sheetMenuOpen = false;
+      await importMarkdownFile(file);
+    },
+  });
+
   const act = fn => async () => {
     sheetMenuOpen = false;
     await fn();
@@ -1780,6 +1794,9 @@ function sheetMenu() {
 
     // Group 2 — Import / Export.
     const importBtn = el("button", { class: "btn sh-mi-load", onclick: () => importInput.click() }, "Import JSON");
+    const importMdBtn = el("button", { class: "btn sh-mi-load",
+      title: "Rebuild a character from a Markdown (Scabard) export — opens in the character generator",
+      onclick: () => importMdInput.click() }, "Import Markdown");
     const exportJsonBtn = el("button", { class: "btn sh-mi-save", onclick: act(() => {
       const blob = new Blob([JSON.stringify(CHAR, null, 2)], { type: "application/json" });
       const a = el("a", { href: URL.createObjectURL(blob),
@@ -1823,7 +1840,7 @@ function sheetMenu() {
 
     const groups = [
       [loadSel, saveBtn, renameBtn, newBtn],
-      [importBtn, exportJsonBtn, exportMdBtn],
+      [importBtn, importMdBtn, exportJsonBtn, exportMdBtn],
       [sharingBtn, sharedBtn, homebrewBtn],
       [backBtn, resyncBtn, revertBtn, deleteBtn],
       [adminBtn, signOutBtn],
@@ -1834,7 +1851,7 @@ function sheetMenu() {
       if (i > 0) panel.append(el("div", { class: "sh-menu-sep" }));
       g.forEach(b => panel.append(b));
     });
-    panel.append(importInput);
+    panel.append(importInput, importMdInput);
 
     wrap.append(
       el("div", { class: "sh-menu-backdrop", onclick: () => { sheetMenuOpen = false; renderWorkspaceBar(); } }),
@@ -6975,5 +6992,14 @@ function buildMarkdown() {
     L.push("");
   }
   L.push(`*Exported from the Sinless Character Dossier · ${new Date().toISOString().slice(0, 10)}*`);
+  // An exact copy of the build, base64'd inside an HTML comment: invisible in
+  // Scabard and every markdown viewer, ~8KB, and it makes this file restorable
+  // without guessing. Import reads it if it's there and falls back to reading
+  // the prose above if it isn't. See static/md-import.js — the parser is
+  // coupled to the format of everything above this line.
+  if (typeof mdPayloadComment === "function") {
+    L.push("");
+    L.push(mdPayloadComment(CHAR));
+  }
   return L.join("\n");
 }

@@ -940,7 +940,12 @@ function unresolvedCharacterRefs(character, data) {
   const seen = new Set();
   const out = [];
   for (const ref of characterNameRefs(character)) {
-    const key = `${ref.label} ${ref.name}`;
+    // NUL separator, written as an escape: no label or item name can contain
+    // one, so the two halves can't run together. A space would let
+    // "Weapon mod" + "Ghost" collide with "Weapon" + "mod Ghost" and silently
+    // drop one of them. (This was a literal NUL byte until v195, which made the
+    // whole file read as binary to git, grep and $EDITOR.)
+    const key = `${ref.label}\0${ref.name}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const rows = (data && data[ref.table]) || [];

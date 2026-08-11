@@ -182,6 +182,17 @@ const SUMMON_CONTROL_SPELLS = ["Create Darkenbeast", "Summon Elemental", "Bound 
 const KIT_CATEGORIES = ["weapons", "armor", "gear", "augments", "decks",
   "programs", "rigs", "drones", "vehicles", "knowledge_skills"];
 
+/* Anything that can be hardened and doesn't state a rating has 2. Decks and
+ * rigs always list one; 32 weapons don't, and drones and vehicles have no such
+ * column at all — which is why their Hardening read as missing rather than as
+ * a number (issue #33). One default, one helper, so a blank never renders as 0
+ * or as nothing. An explicit "0" is still 0. */
+const DEFAULT_HARDENING = 2;
+function hardeningOf(row) {
+  const raw = String(((row || {}).Hardening) ?? "").trim();
+  return raw === "" ? DEFAULT_HARDENING : toInt(asNumber(raw));
+}
+
 // A Speaker gets two control exploit actions per spirit slotted in a bond slot.
 const SPEAKER_BOND_CONTROL_EXPLOITS = 2;
 // Bonds are bought in chargen, 0-4, and that count is the ONLY authority on how
@@ -4274,6 +4285,7 @@ return {
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,
   weaponBaseCost, weaponModCost, weaponModCostPercent,
+  DEFAULT_HARDENING, hardeningOf,
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage, augmentTier, augmentStacks,

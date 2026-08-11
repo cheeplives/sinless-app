@@ -3118,7 +3118,7 @@ function shOverview(body) {
               base.bar ? " · " : null, base.bar ? statBit("Barrier", "bar") : null,
               ` · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
               + ((calcRow.Ammo ?? r.Ammo) ? ` · Mag ${calcRow.Ammo ?? r.Ammo}` : "")
-              + (r.Hardening ? ` · Hardening ${r.Hardening}` : "")
+              + ` · Hardening ${RULES.hardeningOf(r)}`
               + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : ""),
               modNames.length
                 ? el("div", { class: "sub wpn-mods" }, "Mods: " + modNames.join(" · ")) : null,
@@ -6247,7 +6247,7 @@ function unitStateKey(table, unit) {
  * infusion adds. Reported everywhere a unit's stats are, including at 0 — a
  * blank read as "this stat doesn't exist here" (issue #33). */
 function unitHardening(row, statMods) {
-  return toInt((row || {}).Hardening) + toInt((statMods || {}).hardening);
+  return RULES.hardeningOf(row) + toInt((statMods || {}).hardening);
 }
 
 /* Effective Body after any weapon/mod deltas — the box count for both condition

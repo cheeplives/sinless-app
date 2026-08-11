@@ -1569,32 +1569,43 @@ function sheetHeader() {
     ...POOL_ORDER.map(headerPoolTile), kismetPoolTile());
 
   const z = CALC.zoetics;
-  const { current: zpCurrent } = zpMeterValues();
   const houseZr = RULES.houseRule("zr") === "houserule";
   const castPen = Math.floor(z.gear_zr);
-  const zpTitle = houseZr
-    ? `Zoetic Potential ${z.zp}`
-        + (z.augment_zr > 0 ? ` − Cyber ZP spent ${z.augment_zr}` : "")
-        + (z.amp_zp_spent > 0 ? ` − Amp ZP spent ${z.amp_zp_spent}` : "")
-    : `Zoetic Potential ${z.zp}`
-        + (z.amp_zp_spent > 0 ? ` − Amp ZP spent ${z.amp_zp_spent}` : "")
-        + ` − carried ZR ${z.zr_total} (fractions round up)`;
-  const zrMeter = houseZr
-    ? el("div", { class: "sh-meter zoetic",
-        title: `Gear/weapon ZR ${z.gear_zr}${castPen > 0 ? ` — −${castPen}d on casting rolls` : ""}` },
-        el("div", { class: "k" }, "Gear ZR"),
-        el("div", { class: "v" }, String(z.gear_zr)))
-    : el("div", { class: "sh-meter zoetic",
-        title: `Augment ZR ${z.augment_zr} + gear ZR ${z.gear_zr}`
-          + (CHAR.heritage.type === "Synthetic" ? " (Synthetic: augment ZR untracked)" : "") },
-        el("div", { class: "k" }, "ZR"),
-        el("div", { class: "v" }, String(z.zr_total)));
+  /* ZP and total ZR used to sit here and no longer do. Both are creation
+   * budgets that barely move in play, and both already have a home where you'd
+   * act on them — the Kismet tab spends ZP ("Advance Zoetic Potential"), the
+   * Augments tab shows ZR beside the chrome, and the MAGIC/AMP OFFLINE notes
+   * already shout when ZP goes bad. The header is the only chrome visible from
+   * EVERY tab, so it now carries what you consult every round instead.
+   *
+   * Gear ZR is the exception and survives conditionally: under the house rule
+   * it isn't a budget at all but a live −1d-per-point casting penalty that
+   * moves whenever a caster picks up or drops gear. Same test the Magic tab
+   * uses (houserule + not Hedge), plus "and it's actually biting" — so it
+   * appears exactly when it means something and a mundane never sees it. */
+  const showCastPen = houseZr && CALC.magic.type !== "Hedge" && castPen > 0;
+
+  const wound = woundPenalty();
+  const init = sheetInitiative();
+  const physMax = CALC.condition.physical, stunMax = CALC.condition.stun;
+  const phys = Math.min(play.physical_damage || 0, physMax);
+  const stun = Math.min(play.stun_damage || 0, stunMax);
+  const woundTitle = wound.negated
+    ? "Wound penalties negated — damage is tracked but costs you no dice"
+    : `Physical ${phys}/${physMax}, Stun ${stun}/${stunMax}`
+      + ` — every 3 boxes on either track is ${wound.doubled ? "−2" : "−1"} die`
+      + (wound.dice < 0 ? ". The roller already takes these off every test." : "");
+
   const right = el("div", { class: "sh-meters" },
-    el("div", { class: "sh-meter zoetic", title: zpTitle },
-      el("div", { class: "k" }, "ZP"),
-      el("div", { class: "v", style: z.zp_remaining < 0 ? "color:var(--bad)" : "" },
-        String(zpCurrent), el("span", { class: "max" }, ` / ${z.zp}`))),
-    zrMeter,
+    el("div", { class: "sh-meter" + (wound.dice < 0 ? " cond" : ""), title: woundTitle },
+      el("div", { class: "k" }, "Wounds"),
+      el("div", { class: "v" }, wound.dice < 0 ? `${wound.dice}d` : "0"),
+      el("span", { class: "sub" }, `P ${phys}/${physMax} · S ${stun}/${stunMax}`)),
+    el("div", { class: "sh-meter init",
+      title: `Initiative — roll ${init.dice} Focus dice and add Reaction ${init.bonus}`
+        + (init.notes.length ? ` (${init.notes.join("; ")})` : "") },
+      el("div", { class: "k" }, "Initiative"),
+      el("div", { class: "v" }, `${init.dice}d+${init.bonus}`)),
     el("div", { class: "sh-meter zoetic", title: "Ghost Rating" },
       el("div", { class: "k" }, "Ghost"),
       el("div", { class: "v" }, z.ghost_rating || "2d6")),
@@ -1603,6 +1614,16 @@ function sheetHeader() {
       onkeydown: e => { if (e.key === "Enter") adjustCash(); } },
       el("div", { class: "k" }, RULES.currencyName()),
       el("div", { class: "v" }, fmt(play.cash), el("span", { class: "plus" }, " +"))));
+
+  // Spans both columns rather than making a ragged fifth cell, which also reads
+  // as what it is: a condition currently applying, not a fourth standing stat.
+  if (showCastPen) {
+    right.append(el("div", { class: "sh-meter zoetic sh-meter-wide",
+      title: `${z.gear_zr} ${z.gear_zr === 1 ? "point" : "points"} of gear/weapon ZR`
+        + " — −1d per full point on Channeling, Conjuring and Sorcery" },
+      el("div", { class: "k" }, "ZR Casting Penalty"),
+      el("div", { class: "v" }, `−${castPen}d`)));
+  }
 
   // Freeform character description, sitting between identity and the meters.
   // Editing it in play writes to play, not to the chargen record — a character
@@ -1642,7 +1663,10 @@ function sheetStickyBar() {
       },
     }, label));
   }
-  const zp = zpMeterValues();
+  // The strip is what's on screen while you're actually playing, so it carries
+  // the wound penalty rather than ZP: sitting beside the pool pills, it's the
+  // number that changes what every one of those dice is worth.
+  const wound = woundPenalty();
   // Clicking any non-interactive part of the compact strip jumps back to the top
   // (its +/- pills and the cash meter are <button>/[role=button], so they're
   // excluded and keep working).
@@ -1651,8 +1675,13 @@ function sheetStickyBar() {
     el("span", { class: "sh-compact-name" }, CHAR.name || "Unnamed"),
     ...POOL_ORDER.map(compactPoolPill),
     compactKismetPill(),
-    el("span", { class: "sh-cmeter zoetic", title: "Effective / maximum Zoetic Potential" },
-      `ZP ${zp.current}/${zp.max}`),
+    el("span", { class: "sh-cmeter" + (wound.dice < 0 ? " cond" : ""),
+      title: wound.negated
+        ? "Wound penalties negated"
+        : `Wound penalty — Physical ${Math.min(CHAR.play.physical_damage || 0, CALC.condition.physical)}`
+          + `/${CALC.condition.physical}, Stun ${Math.min(CHAR.play.stun_damage || 0, CALC.condition.stun)}`
+          + `/${CALC.condition.stun}` },
+      wound.dice < 0 ? `Wounds ${wound.dice}d` : "Wounds 0"),
     el("span", { class: "sh-cmeter cash", role: "button", tabindex: "0",
       title: `Adjust ${RULES.currencyName().toLowerCase()}`, onclick: adjustCash,
       onkeydown: e => { if (e.key === "Enter") adjustCash(); } },
@@ -4184,6 +4213,7 @@ function shKismet(body) {
   // lethal when Force <= ZP) and widens Amp/augment headroom.
   // Cost rate is an assumption: same tiers as attributes (3 / 4 / 5).
   const zp = CALC.zoetics.zp;
+  const zpEffective = zpMeterValues();
   const zpCost = attrRaiseCost(zp + 1);
   spend.append(el("h4", { class: "sh-h4" }, "Advance Zoetic Potential"),
     el("p", { class: "hint" },
@@ -4191,7 +4221,15 @@ function shKismet(body) {
       + "at or below ZP, drain is Stun. Cost per point assumed to match attribute tiers."),
     el("div", { class: "sh-advrow", style: "max-width:420px" },
       el("span", {}, el("b", {}, "Zoetic Potential"),
-        el("span", { class: "sub" }, ` current ${zp}`)),
+        // Effective ZP is what actually gates Force, and it's the number the
+        // header used to carry. Base alone would understate the cost of chrome:
+        // under either ZR rule the spending you've already done eats into it.
+        el("span", { class: "sub" }, ` current ${zp}`),
+        zpEffective.current !== zp
+          ? el("span", { class: "sub",
+              title: "What your spending leaves — this is the value Force is measured against" },
+              ` · effective ${zpEffective.current}`)
+          : null),
       el("button", {
         class: "btn small", disabled: play.kismet < zpCost ? "1" : null,
         onclick: async () => {

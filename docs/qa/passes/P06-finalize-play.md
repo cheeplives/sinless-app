@@ -541,6 +541,54 @@ path by which play could reach into the creation record.
   case names the tab and quotes the surrounding text.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-025: The header meters carry play state, not creation budgets
+- **Type:** correctness
+- **Steps:** any finalized character.
+- **Check:**
+
+      (async () => { const read = () => [...document.querySelectorAll(".sheet-head .sh-meter")].map(m => `${m.querySelector(".k").textContent}=${m.querySelector(".v").textContent}`); const strip = () => [...document.querySelectorAll(".sh-compact .sh-cmeter")].map(m => m.textContent.trim()); const p = CHAR.play.physical_damage, s = CHAR.play.stun_damage; CHAR.play.physical_damage = 5; CHAR.play.stun_damage = 4; await recalc(); renderSheet(); const hurt = read(), hurtStrip = strip(); CHAR.play.physical_damage = 0; CHAR.play.stun_damage = 0; await recalc(); renderSheet(); const well = read(); CHAR.play.physical_damage = p; CHAR.play.stun_damage = s; await recalc(); renderSheet(); return { hurt, well, hurtStrip, noBudgets: !read().join(" ").match(/^ZP=|\bZR=/) }; })()
+
+- **Expected:** `hurt` begins `["Wounds=−2d", "Initiative=…"]` and `well` begins
+  `["Wounds=0", …]`; `hurtStrip` contains `"Wounds −2d"`; `noBudgets` is `true`.
+- **Note:** 5 Physical and 4 Stun is one wound step on each track — `floor(5/3) +
+  floor(4/3)` — so **−2d**, not −3d. Getting −1d here means only one track is
+  being counted.
+
+  The header is the only chrome visible from every tab, so it carries what
+  changes every round rather than what was fixed at creation. ZP and ZR moved
+  out: the Kismet tab spends ZP (and now shows the effective value beside the
+  base, which is what Force is measured against), the Augments tab shows ZR in
+  context, and the MAGIC/AMP OFFLINE notes already fire when ZP goes bad.
+
+  `hurtStrip` matters as much as the header: the compact strip is what's on
+  screen while you're actually playing, and the wound penalty sitting beside the
+  pool pills is what tells you what those dice are currently worth.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-026: The ZR casting penalty chip appears only when it bites
+- **Type:** correctness
+- **Check:**
+
+      (async () => { const seen = () => [...document.querySelectorAll(".sheet-head .sh-meter .k")].some(k => /ZR Casting Penalty/.test(k.textContent)); const zr = CHAR.house_rules.zr, mt = CHAR.magic.chosen_type, w = JSON.parse(JSON.stringify(CHAR.weapons)); const set = async (rule, type) => { CHAR.house_rules.zr = rule; RULES.setHouseRule("zr", rule); CHAR.magic.chosen_type = type; CHAR.weapons = [{ name: 'Arasaka "Panther" 20mm cannon', equipped: true, mods: [], qty: 1 }]; await recalc(); renderSheet(); return { shown: seen(), type: CALC.magic.type, gearZr: CALC.zoetics.gear_zr }; }; const caster = await set("houserule", "Mage"); const classic = await set("classic", "Mage"); CHAR.weapons = []; await set("houserule", "Mage"); const noGear = seen(); CHAR.house_rules.zr = zr; RULES.setHouseRule("zr", zr); CHAR.magic.chosen_type = mt; CHAR.weapons = w; await recalc(); renderSheet(); return { caster, classicRule: classic.shown, noGear }; })()
+
+- **Expected:**
+
+      { "caster": { "shown": true, "type": "Mage", "gearZr": 3 },
+        "classicRule": false, "noGear": false }
+
+- **Note:** Three conditions, and all three have to hold: the `houserule` ZR
+  setting (only there is gear ZR a **casting penalty** rather than a budget), a
+  character who can cast, and a penalty that is actually non-zero. It spans both
+  grid columns so it reads as a condition currently applying rather than a fourth
+  standing stat.
+
+  This is the one piece of ZR worth header space, because unlike ZP it genuinely
+  moves in play — pick up or holster a chromed weapon and it changes. A mundane
+  never sees it. Note the magic priority has to allow the type: setting
+  `chosen_type` to Hedge at magic priority 3 resolves to Amp, so test the
+  mundane case with a mundane character.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

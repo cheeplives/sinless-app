@@ -2783,14 +2783,31 @@ function shOverview(body) {
       const tt = el("table");
       tt.append(el("tr", {}, el("th", {}, "Trait-mounted"),
         el("th", {}, "Stats"), el("th", {}, "From trait"),
-        ro ? null : el("th", {}, "")));
+        ro ? null : el("th", {}, ""), ro ? null : el("th", {}, "Ammo")));
       traitGear.forEach(g => {
         const w = g.weapon;
+        // A mounted gun loads from the same stock as anything else you own, and
+        // what's in it moves its numbers — so resolve the round before building
+        // the stat line, the way the equipped weapons do.
+        const mountEntry = (g.kind === "weapon" && w) ? traitMountState(g.label) : null;
+        const mAmmo = mountEntry ? loadedAmmoFor(mountEntry, w)
+                                 : { row: null, name: "", mods: null, notes: [] };
+        const mBase = w ? { acc: w.Accuracy || 0, damage: w.Damage || "—",
+                            pen: w.Pen || 0, bar: String(w.Bar ?? "") } : null;
+        const mShot = (mBase && mAmmo.row) ? RULES.applyAmmoStats(mBase, mAmmo.mods) : mBase;
+        const mBit = (label, key) => el("span",
+          (mAmmo.row && String(mShot[key]) !== String(mBase[key]))
+            ? { class: "wpn-ammo-mod", title: `${mAmmo.name} loaded` } : {},
+          `${label} ${mShot[key]}`);
         const stats = g.kind === "weapon" && w
-          ? [`${w.Type || ""}`, weaponSkillDice(w.Weapon, w.Type, w.Accuracy),
-             ` · Acc ${w.Accuracy || 0} · DMG ${w.Damage || "—"} · Pen ${w.Pen || 0}`
-             + barrierBit(w, w.Bar)
-             + ` · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`]
+          ? [`${w.Type || ""}`, weaponSkillDice(w.Weapon, w.Type, mShot.acc),
+             " · ", mBit("Acc", "acc"), " · ", mBit("DMG", "damage"),
+             " · ", mBit("Pen", "pen"),
+             mBase.bar ? " · " : "", mBase.bar ? mBit("Barrier", "bar") : "",
+             ` · Conceal ${w.Conceal || 0} · wt ${w.Weight || 0}`,
+             mAmmo.notes.length
+               ? el("div", { class: "sub wpn-ammo-note" },
+                   `${mAmmo.name}: ${mAmmo.notes.join(" · ")}`) : null]
           : ["Extra limb (free mount)"];
         // A mounted gun runs a magazine like any other, off its own weapon row's
         // Ammo and Firing modes. Trait gear is derived fresh every recalc from
@@ -2799,7 +2816,7 @@ function shOverview(body) {
         // blade has no modes and keeps the plain Attack; an extra limb is a
         // mount rather than a weapon and gets nothing to press.
         const modes = (g.kind === "weapon" && w) ? RULES.weaponFiringModes(w) : [];
-        const mount = (g.kind === "weapon" && w) ? traitMountState(g.label) : null;
+        const mount = mountEntry;
         const mMode = modes.includes(mount && mount.mode) ? mount.mode : (modes[0] || "");
         const mMd = mMode ? RULES.firingMode(mMode) : { dice: 0, ammo: 0 };
         const mMag = Math.max(0, parseInt(w && w.Ammo, 10) || 0);
@@ -2808,16 +2825,20 @@ function shOverview(body) {
         if (mMd.dice) mBonuses.push({ label: mMode, dice: mMd.dice });
         if (mKata && mount && mount.kata) mBonuses.push({ label: "Gun-Kata", dice: 1 });
         const rs = (g.kind === "weapon" && w)
-          ? weaponRollSpec(w.Weapon, w.Type, w.Accuracy, mBonuses) : null;
+          ? weaponRollSpec(w.Weapon, w.Type, mShot.acc, mBonuses) : null;
         const attack = ro ? null : el("td", {},
           (modes.length && mount)
             ? firingModeControls(mount, w, {}, modes, mMode, mKata, rs, g.label)
             : (g.kind === "weapon" && w) ? attackButton(g.label, rs) : "—");
+        // Loads from the same stock as everything else — a mount is a gun, not
+        // a special case. Melee mounts and limbs take nothing, so they say so.
+        const ammoCell = ro ? null : el("td", { class: "sub" },
+          mount ? munitionPicker(mount, w) : "—");
         tt.append(el("tr", {},
           el("td", {}, el("b", {}, g.label)),
           el("td", { class: "sub" }, ...stats),
           el("td", { class: "sub" }, g.source),
-          attack));
+          attack, ammoCell));
       });
       loadout.append(tt);
     }

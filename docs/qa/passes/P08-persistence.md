@@ -173,7 +173,7 @@ run `localStorage.clear()`.
 
 - **Expected:**
 
-      { "fresh": "200", "current": "200", "unstamped": null,
+      { "fresh": "201", "current": "201", "unstamped": null,
         "unstampedHasKey": true, "stamped": "150" }
 
 - **Note:** `unstamped` must be **null, not the current version**. Every

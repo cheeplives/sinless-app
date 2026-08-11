@@ -577,10 +577,11 @@ label.opt input{margin-top:3px}
 .sh-attr .k{font-size:10px;letter-spacing:.14em;color:var(--dim)}
 .sh-attr .v{font-family:var(--mono);font-size:21px;font-weight:600;color:var(--strong)}
 .sh-attr .adj{font-size:10px;font-family:var(--mono);color:var(--ok)}
-/* The cap floats in the top-right corner: reference, not a reading. Small and
-   dim so it never competes with the value, and it turns red once you're at it. */
-.sh-attr .cap{position:absolute;top:2px;right:4px;font-family:var(--mono);font-size:9px;
-  line-height:1;color:var(--dim);pointer-events:none}
+/* The cap is a superscript on the value, so it reads as "4 out of 20" with no
+   separator eating width. line-height:0 keeps it from growing the line box, and
+   it turns red once you're at the cap. */
+.sh-attr .cap{font-family:var(--mono);font-size:10px;font-weight:400;color:var(--dim);
+  vertical-align:super;line-height:0;margin-left:1px}
 .sh-attr.at-max .cap{color:var(--bad)}
 /* Ghost Rating sits alongside the six but isn't one of them: no cap, wider to
    fit "2d6", and the zoetic purple that marks everything magic in this app. */

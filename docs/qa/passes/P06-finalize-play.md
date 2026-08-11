@@ -596,7 +596,7 @@ path by which play could reach into the creation record.
 - **Steps:** Overview tab on a finalized character.
 - **Check:**
 
-      (async () => { sheetTab = "overview"; renderSheet(); const chips = [...document.querySelectorAll(".sh-attrs .sh-attr")].map(c => ({ k: c.querySelector(".k").textContent, v: c.querySelector(".v").textContent, cap: c.querySelector(".cap") ? c.querySelector(".cap").textContent : null, atMax: c.classList.contains("at-max"), ghost: c.classList.contains("ghost") })); const s = CHAR.play.attribute_advances ? JSON.parse(JSON.stringify(CHAR.play.attribute_advances)) : {}; return { count: chips.length, everyAttrHasCap: chips.filter(c => !c.ghost).every(c => c.cap && +c.cap > 0), capsMatchEngine: chips.filter(c => !c.ghost).every((c, i) => +c.cap === CALC.attributes[RULES.ATTRIBUTES[i]].max), last: chips[chips.length - 1], ghostInHeader: [...document.querySelectorAll(".sheet-head .sh-meter .k")].some(k => /Ghost/.test(k.textContent)) }; })()
+      (async () => { sheetTab = "overview"; renderSheet(); const chips = [...document.querySelectorAll(".sh-attrs .sh-attr")].map(c => ({ k: c.querySelector(".k").textContent, v: c.querySelector(".v").firstChild.nodeValue, cap: c.querySelector(".cap") ? c.querySelector(".cap").textContent : null, atMax: c.classList.contains("at-max"), ghost: c.classList.contains("ghost") })); const s = CHAR.play.attribute_advances ? JSON.parse(JSON.stringify(CHAR.play.attribute_advances)) : {}; return { count: chips.length, everyAttrHasCap: chips.filter(c => !c.ghost).every(c => c.cap && +c.cap > 0), capsMatchEngine: chips.filter(c => !c.ghost).every((c, i) => +c.cap === CALC.attributes[RULES.ATTRIBUTES[i]].max), last: chips[chips.length - 1], ghostInHeader: [...document.querySelectorAll(".sheet-head .sh-meter .k")].some(k => /Ghost/.test(k.textContent)) }; })()
 
 - **Expected:**
 
@@ -614,9 +614,13 @@ path by which play could reach into the creation record.
   20. A hardcoded 20 would pass a casual glance and be wrong for exactly the
   characters who care.
 
-  `last.cap` is `null` on purpose — Ghost has no maximum, so it gets no corner.
-  `atMax` turns the corner red once value meets cap, which is why being maxed
-  reads without doing the comparison yourself.
+  `last.cap` is `null` on purpose — Ghost has no maximum, so it carries no
+  superscript. `atMax` turns it red once value meets cap, which is why being
+  maxed reads without doing the comparison yourself.
+
+  The cap is a **superscript inside `.v`**, so the value has to be read as
+  `.v.firstChild.nodeValue` — `.v.textContent` would return `"420"` for a
+  Strength 4 against a cap of 20 and quietly pass a sloppier assertion.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

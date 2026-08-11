@@ -2749,17 +2749,19 @@ function shOverview(body) {
   const attrsRow = el("div", { class: "sh-attrs" });
   for (const [full, abbr] of ATTR_ABBR) {
     const a = CALC.attributes[full];
-    // The cap floats in the corner rather than sitting in the stack: it's
-    // reference, not a reading, and a "12 / 20" would compete with the value.
-    // Turns red at the cap so being maxed reads without doing the comparison.
+    // The cap rides the value as a superscript — it reads as "4 out of 20"
+    // without a separator competing for width, and it stays tied to the number
+    // it qualifies. Turns red at the cap so being maxed reads without doing the
+    // comparison. NOTE: `.v` now contains the cap, so anything reading the
+    // value out of the DOM wants its first child text node, not textContent.
     attrsRow.append(el("div", {
       class: "sh-attr" + (a.final >= a.max ? " at-max" : ""),
       title: `${full} ${a.final} of a maximum ${a.max}`
         + (a.adjust ? ` (${a.adjust > 0 ? "+" : ""}${a.adjust} from augments and gear)` : ""),
     },
-      el("span", { class: "cap" }, String(a.max)),
       el("div", { class: "k" }, abbr),
-      el("div", { class: "v" }, String(a.final)),
+      el("div", { class: "v" }, String(a.final),
+        el("span", { class: "cap" }, String(a.max))),
       a.adjust ? el("div", { class: "adj" }, (a.adjust > 0 ? "+" : "") + a.adjust) : null));
   }
   // Ghost Rating rides the attribute line: it's a standing figure you read off

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "213";
+const APP_VERSION = "214";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -152,9 +152,19 @@ const HYPERTHYROID_LIFESTYLE_SURCHARGE = 1.10;
  * number the engine applies. */
 const LIFESTYLE_ETIQUETTE_BONUS = { Wealthy: 1 };
 
-const AUGMENTS_THAT_RAISE_MAX = ["Dermal Plating", "Muscle Replacement", "Wired Reflexes",
-                                 "Synaptic Enhancers", "Boosted Reflexes",
-                                 "Muscle Augmentation", "Bone Density"];
+/* Whether an augment lifts an attribute's CEILING as well as its value.
+ *
+ * Muscle Replacement 3 and Strength Enhancement 3 both give +3 Strength; only
+ * the first raises the cap with it. That used to be a list of seven name
+ * prefixes matched with startsWith, which had two problems a data column
+ * doesn't: homebrew could never express the property at all, and a name was
+ * load-bearing -- renaming a core augment silently dropped it, while a homebrew
+ * row called "Muscle Replacement Custom" picked it up by accident.
+ *
+ * "1" for yes, empty for no, following the Oneshot / Integrated Smart flags. */
+function augmentRaisesMax(row) {
+  return String((row && row.RaisesMax) || "").trim() === "1";
+}
 
 // --- skills ------------------------------------------------------------------
 const SKILL_RANK_CAP = 6;
@@ -1531,8 +1541,7 @@ function augmentEffectSums(owned) {
     attributeAdjustment[name] = toInt(sumBy(owned,
       ([row, count]) => asNumber(row[name]) * count));
     attributeMaxAdjustment[name] = toInt(sumBy(owned,
-      ([row, count]) => AUGMENTS_THAT_RAISE_MAX.some(p => row.Name.startsWith(p))
-        ? asNumber(row[name]) * count : 0));
+      ([row, count]) => augmentRaisesMax(row) ? asNumber(row[name]) * count : 0));
   }
   const wiredReflexesRank = maxOf(
     [...names].filter(n => n.startsWith("Wired Reflexes")).map(augmentLevel), 0);
@@ -5101,6 +5110,7 @@ return {
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage, augmentTier, augmentStacks,
+  augmentRaisesMax,
   weaponSkillName,
   specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
   FIRING_MODES, weaponFiringModes, firingMode, parseFiringMode,

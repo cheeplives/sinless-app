@@ -132,6 +132,12 @@ const HOMEBREW_CONFIG = {
     { key: "Intelligence", hint: "+N" },
     { key: "Willpower", hint: "+N" },
     { key: "Charisma", hint: "+N" },
+    // Applies to whichever attribute columns the row sets, so it belongs with
+    // them rather than beside the other flags further down.
+    { key: "RaisesMax", select: () => ["", "1"],
+      optionLabel: v => v === "1"
+        ? "1 (also raises those attributes' maximums)"
+        : "(raises the value only — the cap is unchanged)" },
     { key: "Armor Slot", hint: "N or slot name" },
     { key: "Impact Armor" },
     { key: "ImpArmMin" },

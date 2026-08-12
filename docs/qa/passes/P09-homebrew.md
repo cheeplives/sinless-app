@@ -223,8 +223,16 @@ is not optional, and a leftover QA pack will confuse every later pass.
   rituals, owned vehicles and drones, and a spirit that is infused or bonded.
 
   `bodyMax` at **20** is part of the case: attribute columns raise the value, not
-  the maximum, unless the name matches `AUGMENTS_THAT_RAISE_MAX` — which a
-  homebrew name never will.
+  the maximum. Raising the maximum too is a separate opt-in, the `RaisesMax`
+  column, and this fixture leaves it unset.
+
+  It used to be that a homebrew augment *could not* raise a maximum at all —
+  the engine matched the row's name against a hardcoded `AUGMENTS_THAT_RAISE_MAX`
+  prefix list, which no homebrew name would ever be on. Now that it is a column,
+  add `RaisesMax: "1"` to this fixture's row and `bodyMax` reads **21** — the
+  row's own `Body: "1"` lifting the cap with the value. Worth a spot-check when
+  this pass is run: it is the difference between a homebrew row that can express
+  what Muscle Replacement does and one that can't.
 
   `soundFilter` at 3 guards the migration. Sound Filter's +1 Observation used to
   be a hardcoded `names.has("Sound Filter")` check in `rules.js`, alongside four

@@ -1568,22 +1568,14 @@ function sheetHeader() {
   const pools = el("div", { class: "sh-head-pools" },
     ...POOL_ORDER.map(headerPoolTile), kismetPoolTile());
 
-  const z = CALC.zoetics;
-  const houseZr = RULES.houseRule("zr") === "houserule";
-  const castPen = Math.floor(z.gear_zr);
-  /* ZP and total ZR used to sit here and no longer do. Both are creation
-   * budgets that barely move in play, and both already have a home where you'd
-   * act on them — the Kismet tab spends ZP ("Advance Zoetic Potential"), the
-   * Augments tab shows ZR beside the chrome, and the MAGIC/AMP OFFLINE notes
-   * already shout when ZP goes bad. The header is the only chrome visible from
-   * EVERY tab, so it now carries what you consult every round instead.
-   *
-   * Gear ZR is the exception and survives conditionally: under the house rule
-   * it isn't a budget at all but a live −1d-per-point casting penalty that
-   * moves whenever a caster picks up or drops gear. Same test the Magic tab
-   * uses (houserule + not Hedge), plus "and it's actually biting" — so it
-   * appears exactly when it means something and a mundane never sees it. */
-  const showCastPen = houseZr && CALC.magic.type !== "Hedge" && castPen > 0;
+  /* ZP, total ZR and the ZR casting penalty used to sit here and no longer do.
+   * ZP and ZR are creation budgets that barely move in play, and both already
+   * have a home where you'd act on them — the Kismet tab spends ZP ("Advance
+   * Zoetic Potential"), the Augments tab shows ZR beside the chrome, and the
+   * MAGIC/AMP OFFLINE notes already shout when ZP goes bad. The casting penalty
+   * moved to the Attributes line beside Ghost Rating, where the other standing
+   * per-character figures are. The header is the only chrome visible from EVERY
+   * tab, so it now carries what you consult every round instead. */
 
   const wound = woundPenalty();
   const init = sheetInitiative();
@@ -1620,25 +1612,22 @@ function sheetHeader() {
       el("div", { class: "k" }, RULES.currencyName()),
       el("div", { class: "v" }, fmt(play.cash), el("span", { class: "plus" }, " +"))));
 
-  // Spans both columns rather than making a ragged fifth cell, which also reads
-  // as what it is: a condition currently applying, not a fourth standing stat.
-  if (showCastPen) {
-    right.append(el("div", { class: "sh-meter zoetic sh-meter-wide",
-      title: `${z.gear_zr} ${z.gear_zr === 1 ? "point" : "points"} of gear/weapon ZR`
-        + " — −1d per full point on Channeling, Conjuring and Sorcery" },
-      el("div", { class: "k" }, "ZR Casting Penalty"),
-      el("div", { class: "v" }, `−${castPen}d`)));
-  }
-
   // Freeform character description, sitting between identity and the meters.
   // Editing it in play writes to play, not to the chargen record — a character
   // changing how they look at the table shouldn't rewrite how they were built.
   // Falls back to the chargen text until play has its own.
-  const descField = el("div", { class: "sh-desc" },
-    el("textarea", { class: "sh-desc-input", placeholder: "Character description…",
-      spellcheck: "true",
-      oninput: e => { play.description = e.target.value; schedulePlaySave(); } },
-      play.description ?? CHAR.description ?? ""));
+  const descInput = el("textarea", { class: "sh-desc-input",
+    placeholder: "Character description…", spellcheck: "true",
+    oninput: e => {
+      play.description = e.target.value;
+      autoGrowTextarea(e.target);
+      schedulePlaySave();
+    } },
+    play.description ?? CHAR.description ?? "");
+  // scrollHeight reads 0 while the node is still detached, so the first sizing
+  // has to wait until renderSheet has put it in the document.
+  requestAnimationFrame(() => autoGrowTextarea(descInput));
+  const descField = el("div", { class: "sh-desc" }, descInput);
 
   // Top band: identity (hamburger + name, details underneath) on the left,
   // description in the middle, meters on the right.
@@ -1896,6 +1885,18 @@ function importReportModal(report, fileName) {
     document.addEventListener("keydown", onKey);
     document.body.append(backdrop);
   });
+}
+
+/* Grow a textarea to fit what's in it.
+ *
+ * Height has to be cleared before scrollHeight is read: with a height already
+ * set, scrollHeight reports that height rather than the content's, so the box
+ * would grow and never shrink again when text is deleted. The CSS max-height
+ * caps it and turns on scrolling past that point, so this can't run away. */
+function autoGrowTextarea(ta) {
+  if (!ta || !ta.isConnected) return;
+  ta.style.height = "auto";
+  ta.style.height = `${ta.scrollHeight}px`;
 }
 
 /* Bulk save management: tick several characters, delete them in one go.
@@ -2863,6 +2864,23 @@ function shOverview(body) {
     title: "Ghost Rating — the dice you roll to stay off the grid" },
     el("div", { class: "k" }, "GHOST"),
     el("div", { class: "v" }, CALC.zoetics.ghost_rating || "2d6")));
+  // The ZR casting penalty keeps Ghost company for the same reason: it's a
+  // standing figure about this character, not something you consult every round.
+  // Conditional, and deliberately so — under the house rule gear ZR isn't a
+  // budget but a live −1d-per-point penalty on Channeling, Conjuring and
+  // Sorcery. Same test the Magic tab uses (houserule + not Hedge) plus "and
+  // it's actually biting", so it appears exactly when it means something and a
+  // mundane never sees it at all.
+  const zrCastPen = Math.floor(CALC.zoetics.gear_zr);
+  if (RULES.houseRule("zr") === "houserule"
+      && CALC.magic.type !== "Hedge" && zrCastPen > 0) {
+    attrsRow.append(el("div", { class: "sh-attr zr-pen wide",
+      title: `${CALC.zoetics.gear_zr} `
+        + `${CALC.zoetics.gear_zr === 1 ? "point" : "points"} of gear/weapon ZR`
+        + " — −1d per full point on Channeling, Conjuring and Sorcery" },
+      el("div", { class: "k" }, "ZR CAST"),
+      el("div", { class: "v" }, `−${zrCastPen}d`)));
+  }
   const poolCard = el("div", { class: "card sh-card" }, kismetRow,
     el("h4", { class: "sh-h4" }, "Attributes"), attrsRow);
   if (expandedPool) poolCard.append(poolSkillList(expandedPool));

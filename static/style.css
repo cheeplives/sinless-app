@@ -554,8 +554,17 @@ label.opt input{margin-top:3px}
 .sh-top{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;justify-content:space-between}
 .sh-ident{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:200px;flex:1}
 .sh-ident-top{display:flex;gap:12px;align-items:center}
-.sh-desc{flex:1 1 240px;min-width:220px;max-width:520px;display:flex}
-.sh-desc-input{width:100%;min-height:56px;resize:vertical;background:var(--panel-2);
+/* The description takes whatever width the identity block and the meters leave
+   — no cap, so a wide window gives it the slack instead of stranding it at 520px
+   with empty space either side. It still yields first when things get tight
+   (flex-basis 240px, and the whole row wraps below ~900px). */
+.sh-desc{flex:1 1 240px;min-width:220px;display:flex}
+/* Height is driven by autoGrowTextarea() in sheet.js, which sets it to the
+   content's scrollHeight on every edit. `resize:none` because a manual drag
+   would be silently undone by the next keystroke; max-height stops a long
+   description from pushing the pools off-screen, and it scrolls past that. */
+.sh-desc-input{width:100%;min-height:56px;max-height:220px;resize:none;overflow-y:auto;
+  background:var(--panel-2);
   border:1px solid var(--line);border-radius:8px;color:var(--text);padding:6px 9px;
   font-family:var(--body);font-size:12px;line-height:1.4}
 .sh-desc-input:focus{outline:2px solid var(--manon-dim);outline-offset:1px}
@@ -587,14 +596,16 @@ label.opt input{margin-top:3px}
    fit "2d6", and the zoetic purple that marks everything magic in this app. */
 .sh-attr.ghost{border-color:var(--manon-dim)}
 .sh-attr.ghost .v{color:var(--manon);font-size:18px}
+/* The ZR casting penalty sits beside Ghost as a standing figure, but it is a
+   penalty — red, so it never reads as another stat you're pleased to have. */
+.sh-attr.zr-pen{border-color:var(--bad)}
+.sh-attr.zr-pen .v{color:var(--bad);font-size:18px}
 .sh-attr.wide{width:78px}
 .sh-meters{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
 .sh-meter{border:1px solid var(--line);border-radius:8px;padding:7px 12px 5px;text-align:center;min-width:74px}
 .sh-meter .k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
 .sh-meter .v{font-family:var(--mono);font-size:18px;font-weight:600;color:var(--strong);white-space:nowrap}
 .sh-meter .v .max{font-size:11px;color:var(--dim);font-weight:400}
-.sh-meter.zoetic{border-color:var(--manon-dim)}
-.sh-meter.zoetic .v{color:var(--manon)}
 .sh-meter.cash{border-color:var(--amber);cursor:pointer}
 .sh-meter.cash .v{color:var(--amber)}
 .sh-meter.cash .plus{color:var(--dim);font-size:13px}
@@ -605,9 +616,6 @@ label.opt input{margin-top:3px}
 .sh-meter.init{border-color:var(--roll-dim)}
 .sh-meter.init .v{color:var(--roll)}
 .sh-meter .sub{display:block;font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:1px}
-/* The conditional ZR casting penalty spans the 2-column grid rather than
-   leaving a ragged fifth cell. */
-.sh-meter-wide{grid-column:1 / -1}
 .sh-cmeter.cond{color:var(--bad);border-color:var(--bad)}
 .sh-tabs{display:flex;gap:2px;justify-content:flex-end;flex-wrap:wrap}
 .sh-tabs button{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);

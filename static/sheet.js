@@ -1898,6 +1898,95 @@ function importReportModal(report, fileName) {
   });
 }
 
+/* Bulk save management: tick several characters, delete them in one go.
+ *
+ * "Delete Character" only ever reaches the one that's open, so clearing out a
+ * handful of test builds meant opening each in turn to throw it away. Each row
+ * carries enough to tell near-identical saves apart — heritage, whether it's
+ * finalized, and whether it's open in a tab right now — because the failure
+ * this dialog invites is deleting the wrong one, and a bare list of names is
+ * exactly how that happens.
+ *
+ * Deletion is permanent and, when signed in, propagates to the server through
+ * STORAGE.deleteCharacter, so the confirmation names what's going. */
+function manageSavesModal() {
+  return new Promise(resolve => {
+    const openKeys = new Set(WORKSPACE.tabs
+      .map(t => STORAGE.sanitizeName((t.char || {}).name || ""))
+      .filter(Boolean));
+    const rows = STORAGE.listCharacters().map(key => {
+      const rec = STORAGE.loadCharacter(key) || {};
+      const heritage = (rec.heritage || {}).type || "—";
+      const uplift = (rec.heritage || {}).uplift_type;
+      return {
+        key,
+        label: rec.name || key,
+        detail: [heritage + (uplift ? ` (${uplift})` : ""),
+                 rec.finalized ? "in play" : "in chargen",
+                 rec.app_version ? `v${rec.app_version}` : "unversioned",
+                 openKeys.has(key) ? "open in a tab" : null].filter(Boolean).join(" · "),
+        box: el("input", { type: "checkbox" }),
+      };
+    });
+
+    const backdrop = el("div", { class: "mount-modal-backdrop" });
+    const done = val => { document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(val); };
+    const onKey = e => { if (e.key === "Escape") done(null); };
+
+    const delBtn = el("button", { class: "btn sh-mi-delete", disabled: "1" }, "Delete selected");
+    const chosen = () => rows.filter(r => r.box.checked);
+    const sync = () => {
+      const n = chosen().length;
+      delBtn.textContent = n ? `Delete selected (${n})` : "Delete selected";
+      if (n) delBtn.removeAttribute("disabled"); else delBtn.setAttribute("disabled", "1");
+    };
+    rows.forEach(r => r.box.addEventListener("change", sync));
+
+    delBtn.addEventListener("click", async () => {
+      const picked = chosen();
+      if (!picked.length) return;
+      const names = picked.map(r => r.label);
+      // Name them all up to a point — past that the list stops being readable
+      // and the count is the number that matters.
+      const shown = names.length <= 12
+        ? names.map(n => `  • ${n}`).join("\n")
+        : `${names.slice(0, 12).map(n => `  • ${n}`).join("\n")}\n  …and ${names.length - 12} more`;
+      if (!confirm(`Permanently delete ${names.length} saved character`
+        + `${names.length === 1 ? "" : "s"}?\n\n${shown}\n\n`
+        + "This cannot be undone.")) return;
+      const n = await deleteSavedCharacters(picked.map(r => r.key));
+      done({ deleted: n });
+    });
+
+    const list = rows.length
+      ? el("div", { class: "sh-saves-list" },
+          ...rows.map(r => el("label", { class: "opt sh-saves-row" }, r.box,
+            el("span", {}, el("b", {}, r.label),
+              el("div", { class: "sub" }, r.detail)))))
+      : el("p", { class: "hint" }, "No saved characters.");
+
+    const modal = el("div", { class: "card mount-modal", style: "max-width:560px" },
+      el("h3", {}, "Manage saved characters"),
+      el("p", { class: "hint" },
+        `${rows.length} saved in this browser`
+        + (typeof SYNC !== "undefined" && SYNC.enabled && SYNC.enabled()
+            ? ". You're signed in, so deleting also removes them from your account." : ".")),
+      rows.length ? el("div", { style: "display:flex;gap:8px;margin-bottom:8px" },
+        el("button", { class: "btn small ghost",
+          onclick: () => { rows.forEach(r => { r.box.checked = true; }); sync(); } }, "Select all"),
+        el("button", { class: "btn small ghost",
+          onclick: () => { rows.forEach(r => { r.box.checked = false; }); sync(); } }, "Select none")) : null,
+      list,
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:14px" },
+        rows.length ? delBtn : null,
+        el("button", { class: "btn ghost", onclick: () => done(null) }, "Close")));
+    backdrop.append(modal);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) done(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(backdrop);
+  });
+}
+
 /* Collapsible hamburger menu (upper-left of the sheet header) holding the
  * less-frequent whole-character actions: leaving/reverting chargen state,
  * Homebrew, and import/export. `act()` closes the menu and re-renders once
@@ -2042,6 +2131,9 @@ function sheetMenu() {
     const deleteBtn = el("button", { class: "btn sh-mi-delete", disabled: CHAR.name ? null : "1",
       title: CHAR.name ? "Permanently delete this character's save" : "Character has no name — nothing saved to delete",
       onclick: act(() => deleteSavedCharacter(CHAR.name)) }, "Delete Character");
+    const manageBtn = el("button", { class: "btn sh-mi-delete",
+      title: "Tick several saved characters and delete them in one go",
+      onclick: act(manageSavesModal) }, "Manage saves…");
 
     // Group 5 — Admin / Sign out (danger red; only when signed in).
     const adminBtn = (synced && SYNC.isAdmin())
@@ -2053,7 +2145,7 @@ function sheetMenu() {
       [loadSel, saveBtn, renameBtn, newBtn],
       [importBtn, importMdBtn, exportJsonBtn, exportMdBtn],
       [sharingBtn, sharedBtn, homebrewBtn],
-      [backBtn, resyncBtn, revertBtn, deleteBtn],
+      [backBtn, resyncBtn, revertBtn, deleteBtn, manageBtn],
       [adminBtn, signOutBtn],
     ].map(g => g.filter(Boolean)).filter(g => g.length);
 

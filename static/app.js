@@ -349,11 +349,23 @@ function bindRail() {
 async function deleteSavedCharacter(name) {
   if (!name) return;
   if (!confirm(`Delete ${name}? The saved character is permanently removed.`)) return;
-  STORAGE.deleteCharacter(name);
+  await deleteSavedCharacters([name]);
+}
+
+/* Delete several saves in one go. Every slot is removed FIRST, then the tabs
+ * are closed by name — closing a tab commits the character back to storage
+ * unless told not to, and closing them one at a time in step with the deletes
+ * would let a still-open neighbour resurrect a slot deleted moments earlier.
+ * Confirmation belongs to the caller: this is the mechanism, not the guard. */
+async function deleteSavedCharacters(names) {
+  const list = [...new Set((names || []).filter(Boolean))];
+  if (!list.length) return 0;
+  for (const name of list) STORAGE.deleteCharacter(name);
   refreshLoadList();
-  // If it's open in a tab, close that tab without re-committing (the slot is
-  // gone; committing would resurrect it). Reseeds a blank if it was the last.
-  await closeTabByName(name, false);
+  // Each lookup is fresh because closeTab mutates the tab array. Reseeds a
+  // blank character if this closed the last tab.
+  for (const name of list) await closeTabByName(name, false);
+  return list.length;
 }
 function refreshLoadList() {
   // The rail's Load/Delete selects were removed (character actions live in the

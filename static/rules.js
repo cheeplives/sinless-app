@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "209";
+const APP_VERSION = "210";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -2624,6 +2624,68 @@ function droneCombatBonuses(character, data) {
   return out;
 }
 
+/* ---- enhanced senses -------------------------------------------------------
+ * Everything a character can perceive that an unaugmented person can't, from
+ * wherever it comes: a Bat's echolocation, cyber eyes, a dose of Gleam, a drone
+ * lending you its thermal feed. Scattered across four tables and three tabs
+ * until now, which meant "can I see in the dark?" was a question you answered
+ * by remembering.
+ *
+ * Matched on CAPABILITY PHRASING, not on sense words. "Eyes like a fly, but
+ * softball sized" and "Changes color and shape of eyes" are cosmetic; Cyclopean
+ * is a penalty; an Eye Laser is a weapon; Astral Senses is magic. All mention
+ * eyes or senses and none belongs in this list. Requiring a phrase that
+ * describes PERCEIVING keeps them out, and picks homebrew up for free when it
+ * uses the same wording the core data does. Add a pattern when the data grows a
+ * new way of saying it. */
+const SENSE_PATTERNS = [
+  "ignore[^.]*\\b(?:low.?light|darkness|dark)\\b",
+  "treat darkness",
+  "\\bcan see\\b", "\\bsee better\\b", "\\bsees? in\\b",
+  "\\bthermograph", "\\binfrared\\b", "\\bultraviolet\\b",
+  "\\becholocat", "\\bvision mag", "magnif\\w*\\s+vision",
+  "\\bdetect[^.]*\\b(?:darkness|dark)\\b",
+  "sound filtering", "\\bsonic\\b",
+];
+const SENSE_CLAUSE_RE = new RegExp(SENSE_PATTERNS.join("|"), "i");
+
+/* Split on sentence ends so one clause of a long Effect can qualify without
+ * dragging the rest of it along — Augmented Eyesight's range shift is a combat
+ * note, not a sense. */
+function senseClauses(text) {
+  return String(text || "").split(/(?<=[.;])\s+/)
+    .map(c => c.trim().replace(/^grants\s+/i, ""))
+    .filter(c => c && SENSE_CLAUSE_RE.test(c));
+}
+
+/* [{ text, source, from }] for everything the character currently has. Gear is
+ * included only while carried and drones only while deployed, because both can
+ * be put down — this answers "what can I perceive right now". */
+function deriveSenseNotes(character, data, heritage, augments, droneVision) {
+  const out = [];
+  const add = (from, source, text) => {
+    for (const clause of senseClauses(text)) out.push({ text: clause, source, from });
+  };
+  for (const row of (heritage && heritage.traits) || []) add("Heritage", row.Name, row.Effects);
+  for (const [row] of (augments && augments.rows) || []) add("Augment", row.Name, row.Effect);
+  for (const item of character.gear || []) {
+    if (item.carried === false) continue;
+    const row = findRow(data.misc_gear, "Item", item.name);
+    if (row) add("Gear", item.name, row.Effect);
+  }
+  // Already filtered to deployed drones by droneCombatBonuses.
+  for (const v of droneVision || []) out.push({ text: v.text, source: v.source, from: "Drone" });
+  // Two augments can't grant the same sense twice, and a duplicate reads as a
+  // mistake rather than as twice the capability.
+  const seen = new Set();
+  return out.filter(s => {
+    const key = `${s.source} ${s.text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function scoreKnowledgeSkills(character, finalIntelligence, finalCharisma,
                              knowledgePointsBonus, warnings, errors,
                              etiquetteAdjust) {
@@ -4833,12 +4895,12 @@ function calculate(character) {
   }
   combat.drone_dodge_notes = droneBonus.dodge_notes;
   combat.drone_cover_notes = droneBonus.cover_notes;
-  // A deployed drone's sensors join the character's own optics — same question,
-  // one answer — tagged with the drone so it's clear they leave when it does.
-  if (droneBonus.vision_notes.length) {
-    combat.optics_notes = [...(combat.optics_notes || []),
-      ...droneBonus.vision_notes.map(v => `${v.text} (${v.source})`)];
-  }
+  // Every sense the character has right now, from whichever table grants it.
+  // Deliberately NOT folded into optics_notes: that list is the handful of
+  // augments that change firearm accuracy and range, which is a different
+  // question from what this one answers.
+  combat.senses = deriveSenseNotes(character, data, heritage, augments,
+                                   droneBonus.vision_notes);
   const poolEffects = derivePoolEffects(character, data, heritage, augments, amp);
   const poolNotes = derivePoolNotes(heritage, augments, amp, martialArt, poolEffects);
   // Name the spirit behind each pool bonus that was folded in above, so the

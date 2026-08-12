@@ -3020,6 +3020,22 @@ function shOverview(body) {
     c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
     c.soak_bonus ? statLine("Soak bonus", `+${c.soak_bonus}`, (c.soak_sources || []).join(" · ")) : null,
     statLine("Carried weight", String(c.carried_weight)));
+  // Enhanced Senses closes the card: everything the character can perceive that
+  // an unaugmented person can't, gathered from heritage, chrome, carried gear
+  // and any drone that's out. It sits at the bottom because it's a reference
+  // you consult when the lights go off, not a number you read every round —
+  // and it's absent entirely for a character with ordinary eyes and ears.
+  if ((c.senses || []).length) {
+    combatCard.append(el("h4", { class: "sh-h4", style: "margin-top:10px" }, "Enhanced Senses"));
+    // Capability first, attribution under it. Not statLine: that's a label /
+    // value pair for short labels, and "Vision Magnification 2" in the label
+    // column wraps to three lines in a card this narrow.
+    for (const s of c.senses) {
+      combatCard.append(el("div", { class: "sh-sense" },
+        el("div", {}, s.text),
+        el("div", { class: "sub" }, `${s.source} · ${s.from}`)));
+    }
+  }
   // Dodging is a roll, not a counter, so this card has no number to stare at —
   // it works like Soak: a button that opens the roller pointed at Finesse with
   // your passive dodge dice already in, and a note saying how many those are.

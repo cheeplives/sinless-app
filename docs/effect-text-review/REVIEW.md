@@ -201,21 +201,25 @@ doesn't need it — it has its own per-skill columns (`Observation`, `Recon`,
 `Dodge`, `Shadow`, `Athletics`, …). The other two have nothing, and that's the
 biggest item below.
 
-### Migrate — prose states a flat bonus, column is empty
+### Migrated — prose stated a flat bonus, column was empty
 
-These are safe and behaviour-changing in the right direction: the bonus starts
-being applied. Accepting one means setting the column **and** rewording the
-prose so the two don't restate each other.
+These three stated a Biotech bonus in prose with `Skill Bonus` empty, so the
+bonus was not applied at all. The columns are now set:
 
-| Table | Row | Current prose | → `Skill Bonus` | → `Skill Note` |
+| Table | Row | `Skill Bonus` | `Skill Note` | `Dose` |
 |---|---|---|---|---|
-| `misc_gear` | First Aid Kit | Grant +1 bonus to Biotech tests | `Biotech +1` | — |
-| `misc_gear` | Trauma Kit | Grant +2 bonus to Biotech tests | `Biotech +2` | — |
-| `misc_gear` | Electronic Doctor Kit | Grant +3 bonus to Biotech tests and can re-roll 1s. | `Biotech +3` | `Biotech: reroll 1s` |
+| `misc_gear` | First Aid Kit | `Biotech +1` | — | `1` |
+| `misc_gear` | Trauma Kit | `Biotech +2` | — | `1` |
+| `misc_gear` | Electronic Doctor Kit | `Biotech +3` | `Biotech: reroll 1s` | `1` |
 
 The Electronic Doctor Kit is the shape worth learning from: one sentence holding
 a flat bonus *and* a conditional rider, which is exactly one value for each
 column.
+
+All three are also **one-time use**, so they carry `Dose` and their bonus only
+lands while a dose is live — a kit in your bag is not a kit you have opened. That
+gating happens in `gearSkillEffects`, which is a different code path from the
+pool gating the drugs use, so both are checked by `P06-028`.
 
 ### Already migrated — the prose is now a duplicate
 
@@ -248,6 +252,25 @@ misleading — worth fixing even though nothing computes differently.
 
 The drone case is the one to be careful about. It looks like the most obvious
 migration on the list and is the only one that would actually be wrong.
+
+### Columns added since this review was written
+
+Three landed while the review was open, and they change what some of the prose
+below should say — a sentence stating something a column now carries is a
+duplicate, not a spec.
+
+| Table | Column | Carries |
+|---|---|---|
+| `augments` | `RaisesMax` | whether an attribute bonus lifts the cap too — was seven hardcoded name prefixes |
+| `misc_gear` | `Dose` | consumed on use; gets a Use button and an entry in "Under the Effects Of" |
+| `misc_gear` | `Max Doses` | how many doses stack before the extras stop counting |
+| `amp_powers` | `Skill Bonus` / `Skill Note` | four powers that were hardcoded by name |
+
+`Max Doses` values all come from the rows' own text — Cram's "can chain up to 4",
+Kamakazi's "can double effect", Lick and Rage's "doubling". Those phrases are now
+**restating a column**, so the wording proposals for them should be read with
+that in mind: keep the number a player wants at the table, but it is no longer
+the only place the rule lives.
 
 ### Needs a ruling
 
@@ -295,8 +318,15 @@ explicit yes.
 
 | Table | Row | Engine before | Engine after | Effect of accepting |
 |---|---|---|---|---|
-| `misc_gear` | Lick | — | `pool Finesse+4` | NEW BEHAVIOUR: original has no signed number before the pool name ("Finesse by 4"), so `POOL_DICE_RE` never matches it — the pool bonus is currently invisible on the sheet. `misc_gear.Effect` is wired to the pool parser, so the rewrite genuinely makes `+4d Finesse Pool` appear on the sheet for the first time (this is a real behaviour change, not just wording). UNCLEAR: "10/min" — read here as "10 minutes"; could instead mean "per minute" (an ongoing/stacking effect). Description is blank, so this can't be confirmed from context — flagging rather than guessing further. |
-| `misc_gear` | Rage | — | `pool Brawn+4` | NEW BEHAVIOUR: same defect as Lick ("Brawn by 4" has no signed number before the pool name, so it never matched `POOL_DICE_RE`); rewrite makes `+4d Brawn Pool` visible for the first time. `misc_gear.Effect` is wired to the pool parser (unlike the wound-penalty case on Dorf), so this one really does change what the sheet computes. UNCLEAR: "10/min" — same ambiguity as Lick, same reasoning; not resolvable from the (blank) description. |
+| `misc_gear` | Lick | — | `pool Finesse+4` | NEW BEHAVIOUR: original has no signed number before the pool name ("Finesse by 4"), so `POOL_DICE_RE` never matches it — the pool bonus is currently invisible on the sheet. `misc_gear.Effect` is wired to the pool parser, so the rewrite genuinely makes `+4d Finesse Pool` reachable for the first time (a real behaviour change, not just wording). Lick is now flagged `Dose: 1` with `Max Doses: 2`, so the bonus arrives when a dose is USED rather than as a standing toggle, and stacks to two. UNCLEAR: "10/min" — read here as "10 minutes"; could instead mean "per minute" (an ongoing/stacking effect). Description is blank, so this can't be confirmed from context — flagging rather than guessing further. |
+| `misc_gear` | Rage | — | `pool Brawn+4` | NEW BEHAVIOUR: same defect as Lick ("Brawn by 4" has no signed number before the pool name, so it never matched `POOL_DICE_RE`); rewrite makes `+4d Brawn Pool` reachable for the first time. Rage is now flagged `Dose: 1` with `Max Doses: 2` — its "doubling" — so the bonus arrives on Use and stacks to two. `misc_gear.Effect` is wired to the pool parser (unlike the wound-penalty case on Dorf), so this one really does change what the sheet computes. UNCLEAR: "10/min" — same ambiguity as Lick, same reasoning; not resolvable from the (blank) description. |
+
+Both are now **doses**: `Lick` and `Rage` carry `Dose: 1` and `Max Doses: 2`
+(their "doubling"). So accepting these two rewrites doesn't add a standing
+toggle — it makes the Use button do something when the dose is taken, and lets
+a second dose stack. Until the rewrite lands, both are doses that consume, list
+and dismiss correctly while granting no dice, which is the "No dice effect —
+tracked for the record" state.
 
 ---
 
@@ -373,7 +403,7 @@ established stat abbreviation.
 | Cells reviewed | 684 |
 | Wording changed | 585 |
 | Behaviour changed | 2 |
-| Flagged for a decision | 86 |
+| Flagged for a decision | 83 |
 
 
 ## Flagged rows
@@ -392,7 +422,7 @@ Everything needing a decision beyond accept/reject on the wording.
 | `rituals` | Raise Ward | CONTRADICTS DESC — Description ties the 1000 cubic meter cap to Zoetic Potential ("for every point of her Zoetic Potential"); Effect states it as a flat cap with no ZP term. Flagging, not renumbering. |
 
 
-### CHECK (24)
+### CHECK (21)
 
 | Table | Row | Note |
 |---|---|---|
@@ -402,9 +432,6 @@ Everything needing a decision beyond accept/reject on the wording.
 | `martial_arts` | Way of the Tank | **CHECK**: kept the literal word "vs" — the style guide's normal rule would spell it out to "versus", but the dodge-dice veto only fires on literal `\bvs\b`/`\bif\b`. Writing "versus" here would silently turn this into a permanent +4d Dodge bonus. Do not canonicalize this word. |
 | `drones` | VSTOL Bird | **CHECK**: the -6d is a penalty on the drone's TARGET, not the operator. It currently produces no hit only because the text says "Stealth" and not the real skill name "Shadow" — pure luck, per the task brief. Deliberately kept "Stealth" (not "Shadow") in the same clause as the number: writing "Shadow" here would make `droneSkillDice` read it as a real -6d Shadow malus handed to the drone's OPERATOR. Do not rename this to "Shadow" without also restructuring how this row is parsed. |
 | `misc_gear` | Dorf | CHECK — not wired: "wound pen" is two characters short of `/wound penalt/i`, but fixing the wording alone can't make this work — `removesWoundPenalty` (rules.js:4987) is only ever applied to augments, martial-art levels, and heritage traits; `misc_gear` is never handed to it. Standardizing the wording is worth doing for consistency, but the immunity needs a rules.js change (teaching `removesWoundPenalty` to read `misc_gear.Effect`) before it can appear on a sheet. Dorf is the only drug in this table that claims wound-penalty immunity. |
-| `misc_gear` | First Aid Kit | CHECK: flat skill bonus stated in prose — a structured Skill Bonus column is the better mechanism per the style guide's Skill dice section. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
-| `misc_gear` | Trauma Kit | CHECK: same as First Aid Kit — flat skill bonus in prose, candidate for a structured Skill Bonus column. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
-| `misc_gear` | Electronic Doctor Kit | CHECK: same as First Aid Kit/Trauma Kit — flat skill bonus in prose, candidate for a structured Skill Bonus column. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
 | `spells` | Shatter Ward | CHECK — original reuses the word "Force" for both the caster's Force and the ward's Force without distinguishing them (`Force<Force+Success`). Rewrite disambiguates per Description's wording; no number or comparison changed. |
 | `spells` | Forbidden Glamour of Accord | TYPO — "Negotiaion" → "Negotiation"; duplicated "vs vs" → "versus". CHECK — flat skill-dice bonus stated only in prose; style guide prefers a structured Skill Bonus column for this. |
 | `spells` | The Ancestral Working of the Savage Peal | CHECK — "Armor" added for clarity, sourced from Description (original just said "barriers<Force-1"). Also Effect's strict `<` is tighter than Description's "equal to or less than"; flagging the mismatch, not resolving it. |
@@ -438,8 +465,8 @@ Everything needing a decision beyond accept/reject on the wording.
 | `martial_arts` | Gun-Kata | **UNCLEAR**: "SS" isn't defined anywhere in the packet (likely a firearms fire-mode abbreviation); left unexpanded rather than guessing at its meaning. |
 | `martial_arts` | Gun-Kata | **UNCLEAR**: whose Firearms skill and how large the penalty is aren't specified by the original; ambiguity preserved. |
 | `rig_mods` | Electronic Countermeasures | **UNCLEAR**: doesn't say whose drones/vehicles (enemy, presumably, given the name) — ambiguity kept from the original rather than assumed. |
-| `misc_gear` | Lick | NEW BEHAVIOUR: original has no signed number before the pool name ("Finesse by 4"), so `POOL_DICE_RE` never matches it — the pool bonus is currently invisible on the sheet. `misc_gear.Effect` is wired to the pool parser, so the rewrite genuinely makes `+4d Finesse Pool` appear on the sheet for the first time (this is a real behaviour change, not just wording). UNCLEAR: "10/min" — read here as "10 minutes"; could instead mean "per minute" (an ongoing/stacking effect). Description is blank, so this can't be confirmed from context — flagging rather than guessing further. |
-| `misc_gear` | Rage | NEW BEHAVIOUR: same defect as Lick ("Brawn by 4" has no signed number before the pool name, so it never matched `POOL_DICE_RE`); rewrite makes `+4d Brawn Pool` visible for the first time. `misc_gear.Effect` is wired to the pool parser (unlike the wound-penalty case on Dorf), so this one really does change what the sheet computes. UNCLEAR: "10/min" — same ambiguity as Lick, same reasoning; not resolvable from the (blank) description. |
+| `misc_gear` | Lick | NEW BEHAVIOUR: original has no signed number before the pool name ("Finesse by 4"), so `POOL_DICE_RE` never matches it — the pool bonus is currently invisible on the sheet. `misc_gear.Effect` is wired to the pool parser, so the rewrite genuinely makes `+4d Finesse Pool` reachable for the first time (a real behaviour change, not just wording). Lick is now flagged `Dose: 1` with `Max Doses: 2`, so the bonus arrives when a dose is USED rather than as a standing toggle, and stacks to two. UNCLEAR: "10/min" — read here as "10 minutes"; could instead mean "per minute" (an ongoing/stacking effect). Description is blank, so this can't be confirmed from context — flagging rather than guessing further. |
+| `misc_gear` | Rage | NEW BEHAVIOUR: same defect as Lick ("Brawn by 4" has no signed number before the pool name, so it never matched `POOL_DICE_RE`); rewrite makes `+4d Brawn Pool` reachable for the first time. Rage is now flagged `Dose: 1` with `Max Doses: 2` — its "doubling" — so the bonus arrives on Use and stacks to two. `misc_gear.Effect` is wired to the pool parser (unlike the wound-penalty case on Dorf), so this one really does change what the sheet computes. UNCLEAR: "10/min" — same ambiguity as Lick, same reasoning; not resolvable from the (blank) description. |
 | `misc_gear` | Cased | UNCLEAR: "for any" trails off — any what (weapon type)? Left as in the original rather than guessing a completion. |
 | `programs` | Decoy 1 | UNCLEAR: "IRL" resolved from Description as "in range of influence" — out of context it reads as "in real life." |
 | `programs` | Decoy 2 | UNCLEAR: "IRL" resolved from Description as "in range of influence" — out of context it reads as "in real life." |
@@ -968,12 +995,12 @@ Review only. No repo files were modified. 137 rows processed.
 | 13 | BioGel | Heals 2 Physical Condition boxes when applied | Heals 2 Physical Condition boxes when applied. | — | |
 | 14 | Blood Thinners | Required if Platelet Production Enhancement is purchased | Requires Platelet Production Enhancement. | — | Applies the Requirements canonical form given verbatim in the style guide ("Requires Platelet Production Enhancement."). Not parser-critical — the Requirements section carries no rules.js citation, unlike Pool/Sense/Wound/Cover/Recoil. |
 | 15 | Gleam | See better in dark for 8 hours, but affected by bright lights. Calmness and invulnerability | Can see in darkness for 8 hours, but affected by bright lights. Calmness and invulnerability. | `sense: Sees in darkness / low light` | |
-| 16 | Lick | Increase Finesse by 4 for 10/min. Doubling increases Dep to 3. | +4d Finesse Pool for 10 minutes. Doubling increases Dep to 3. | — | NEW BEHAVIOUR: original has no signed number before the pool name ("Finesse by 4"), so `POOL_DICE_RE` never matches it — the pool bonus is currently invisible on the sheet. `misc_gear.Effect` is wired to the pool parser, so the rewrite genuinely makes `+4d Finesse Pool` appear on the sheet for the first time (this is a real behaviour change, not just wording). UNCLEAR: "10/min" — read here as "10 minutes"; could instead mean "per minute" (an ongoing/stacking effect). Description is blank, so this can't be confirmed from context — flagging rather than guessing further. |
-| 17 | Rage | Increase Brawn by 4 for 10/min. Doubling increases Dep to 3. | +4d Brawn Pool for 10 minutes. Doubling increases Dep to 3. | — | NEW BEHAVIOUR: same defect as Lick ("Brawn by 4" has no signed number before the pool name, so it never matched `POOL_DICE_RE`); rewrite makes `+4d Brawn Pool` visible for the first time. `misc_gear.Effect` is wired to the pool parser (unlike the wound-penalty case on Dorf), so this one really does change what the sheet computes. UNCLEAR: "10/min" — same ambiguity as Lick, same reasoning; not resolvable from the (blank) description. |
+| 16 | Lick | Increase Finesse by 4 for 10/min. Doubling increases Dep to 3. | +4d Finesse Pool for 10 minutes. Doubling increases Dep to 3. | — | NEW BEHAVIOUR: original has no signed number before the pool name ("Finesse by 4"), so `POOL_DICE_RE` never matches it — the pool bonus is currently invisible on the sheet. `misc_gear.Effect` is wired to the pool parser, so the rewrite genuinely makes `+4d Finesse Pool` reachable for the first time (a real behaviour change, not just wording). Lick is now flagged `Dose: 1` with `Max Doses: 2`, so the bonus arrives when a dose is USED rather than as a standing toggle, and stacks to two. UNCLEAR: "10/min" — read here as "10 minutes"; could instead mean "per minute" (an ongoing/stacking effect). Description is blank, so this can't be confirmed from context — flagging rather than guessing further. |
+| 17 | Rage | Increase Brawn by 4 for 10/min. Doubling increases Dep to 3. | +4d Brawn Pool for 10 minutes. Doubling increases Dep to 3. | — | NEW BEHAVIOUR: same defect as Lick ("Brawn by 4" has no signed number before the pool name, so it never matched `POOL_DICE_RE`); rewrite makes `+4d Brawn Pool` reachable for the first time. Rage is now flagged `Dose: 1` with `Max Doses: 2` — its "doubling" — so the bonus arrives on Use and stacks to two. `misc_gear.Effect` is wired to the pool parser (unlike the wound-penalty case on Dorf), so this one really does change what the sheet computes. UNCLEAR: "10/min" — same ambiguity as Lick, same reasoning; not resolvable from the (blank) description. |
 | 18 | Stims | Heal 1d6 Stun Condition Boxes on use | Heal 1d6 Stun Condition Boxes on use. | — | |
-| 19 | First Aid Kit | Grant +1 bonus to Biotech tests | +1d Biotech. | — | CHECK: flat skill bonus stated in prose — a structured Skill Bonus column is the better mechanism per the style guide's Skill dice section. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
-| 20 | Trauma Kit | Grant +2 bonus to Biotech tests | +2d Biotech. | — | CHECK: same as First Aid Kit — flat skill bonus in prose, candidate for a structured Skill Bonus column. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
-| 21 | Electronic Doctor Kit | Grant +3 bonus to Biotech tests and can re-roll 1s. | +3d Biotech. Reroll 1s on Biotech tests. | — | CHECK: same as First Aid Kit/Trauma Kit — flat skill bonus in prose, candidate for a structured Skill Bonus column. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
+| 19 | First Aid Kit | Grant +1 bonus to Biotech tests | Single use. +1d Biotech while applied. | — | **MIGRATED** — the bonus now lives in the row's `Skill Bonus` column (`Biotech +1`) and the row is flagged `Dose: 1`, so it applies only while a dose is in use rather than while the kit sits in your bag. The prose keeps the number because it is worth reading at the table, but the column is what the engine applies. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
+| 20 | Trauma Kit | Grant +2 bonus to Biotech tests | Single use. +2d Biotech while applied. | — | **MIGRATED** — `Skill Bonus: Biotech +2`, `Dose: 1`. Same treatment as the First Aid Kit. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
+| 21 | Electronic Doctor Kit | Grant +3 bonus to Biotech tests and can re-roll 1s. | Single use. +3d Biotech while applied. Reroll 1s on Biotech tests. | — | **MIGRATED** — `Skill Bonus: Biotech +3` plus `Skill Note: Biotech: reroll 1s`, `Dose: 1`. The one row in the table that splits cleanly across both columns. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
 | 22 | Arwin, Sleek | Augmented Reality Window, palm sized | Augmented Reality Window, palm-sized. | — | |
 | 23 | Arwin, Classic | Augmented Reality Window, expandable to 12" screen | Augmented Reality Window, expandable to 12" screen. | — | |
 | 24 | Arwin, Galactic | Augmented Reality Winow, expandable to 32" screen | Augmented Reality Window, expandable to 32" screen. | — | TYPO: "Winow" → "Window". |

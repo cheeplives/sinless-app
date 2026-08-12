@@ -623,6 +623,59 @@ path by which play could reach into the creation record.
   Strength 4 against a cap of 20 and quietly pass a sloppier assertion.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-028: A dose does nothing until it is taken, and stops at its cap
+- **Type:** correctness
+- **Steps:** Any finalized character. The check builds its own gear and doses
+  and clears them again, so it can be run on the fixture in place.
+- **Check:**
+
+      (() => { const c = CHAR; c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; for (const a of RULES.ATTRIBUTES) c.attributes[a] = 3; c.skills = { Biotech: 2 }; c.gear = [{ name: "Cram", qty: 3 }, { name: "First Aid Kit", qty: 2 }, { name: "Glitter", qty: 1 }]; c.finalized = true; ensurePlay(); CHAR.play.doses = []; recalc(); const read = () => { recalc(); return { focus: CALC.pools.Focus + poolEffectMod("Focus"), biotech: CALC.skills.Biotech.final }; }; const cram = CHAR.gear.find(g => g.name === "Cram"); const out = { carriedUnused: read(), qtyBefore: cram.qty }; const row = DATA.tables.misc_gear.find(r => r.Item === "Cram"); shUseDoseBtn(cram, row, cram.qty).dispatchEvent(new MouseEvent("click")); out.qtyAfterUse = cram.qty; out.afterOneCram = read(); takeDose("Cram"); takeDose("Cram"); takeDose("Cram"); takeDose("Cram"); out.fiveCram = read(); out.cramTally = doseTally("Cram"); takeDose("First Aid Kit"); out.kitUsed = read(); takeDose("First Aid Kit"); out.kitTwice = read(); takeDose("Glitter"); out.glitterSummary = doseSummary("Glitter"); out.doseCount = activeDoses().length; CHAR.play.doses = []; out.allWornOff = read(); return out; })()
+
+- **Expected:**
+
+      { "carriedUnused": { "focus": 5, "biotech": 2 },
+        "qtyBefore": 3, "qtyAfterUse": 2,
+        "afterOneCram":  { "focus": 7,  "biotech": 2 },
+        "fiveCram":      { "focus": 13, "biotech": 2 },
+        "cramTally": { "taken": 5, "counted": 4, "cap": 4 },
+        "kitUsed":       { "focus": 13, "biotech": 3 },
+        "kitTwice":      { "focus": 13, "biotech": 3 },
+        "glitterSummary": "",
+        "doseCount": 8,
+        "allWornOff":    { "focus": 5,  "biotech": 2 } }
+
+- **Note:** `carriedUnused` is the case. Cram and a First Aid Kit are in the
+  character's hands and neither is doing anything — Focus 5, Biotech 2. Owning a
+  consumable is not using it, and if either number is already raised here the
+  Use button is decoration and the bonus is permanent.
+
+  That guarantee runs through two separate paths, which is why both a pool and a
+  skill are read. Cram's dice come from `pool_effects`, gated in the sheet;
+  the medkits' come from their `Skill Bonus` column, gated in `gearSkillEffects`
+  (rules.js). A regression in either one alone would still leave the other
+  looking right.
+
+  `qtyBefore`/`qtyAfterUse` prove Use spends the dose. Nothing else in the sheet
+  decrements a stack as a side effect, so 3 → 2 is attributable.
+
+  **The caps.** Cram's row says "can chain up to 4", and `Max Doses` is 4:
+  five doses are held, four pay out, so Focus is 5 + 4×2 = **13** and not 15.
+  `cramTally` states that split directly — `taken` 5, `counted` 4 — because the
+  fifth dose must still be *listed* (you took it, and Dependence cares) while
+  contributing nothing. The First Aid Kit caps at 1: `kitUsed` and `kitTwice`
+  are identical, which is the same rule reaching the skill path.
+
+  `glitterSummary` is empty on purpose. Glitter is a real dose with no dice
+  effect, and it still consumes, still lists, still gets a dismiss — the banner
+  says "No dice effect — tracked for the record" rather than hiding it. A
+  non-empty string here means something is inventing a bonus from its prose.
+
+  `allWornOff` returning to the `carriedUnused` numbers is the lossless check:
+  dismissing every dose restores exactly the pools and skills you started with.
+  A drift of even 1 means a dose wrote into a stored total instead of being
+  applied on top of it.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

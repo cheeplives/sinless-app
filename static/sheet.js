@@ -1973,19 +1973,17 @@ function dosesBanner() {
   const groups = [];
   for (const d of doses) {
     let g = groups.find(x => x.name === d.name);
-    if (!g) groups.push(g = { name: d.name, uids: [], effect: doseEffectFor(d.name) });
+    if (!g) {
+      const row = (DATA.tables.misc_gear || []).find(r => r.Item === d.name);
+      groups.push(g = { name: d.name, uids: [], effect: doseEffectFor(d.name),
+                        // The row's own Effect prose, so the ruling is at hand
+                        // for doses whose effect isn't dice at all.
+                        text: (row && row.Effect) || "" });
+    }
     g.uids.push(d.uid);
   }
 
-  const swingOf = g => {
-    if (!g.effect) return "";
-    const { counted } = doseTally(g.effect);
-    return Object.entries(g.effect.pools)
-      .map(([p, n]) => {
-        const total = n * counted;
-        return `${total > 0 ? "+" : "−"}${Math.abs(total)} ${p}`;
-      }).join(" · ");
-  };
+  const swingOf = g => doseSummary(g.name);
 
   const card = el("div", { class: "sh-callout warn sh-doses" },
     el("div", { class: "sh-doses-head" },
@@ -2007,8 +2005,8 @@ function dosesBanner() {
   }
 
   for (const g of groups) {
-    const tally = g.effect ? doseTally(g.effect) : null;
-    const over = tally && tally.taken > tally.counted;
+    const tally = doseTally(g.name);
+    const over = tally.taken > tally.counted;
     const swing = swingOf(g);
     const row = el("div", { class: "sh-dose-row" },
       el("div", { class: "sh-dose-what" },
@@ -2018,8 +2016,8 @@ function dosesBanner() {
         // Says why the third Cram isn't doing anything, at the moment it stops.
         over ? el("div", { class: "sub warn-text" },
           `${tally.taken} taken, ${tally.counted} counting — stacks up to ${tally.cap}`) : null,
-        g.effect ? el("div", { class: "sh-fx-text sub", title: g.effect.text }, g.effect.text)
-                 : el("div", { class: "sub" }, "No dice effect — tracked for the record")),
+        g.text ? el("div", { class: "sh-fx-text sub", title: g.text }, g.text)
+               : el("div", { class: "sub" }, "No dice effect — tracked for the record")),
       ro ? null : el("div", { class: "sh-dose-btns" },
         ...g.uids.map((uid, i) =>
           el("button", { class: "btn small",
@@ -4953,15 +4951,13 @@ function shUsesStepper(entry, onChange, unit = "use") {
  * there as a reminder to restock, and a button that vanished at zero would read
  * as "this isn't a drug any more". */
 function shUseDoseBtn(entry, row, owned) {
-  const fx = doseEffectFor(entry.name);
   const cap = RULES.gearMaxDoses(row);
   const live = doseCount(entry.name);
-  const swing = fx ? Object.entries(fx.pools)
-    .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" · ") : "";
+  const swing = doseSummary(entry.name);
 
   let title;
   if (!owned) title = `None left — restock ${entry.name} before taking one`;
-  else if (fx && live >= cap)
+  else if (swing && live >= cap)
     title = `Take one more ${entry.name}. ${cap} already counting, so this dose `
           + `adds nothing (stacks up to ${cap}) — but it still leaves the stack`;
   else title = `Take one ${entry.name}`
@@ -7534,11 +7530,16 @@ function doseCount(name) {
   return activeDoses().filter(d => d.name === name).length;
 }
 
-/* How many doses of this effect are actually paying out, and how many were
- * taken. `taken > counted` is what the panel reports as over the cap. */
-function doseTally(e) {
-  const taken = doseCount(e.label);
-  const cap = Math.max(1, +(e.max_doses || 1));
+/* How many doses of this drug are actually paying out, and how many were taken.
+ * `taken > counted` is what the banner reports as over the cap.
+ *
+ * Keyed by name and read off the data row rather than the enumerated pool
+ * effect, because a dose need not have one: the medkits' whole effect is a
+ * Skill Bonus, and they still stack to a cap like everything else. */
+function doseTally(name) {
+  const row = (DATA.tables.misc_gear || []).find(r => r.Item === name);
+  const cap = row ? RULES.gearMaxDoses(row) : 1;
+  const taken = doseCount(name);
   return { taken, counted: Math.min(taken, cap), cap };
 }
 
@@ -7559,10 +7560,46 @@ function doseEffectFor(name) {
   return poolEffects().find(e => e.dose && e.label === name) || null;
 }
 
+/* What a dose is worth, as a line of text, for the banner and the Use tooltip.
+ *
+ * Pool dice come from the enumerated effect; skill dice come off the row's own
+ * columns, because gearSkillEffects applies those and they never enter
+ * pool_effects. The kits are the reason this exists — their whole effect is
+ * "Biotech +1", and a banner that called that "no dice effect" would be lying. */
+function doseSummary(name) {
+  const parts = [];
+  const fx = doseEffectFor(name);
+  if (fx) {
+    const { counted } = doseTally(name);
+    for (const [p, n] of Object.entries(fx.pools)) {
+      const total = n * Math.max(1, counted);
+      parts.push(`${total > 0 ? "+" : "−"}${Math.abs(total)} ${p}`);
+    }
+  }
+  const row = (DATA.tables.misc_gear || []).find(r => r.Item === name);
+  if (row) {
+    // Same "how many are counting" rule the dice use, so the text can't claim a
+    // total the engine isn't applying. Reads as 1 before any dose is taken, so
+    // the Use tooltip can say what one dose will be worth.
+    const times = Math.min(Math.max(1, doseCount(name)), RULES.gearMaxDoses(row));
+    for (const part of String(row["Skill Bonus"] || "").split(",")) {
+      const m = /^(.+?)\s*([+-]\s*\d+)$/.exec(part.trim());
+      if (!m) continue;
+      const n = parseInt(m[2].replace(/\s+/g, ""), 10) * times;
+      parts.push(`${n > 0 ? "+" : "−"}${Math.abs(n)} ${m[1].trim()}`);
+    }
+    for (const part of String(row["Skill Note"] || "").split("|")) {
+      const m = /^(.+?)\s*:\s*(.+)$/.exec(part.trim());
+      if (m) parts.push(`${m[1].trim()}: ${m[2].trim()}`);
+    }
+  }
+  return parts.join(" · ");
+}
+
 function poolEffectOn(id) {
   const e = poolEffects().find(x => x.id === id);
   // A dose effect ignores the switch entirely: it's on because a dose is live.
-  if (e && e.dose) return doseTally(e).counted > 0;
+  if (e && e.dose) return doseTally(e.label).counted > 0;
   return !!((CHAR.play.pool_effects || {})[id]);
 }
 
@@ -7578,7 +7615,7 @@ function poolEffectMod(pool) {
   let n = 0;
   for (const e of activePoolEffects()) {
     const each = e.pools[pool] || 0;
-    n += e.dose ? each * doseTally(e).counted : each;
+    n += e.dose ? each * doseTally(e.label).counted : each;
   }
   return n;
 }

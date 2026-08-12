@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "216";
+const APP_VERSION = "217";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -3838,15 +3838,23 @@ function canonicalSkillName(name) {
 function gearSkillEffects(character, data, warnings) {
   const bonus = {}, notes = {}, sources = [];
   const nameOf = x => (x && typeof x === "object") ? x.name : x;
-  const apply = (row, label) => {
+  /* `times` is how many copies are contributing — 1 for anything you simply
+   * own, and the number of counting doses for a consumable. 0 means the thing is
+   * present but doing nothing (an unused kit in your bag), so it contributes no
+   * dice and no note, but its text is still validated: a typo should be reported
+   * whether or not the item happens to be in use right now. */
+  const apply = (row, label, times = 1) => {
     if (!row) return;
     const warn = msg => warnings && warnings.push(`${label}: Skill Bonus — ${msg}.`);
     for (const b of parseSkillBonuses(row["Skill Bonus"], warn)) {
-      bonus[b.skill] = (bonus[b.skill] || 0) + b.bonus;
-      sources.push({ skill: b.skill, bonus: b.bonus, label });
+      if (times < 1) continue;
+      bonus[b.skill] = (bonus[b.skill] || 0) + b.bonus * times;
+      sources.push({ skill: b.skill, bonus: b.bonus * times, label });
     }
     const warnNote = msg => warnings && warnings.push(`${label}: Skill Note — ${msg}.`);
     for (const n of parseSkillNotes(row["Skill Note"], warnNote)) {
+      // A note is a rider, not a quantity: two doses don't make it truer.
+      if (times < 1) continue;
       (notes[n.skill] = notes[n.skill] || []).push(`${n.note} (${label})`);
     }
   };
@@ -3861,7 +3869,22 @@ function gearSkillEffects(character, data, warnings) {
 
   rowsOf(character.augments, "augments", "Name");
   rowsOf(character.armor, "armor", "Armor", e => e.active !== false);
-  rowsOf(character.gear, "misc_gear", "Item", e => e.carried !== false);
+  // Gear, with consumables gated on actually having been used. A First Aid Kit
+  // in your bag is not a First Aid Kit you have opened, so its Biotech dice only
+  // land while a dose of it is live — which is what makes "one-time use" mean
+  // anything. Ordinary carried gear is unchanged.
+  const doseList = ((character.play || {}).doses) || [];
+  for (const e of character.gear || []) {
+    if (e.carried === false) continue;
+    const name = nameOf(e);
+    if (!name) continue;
+    const row = findRow(data.misc_gear, "Item", name);
+    if (!row) continue;
+    if (gearIsDose(row)) {
+      const live = doseList.filter(d => d && d.name === name).length;
+      apply(row, name, Math.min(live, gearMaxDoses(row)));
+    } else apply(row, name);
+  }
   rowsOf(character.weapons, "weapons", "Weapon", e => e.equipped !== false);
   rowsOf(character.decks, "decks", "Name");
   rowsOf(character.programs, "programs", "Name");

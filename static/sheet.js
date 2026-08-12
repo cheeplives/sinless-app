@@ -2664,6 +2664,18 @@ function gunKataRank() {
   return ma ? (+ma.rank || 0) : 0;
 }
 
+/* Gun-Kata is a pistol-and-SMG discipline, so the +1 bullet is only offered on
+ * those — not on a rifle, a shotgun or a vehicle's autocannon.
+ *
+ * Tested against the weapon's Type TEXT rather than a fixed list of codes,
+ * because the two sources spell it differently: the weapons table uses
+ * "PistolLt" / "PistolMed" / "PistolHvy" / "SMG", while cyberguns carry prose
+ * ("Palm Pistol", "Forearm SMG", "Heavy Pistol"). One test covers both, and
+ * homebrew of either shape comes along for free. */
+function gunKataFitsWeapon(type) {
+  return /pistol|smg/i.test(String(type || ""));
+}
+
 /* Per-shot heat and its cap for an Energy weapon. The structured "Heat" /
    "Max Heat" columns win; failing those it parses the prose the core rows also
    carry ("Heat 3 / max 15"). Columns first because they're what the homebrew
@@ -3296,7 +3308,8 @@ function shOverview(body) {
         const mMode = modes.includes(mount && mount.mode) ? mount.mode : (modes[0] || "");
         const mMd = mMode ? RULES.firingMode(mMode) : { dice: 0, ammo: 0 };
         const mMag = Math.max(0, parseInt(w && w.Ammo, 10) || 0);
-        const mKata = gunKataRank() >= 2 && mMag > 0 && modes.length > 0;
+        const mKata = gunKataRank() >= 2 && mMag > 0 && modes.length > 0
+          && gunKataFitsWeapon(w && w.Type);
         const mBonuses = [];
         if (mMd.dice) mBonuses.push({ label: mMode, dice: mMd.dice });
         if (mKata && mount && mount.kata) mBonuses.push({ label: "Gun-Kata", dice: 1 });
@@ -3369,9 +3382,10 @@ function shOverview(body) {
                         : { ...base })
             : (ammo.row ? RULES.applyAmmoStats(base, ammo.mods) : { ...base });
           // Gun-Kata 2 buys an extra bullet: +1 die for 1 more round. Opt-in per
-          // weapon, and only offered to a gun that actually feeds from a magazine.
+          // weapon, offered only to a pistol or SMG that feeds from a magazine.
           const magSize = Math.max(0, parseInt(calcRow.Ammo ?? r.Ammo, 10) || 0);
-          const kataOffered = gunKataRank() >= 2 && magSize > 0 && modes.length > 0;
+          const kataOffered = gunKataRank() >= 2 && magSize > 0 && modes.length > 0
+            && gunKataFitsWeapon(r.Type);
           const kataOn = kataOffered && !!w.kata;
           const bonuses = [];
           if (md.dice) bonuses.push({ label: mode, dice: md.dice });
@@ -3430,7 +3444,10 @@ function shOverview(body) {
           const cgMode = cgModes.includes(cg.src.mode) ? cg.src.mode : (cgModes[0] || "");
           const cgMd = cgMode ? RULES.firingMode(cgMode) : { dice: 0, ammo: 0 };
           const cgMag = Math.max(0, parseInt(g.Ammo, 10) || 0);
-          const cgKataOffered = gunKataRank() >= 2 && cgMag > 0 && cgModes.length > 0;
+          // Cybergun Types are prose ("Palm Pistol", "Forearm SMG"), which the
+          // same test reads — a Shotgun cybergun is correctly left out.
+          const cgKataOffered = gunKataRank() >= 2 && cgMag > 0 && cgModes.length > 0
+            && gunKataFitsWeapon(g.Type);
           const cgBonuses = [];
           if (cgMd.dice) cgBonuses.push({ label: cgMode, dice: cgMd.dice });
           if (cgKataOffered && cg.src.kata) cgBonuses.push({ label: "Gun-Kata", dice: 1 });

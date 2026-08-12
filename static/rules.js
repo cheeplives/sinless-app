@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "206";
+const APP_VERSION = "208";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -2752,6 +2752,30 @@ function budgetMagic(character, data, magicType, warnings, errors) {
  * Returns { assigned: {slot: modName}, overflow: [modName] } where overflow is
  * every mod left without a free slot.
  */
+/* Mods built into a weapon at the factory. Two things follow from "integrated",
+ * and the second is the one that's easy to miss: the mod is fitted free, AND it
+ * does not consume its slot — a Ninja's suppressor is inside the barrel, so the
+ * underbarrel rail is still empty. That's what lets an integrated weapon take
+ * one more mod of the same kind than a bare one could.
+ *
+ * Comma-separated in the data ("Integrated Mods"), so a weapon can carry more
+ * than one. Names must match the weapon_mods table; an unknown one is dropped
+ * rather than half-applied. */
+function weaponIntegratedMods(row, modsTable) {
+  const names = String((row && row["Integrated Mods"]) || "")
+    .split(",").map(s => s.trim()).filter(Boolean);
+  if (!names.length) return [];
+  const table = modsTable || [];
+  return names.filter(n => table.some(m => m.Modification === n));
+}
+
+/* A sealed, single-load weapon: the magazine is the weapon. Fires normally and
+ * then it's spent, so the sheet offers no Reload. */
+function weaponIsOneshot(row) {
+  return String((row && row.Oneshot) || "").trim() === "1";
+}
+const ONESHOT_NOTE = "Polymer Oneshot, cannot be reloaded";
+
 function assignWeaponModSlots(modNames, modsTable) {
   const order = ["Overbarrel", "Underbarrel", "Chassis"];
   const slotsByMod = {};
@@ -2860,6 +2884,18 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
     const fittedMods = [];
     let accMod = 0;
     let concealMod = 0;
+    // Built in at the factory: same stat effects as a bolted-on one, no cost,
+    // and no slot consumed. Applied first so a duplicate the player chose is
+    // recognisable below.
+    const integratedNames = weaponIntegratedMods(row, data.weapon_mods);
+    const integratedMods = [];
+    for (const modName of integratedNames) {
+      const modRow = findRow(data.weapon_mods, "Modification", modName);
+      accMod += asNumber(modRow.AccMod);
+      concealMod += asNumber(modRow["Conceal Mod"]);
+      integratedMods.push({ name: modName, slot: modRow.Slot,
+                            effect: modRow.Effect, integrated: true });
+    }
     for (const modName of entry.mods || []) {
       const modRow = findRow(data.weapon_mods, "Modification", modName);
       if (modRow) {
@@ -2873,11 +2909,16 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
         fittedMods.push({ name: modName, slot: modRow.Slot, effect: modRow.Effect });
       }
     }
-    // The same mod can't be fitted twice (e.g. two Laser Sights).
-    const seenMods = new Set();
+    // The same mod can't be fitted twice (e.g. two Laser Sights) — including
+    // fitting one the weapon already has built in, which is the easy mistake
+    // now that some weapons arrive with mods already on them.
+    const seenMods = new Set(integratedNames);
     for (const mod of fittedMods) {
       if (seenMods.has(mod.name)) {
-        warnings.push(`${entry.name}: ${mod.name} fitted more than once.`);
+        warnings.push(integratedNames.includes(mod.name)
+          ? `${entry.name}: ${mod.name} is already built into this weapon — `
+            + "the fitted one is charged for and its effect counted twice."
+          : `${entry.name}: ${mod.name} fitted more than once.`);
       }
       seenMods.add(mod.name);
     }
@@ -2885,6 +2926,8 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
     // land in whichever of their slots is free; any mod left without a free
     // slot is flagged.
     // Slots are physical, so overflow binds (JC-003).
+    // Integrated mods are deliberately absent from this: they take no slot, so
+    // the rail they'd occupy is still free for one of the player's own.
     const { overflow } = assignWeaponModSlots(fittedMods.map(m => m.name), data.weapon_mods);
     for (const name of overflow) {
       errors.push(`${entry.name}: no free slot for ${name} — one Overbarrel, `
@@ -2932,7 +2975,12 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
     }
     item.qty = qty;
     item.mods = fittedMods;
-    item.Ammo = applyExtendedMagazine(item.Ammo, fittedMods);
+    item.integrated_mods = integratedMods;
+    // An integrated Extended Magazine would enlarge the magazine too, so both
+    // lists feed this.
+    item.Ammo = applyExtendedMagazine(item.Ammo, [...integratedMods, ...fittedMods]);
+    // Sealed single-load weapons say so on the stat line and offer no Reload.
+    if (weaponIsOneshot(row)) { item.oneshot = true; item.oneshot_note = ONESHOT_NOTE; }
     item.cost = cost;
     item.equipped = entry.equipped !== false;
     priced.push(item);
@@ -4929,6 +4977,7 @@ return {
   MAGIC_TYPE_BY_PRIORITY, MAGIC_TYPES_ALLOWED_BY_PRIORITY,
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
+  weaponIntegratedMods, weaponIsOneshot, ONESHOT_NOTE,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,
   weaponBaseCost, weaponModCost, weaponModCostPercent,

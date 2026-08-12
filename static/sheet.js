@@ -2767,6 +2767,7 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
   }));
 
   if (!maxAmmo) return wrap;
+  const oneshot = RULES.weaponIsOneshot(r);
   // Gun-Kata 2 rides on whichever mode is selected: one more bullet, one more
   // die. Offered per weapon so it can be left off when you don't want the cost.
   const kataOn = kataOffered && !!w.kata;
@@ -2806,9 +2807,13 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
         w.loaded = Math.max(0, loaded - cost);
         playChanged();
       } }, "Fire"),
-    el("button", { class: "btn small", disabled: loaded >= maxAmmo ? "1" : null,
-      title: "Reload to a full magazine",
-      onclick: () => { w.loaded = maxAmmo; playChanged(); } }, "Reload")));
+    // A sealed one-shot is its own magazine: once it's fired there is nothing to
+    // put back, so the button stays but says why it can't be pressed rather than
+    // disappearing and leaving the row looking different for no stated reason.
+    el("button", { class: "btn small",
+      disabled: (oneshot || loaded >= maxAmmo) ? "1" : null,
+      title: oneshot ? RULES.ONESHOT_NOTE : "Reload to a full magazine",
+      onclick: () => { if (!oneshot) { w.loaded = maxAmmo; playChanged(); } } }, "Reload")));
   return wrap;
 }
 
@@ -3348,7 +3353,12 @@ function shOverview(body) {
           const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
           const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
           // Names only -- the full effect text lives on the Gear tab.
-          const modNames = [...(w.mods || [])];
+          // Built-in mods lead the list and say so — they're fitted and working,
+          // and a player who can't see them will go looking for the slot.
+          const modNames = [
+            ...RULES.weaponIntegratedMods(r, DATA.tables.weapon_mods)
+              .map(m => `${m} (built in)`),
+            ...(w.mods || [])];
           if (w.upgr1 && r.Upgr1_Eff) modNames.push("Upgrade 1");
           if (w.upgr2 && r.Upgr2_Eff) modNames.push("Upgrade 2");
           const modes = RULES.weaponFiringModes(r);
@@ -3407,10 +3417,11 @@ function shOverview(body) {
               // Omitted where the weapon has no Barrier rating at all, so a
               // melee line doesn't gain a meaningless "Barrier 0".
               base.bar ? " · " : null, base.bar ? statBit("Barrier", "bar") : null,
-              ` · Conceal ${r.Conceal || 0} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
+              ` · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
               + ((calcRow.Ammo ?? r.Ammo) ? ` · Mag ${calcRow.Ammo ?? r.Ammo}` : "")
               + ` · Hardening ${RULES.hardeningOf(r)}`
-              + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : ""),
+              + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : "")
+              + (RULES.weaponIsOneshot(r) ? ` · ${RULES.ONESHOT_NOTE}` : ""),
               modNames.length
                 ? el("div", { class: "sub wpn-mods" }, "Mods: " + modNames.join(" · ")) : null,
               munNotes.length
@@ -5008,7 +5019,7 @@ function shGear(body) {
           })(),
           shMountEditor(en, r, w.equipped !== false)),
         el("td", { class: "sub" },
-          `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}` +
+          `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}${weaponTraitBits(r)}` +
           ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
         el("td", {},
           el("input", { type: "checkbox", ...(w.equipped !== false ? { checked: 1 } : {}),

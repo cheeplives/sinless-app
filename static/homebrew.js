@@ -183,6 +183,11 @@ const HOMEBREW_CONFIG = {
     { key: "Upgr2_Eff", hint: "Upgrade 2 effect" },
     { key: "Integrated Smart", select: () => ["", "1"],
       optionLabel: v => v === "1" ? "1 (smart at no extra cost)" : "(opt-in smart pays the multiplier)" },
+    { key: "Integrated Mods", datalist: () => hbDistinct("weapon_mods", "Modification"),
+      hint: "mods built into the weapon — fitted free and they don't use up their slot, "
+        + "so you can still add another of the same kind. Comma-separate several" },
+    { key: "Oneshot", select: () => ["", "1"],
+      optionLabel: v => v === "1" ? "1 (sealed — cannot be reloaded)" : "(reloads normally)" },
     { key: "Requires", datalist: () => hbDistinct("weapons", "Weapon"),
       hint: "another weapon that must be equipped to use this (under-barrel mounts)" },
     { key: "Mount Types", datalist: () => ["Any",

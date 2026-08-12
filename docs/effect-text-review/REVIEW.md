@@ -5,6 +5,8 @@ original beside its replacement so each one can be accepted or rejected on its
 own. **Nothing in `data.js` has been changed.** This document is the proposal.
 
 - **684 cells** reviewed, across 26 table/column pairs in 22 tables
+- Plus [column migrations](#structured-columns--what-the-prose-should-stop-saying):
+  rows whose prose states something `Skill Bonus` / `Skill Note` should carry
 - **49 of them are read by `rules.js` today** — those are the ones where wording
   is behaviour, and they are marked in the Engine column of every table below
 - Long-form `Description` prose is **not** rewritten (see [Scope](#scope))
@@ -171,6 +173,111 @@ Several rows mention a pool without granting dice, and the engine is right to
 skip them — `Geas`'s "lose 1d from all pools", `Laughter`'s "vs Brawn",
 `Returning the Fang`'s "If Finesse pool is not empty". These are listed only so
 that a future stricter parser doesn't start matching them.
+
+---
+
+## Structured columns — what the prose should stop saying
+
+Rewriting a sentence is the small half of this. The larger one is noticing when a
+sentence is stating something the row already has a **column** for — because a
+column is read by the engine, validated on save, and editable in homebrew, and a
+sentence is none of those.
+
+Two columns exist for skills, on every table the homebrew editor exposes:
+
+| Column | Syntax | Separator | What it does |
+|---|---|---|---|
+| `Skill Bonus` | `Biotech +1` | `,` for several | flat dice, folded into the skill's rating |
+| `Skill Note` | `Biotech: reroll 1s` | `\|` for several | situational text shown beside the skill, never summed |
+
+`gearSkillEffects` ([rules.js:3835](../../static/rules.js)) reads them off
+augments, armor, gear, weapons and their fitted mods, decks, programs, rigs,
+vehicles, drones, spells, rituals, mounted augments, and engaged spirits. A
+misspelt skill name produces a **warning** rather than a bonus that silently
+never lands — which is the whole argument for columns over prose.
+
+**Not** on that list: `heritage_features`, `amp_powers`, `martial_arts`. Heritage
+doesn't need it — it has its own per-skill columns (`Observation`, `Recon`,
+`Dodge`, `Shadow`, `Athletics`, …). The other two have nothing, and that's the
+biggest item below.
+
+### Migrate — prose states a flat bonus, column is empty
+
+These are safe and behaviour-changing in the right direction: the bonus starts
+being applied. Accepting one means setting the column **and** rewording the
+prose so the two don't restate each other.
+
+| Table | Row | Current prose | → `Skill Bonus` | → `Skill Note` |
+|---|---|---|---|---|
+| `misc_gear` | First Aid Kit | Grant +1 bonus to Biotech tests | `Biotech +1` | — |
+| `misc_gear` | Trauma Kit | Grant +2 bonus to Biotech tests | `Biotech +2` | — |
+| `misc_gear` | Electronic Doctor Kit | Grant +3 bonus to Biotech tests and can re-roll 1s. | `Biotech +3` | `Biotech: reroll 1s` |
+
+The Electronic Doctor Kit is the shape worth learning from: one sentence holding
+a flat bonus *and* a conditional rider, which is exactly one value for each
+column.
+
+### Already migrated — the prose is now a duplicate
+
+These rows carry the column already; the Effect text repeats it in different
+words. No engine change, but the prose should defer to the column rather than
+state a second, slightly different version of the same rule.
+
+| Table | Row | Column says | Prose still says |
+|---|---|---|---|
+| `augments` | Sound Filter | `Skill Bonus: Observation +1` | +1 to Observation tests |
+| `augments` | Compartment | `Skill Note: Subterfuge: +6d to conceal an item in the body compartment` | +6 to Subterfuge to hide things within |
+| `augments` | Covert Synthskin | `Skill Note: Shadow: reroll 1s/2s while hiding in appropriate gear` | Reroll 1s and 2s on Shadow tests |
+| `augments` | Rocket Boots | `Skill Note: Athletics: +8d & reroll 1s/2s when jumping` | +8d to jumps and Athletics. Reroll 1s and 2s on jumps. |
+| `augments` | Amplification | `Skill Note: Observation: reroll 1s` | Can reroll 1s on Observation tests |
+
+`Compartment` is instructive: its +6 is a `Skill Note`, not a `Skill Bonus`,
+because it only applies *to concealing something in the compartment*. The prose
+reads like a flat +6 to all Subterfuge. The column is right and the sentence is
+misleading — worth fixing even though nothing computes differently.
+
+### Do NOT migrate — the semantics differ
+
+| Table | Row | Prose | Why not |
+|---|---|---|---|
+| `drones` | Bug-Spy | +1 to Observation/Recon | `droneSkillDice` applies these **only while the drone is deployed**. `Skill Bonus` on a drone applies while merely **owned** — `gearSkillEffects` has no active test for drones. Migrating would grant the bonus with the drone still in the garage. |
+| `drones` | VSTOL Bird | +4 Recon | same, and see the `Stealth`/`Shadow` finding above |
+| `spells` | Forbidden Glamour of Accord | +2 bonus dice to Negotiation/Coercion/Leadership | the bonus goes to *everyone in line of sight*, not to the caster as a standing rating |
+| `spells` | Charm | Force = bonus dice to Leadership/Negotiation | Force-scaled; `Skill Bonus` needs a literal signed number, so it can't express this at all |
+| `spells` | The Thirty Cursed Servants of Ehon | +1d/Force to Observation and Recon for Duration | Force-scaled and time-limited |
+
+The drone case is the one to be careful about. It looks like the most obvious
+migration on the list and is the only one that would actually be wrong.
+
+### Needs a ruling
+
+| Table | Row | Prose | The question |
+|---|---|---|---|
+| `spells` | Bound Servant | Gain +2d to Sorcery/Channeling | Spells **are** read by `gearSkillEffects`, and unconditionally — a *known* spell grants its columns. Bound Servant costs 2 ZP and grants a permanent familiar, so that may be right. If it is, `Sorcery +2, Channeling +2` is the value. If a spell should only count while cast, that's a rules.js question affecting every spell. |
+
+### The largest remaining cluster
+
+`amp_powers` has **no** `Skill Bonus` / `Skill Note` columns, so four powers are
+hardcoded by name in `resolveAmp` ([rules.js:1989](../../static/rules.js)) —
+exactly the shape that `Sound Filter`, `Rocket Boots`, `Compartment`,
+`Covert Synthskin` and `Amplification` were in before they became columns, a
+migration this repo has already done once and recorded in `P09-012`.
+
+| Power | Hardcoded branch | Would become |
+|---|---|---|
+| Eyes of the Raptor | `skillBonus["Firearms"] += 2` | `Skill Bonus: Firearms +2` |
+| Might of the Bear | `skillBonus["Unarmed Combat"] += 2` | `Skill Bonus: Unarmed Combat +2` |
+| Sting of the Scorpion | `skillBonus["Melee Weapons"] += 2` | `Skill Bonus: Melee Weapons +2` |
+| Hidden Presence | `skillBonus["Shadow"] += 2; skillBonus["Subterfuge"] += 2` | `Skill Bonus: Shadow +2, Subterfuge +2` |
+
+All four Effect strings already state the right number, so the data is ready.
+What it needs is the two columns on `amp_powers`, a `rowsOf(amp.powers_taken,
+"amp_powers", "Name")` line in `gearSkillEffects`, and the four branches deleted.
+
+`Expertise` is deliberately **not** in that table. It reads `+2 to Skill and it's
+maximum` (also a typo — `it's` → `its`), and `Skill Bonus` has no way to say
+"and raise the cap". That is the same gap `RaisesMax` just closed for attributes,
+and it would need its own column to move.
 
 ---
 

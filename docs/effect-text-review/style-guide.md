@@ -48,19 +48,31 @@ reads inconsistently beside its neighbours.
 
 ### Skill dice
 
+Prose mirrors the **column syntax**, so the two never drift into different
+dialects and moving one to the other is a copy rather than a translation:
+
 ```
-+2d Observation                     a flat bonus
-+2d Observation while hands are free    a conditional one
-Reroll 1s and 2s on Shadow tests
+Observation +2                      a flat bonus   -> Skill Bonus "Observation +2"
+Observation +2, Recon +1            several        -> comma-separated, as the column is
+Shadow: reroll 1s and 2s in cover   conditional    -> Skill Note "Shadow: reroll 1s and 2s in cover"
+Athletics: +8d when jumping         a conditional number, still a note
 ```
 
-Currently unparsed in heritage/amp text — augments and gear carry real
-`Skill Bonus` / `Skill Note` columns instead, which is the better mechanism.
-Where an Effect states a flat skill bonus that a structured column could carry,
-**flag it** rather than relying on the prose.
+The distinction is the mechanism, not the wording: a **flat, unconditional**
+bonus is a `Skill Bonus` and gets folded into the rating; anything gated on a
+circumstance is a `Skill Note` and is shown beside the skill, never summed. If a
+sentence has both — "+3 to Biotech tests and can re-roll 1s" — that's one value
+for each column.
 
-Use the skill's real name. `SKILLS` has **Shadow**, not "Stealth"; and
-**Reconnaissance** (alias "Recon"), not "Recon" alone as the canonical form.
+Where an Effect states a flat skill bonus that a column could carry, **flag it
+for migration** rather than leaving the number to live only in prose. `rules.js`
+does not parse skill dice out of Effect text anywhere except drone Effects, and
+that one is deliberately scoped to deployed drones — see the migration section
+of the review before assuming a drone bonus can move to a column.
+
+Use the skill's real name; the column parser rejects anything else with a
+warning. `SKILLS` has **Shadow**, not "Stealth", and **Reconnaissance** (alias
+"Recon") as the canonical form.
 
 ### Attributes
 

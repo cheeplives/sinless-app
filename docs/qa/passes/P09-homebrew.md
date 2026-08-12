@@ -246,6 +246,48 @@ is not optional, and a leftover QA pack will confuse every later pass.
   to prevent.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P09-013: Raising an attribute's maximum is a column, not a name
+- **Type:** correctness
+- **Check:**
+
+      (() => { const mk = (name, extra) => Object.assign({ Name: name, Type: "Bodyware", ZR: "0.5", BI: "0", Cost: "5000", Custom: "Y" }, extra); const rows = [mk("QA Sinew Weave", { Strength: "2" }), mk("QA Sinew Weave Plus", { Strength: "2", RaisesMax: "1" }), mk("Muscle Replacement QA", { Strength: "2" })]; for (const r of rows) DATA.tables.augments.push(r); const run = n => { const c = RULES.defaultCharacter(); c.priorities = { heritage:1, magic:0, attributes:4, skills:2, resources:3 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; for (const a of RULES.ATTRIBUTES) c.attributes[a] = 3; c.augments = [{ name: n }]; const k = RULES.calculate(c); return { final: k.attributes.Strength.final, max: k.attributes.Strength.max }; }; const out = { plain: run("QA Sinew Weave"), flagged: run("QA Sinew Weave Plus"), prefixTrap: run("Muscle Replacement QA"), coreRaises: run("Muscle Replacement 2"), coreValueOnly: run("Strength Enhancement 2"), editable: HOMEBREW_CONFIG.augments.fields.some(f => f.key === "RaisesMax") }; for (const r of rows) DATA.tables.augments.pop(); return out; })()
+
+- **Expected:**
+
+      { "plain":         { "final": 5, "max": 20 },
+        "flagged":       { "final": 5, "max": 22 },
+        "prefixTrap":    { "final": 5, "max": 20 },
+        "coreRaises":    { "final": 5, "max": 22 },
+        "coreValueOnly": { "final": 5, "max": 20 },
+        "editable": true }
+
+- **Note:** Muscle Replacement 3 and Strength Enhancement 3 both give +3
+  Strength; only the first lifts the cap with it. That distinction used to be
+  `AUGMENTS_THAT_RAISE_MAX`, seven name prefixes matched with `startsWith`, which
+  made the row's **name** load-bearing. It is now the `RaisesMax` column.
+
+  Each pair isolates one half of the change:
+
+  - `plain` vs `flagged` — the same homebrew row, differing only in the column.
+    20 vs 22 is the capability that did not exist before: no homebrew name was
+    ever on the prefix list, so a custom augment simply could not raise a
+    maximum. If `flagged` reads 20, the column isn't being read.
+  - `prefixTrap` at **20** is the regression guard, and the reason the row is
+    named the way it is. Under the old rule `"Muscle Replacement QA".startsWith(
+    "Muscle Replacement")` was true and this row would have raised the cap by
+    accident. If this reads 22, the prefix matching is back.
+  - `coreRaises` / `coreValueOnly` prove the migration preserved core behaviour.
+    All 23 rows that raised a maximum still do; the other 131 still don't.
+
+  `final` is **5** in every case (base 3 + the row's 2) — the value bonus is not
+  what changed, and if one of these moves, the column is being read as an
+  attribute rather than a flag.
+
+  This case cleans up after itself: it pops the three rows it pushed. If it
+  throws part-way, `Muscle Replacement QA` will not be caught by the cleanup
+  block's `/^QA /` filter — the query below names it explicitly.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Clean up — required
@@ -254,7 +296,7 @@ Every case above pushed rows onto the live tables. Reload the page to discard
 them, then confirm:
 
 ```js
-(() => ({ leftovers: DATA.tables.weapons.filter(w => /^QA /i.test(w.Weapon) || /onerror/.test(w.Weapon)).map(w => w.Weapon), augments: DATA.tables.augments.filter(a => /^QA /i.test(a.Name)).map(a => a.Name) }))()
+(() => ({ leftovers: DATA.tables.weapons.filter(w => /^QA /i.test(w.Weapon) || /onerror/.test(w.Weapon)).map(w => w.Weapon), augments: DATA.tables.augments.filter(a => /^QA |QA$/i.test(a.Name)).map(a => a.Name) }))()
 ```
 
 **Expected after reload:** `{ "leftovers": [], "augments": [] }`

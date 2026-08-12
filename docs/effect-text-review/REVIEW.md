@@ -274,7 +274,7 @@ the only place the rule lives.
 
 ### Numbers removed from prose because a column now carries them
 
-Seventeen proposals were rewritten so the sentence stops restating a value the
+Eighteen proposals were rewritten so the sentence stops restating a value the
 row already holds structurally. The column is what the engine applies; a second
 copy in prose can only ever agree or be wrong.
 
@@ -286,6 +286,7 @@ copy in prose can only ever agree or be wrong.
 | `augments` | Rocket Boots | `Skill Note: Athletics: +8d & reroll 1s/2s when jumping` | Grants thrust compensation. |
 | `augments` | Amplification | `Skill Note: Observation: reroll 1s` | Allows for selective amplification of sounds. |
 | `augments` | Synaptic Enhancers | `RaisesMax` | (the "and maximums" parentheticals dropped) |
+| `augments` | Hyperthyroid | `RaisesMax` (unset) | ("Does not increase max." dropped) |
 | `amp_powers` | Eyes of the Raptor | `Skill Bonus: Firearms +2` | Sharpened accuracy with firearms. |
 | `amp_powers` | Might of the Bear | `Skill Bonus: Unarmed Combat +2` | Raw power in unarmed combat. |
 | `amp_powers` | Sting of the Scorpion | `Skill Bonus: Melee Weapons +2` | Prowess with melee weapons. |
@@ -315,15 +316,30 @@ Every augment that grants an attribute also states it in prose — Bone
 Lacing-Plastic's `Body: "1"` column beside "Plastic bones. +1 Body." — and by a
 literal reading those are redundant too.
 
-They are deliberately **not** stripped. Removing them empties the Effect cell for
-around 39 rows (Dermal Plating 1's entire Effect is "+1 Body and 1 Impact
-Armor"), and Effect is the human-readable summary a player reads; the columns are
-unlabelled data behind it. The skill and dose columns above are different: they
-carry a *rule* the prose was restating loosely, and in Compartment's case
-inaccurately.
+They are deliberately **not** stripped. **46 augment rows** carry an attribute or
+armor column, and stripping every sentence that only restates one splits them
+two ways:
 
-If you'd rather those went too, it's a one-line change to the same script and I
-can show you the 39 rows first.
+- **22 rows would be left with an empty Effect.** Their entire Effect *is* the
+  numbers — `Muscle Replacement 4` is "+4 Body. +4 Strength."; `Dermal Plating 3`
+  is "+3 Body. +2 Impact Armor. +1 Ballistic Armor."; all six Muscle
+  Augmentations, all three Boosted Reflexes, all three Orthoskins.
+- **24 rows would survive** with real prose — `Wired Reflexes 1` keeps "1 melee
+  exploit action", `Reaction Enhancer 3` keeps "Doubles pain-based penalties",
+  the Bone Lacings keep "Immune to being stripped by energy weapons".
+
+Effect is the human-readable summary a player reads; the columns are unlabelled
+data behind it, and an empty summary is worse than a redundant one. The skill and
+dose columns above are different in kind: they carry a *rule* the prose was
+restating loosely, and in Compartment's case inaccurately.
+
+Note that `Strength Enhancement 1–6` only look like duplicates. "+N Strength to
+all limbs" is a different claim from the character's own Strength — the row's
+second sentence exists precisely to warn about the mismatch — so those keep
+their number whatever is decided here.
+
+If the 22 emptied rows are acceptable (their numbers would still show on the
+sheet, from the columns), this is a small change to the same script.
 
 ### Needs a ruling
 
@@ -698,7 +714,7 @@ Everything needing a decision beyond accept/reject on the wording.
 | 115 | Boosted Reflexes 2 | +4 Reaction | +4 Reaction | — | |
 | 116 | Boosted Reflexes 3 | +6 Reaction | +6 Reaction | — | |
 | 117 | Gills | Can breathe underwater | Can breathe underwater | — | |
-| 118 | Hyperthyroid | Increase lifestyle cost 10%, +2 to Body, Reaction, and Strength. Does not increase max | Increase lifestyle cost 10%. +2 Body, Reaction, and Strength. Does not increase max. | — | |
+| 118 | Hyperthyroid | Increase lifestyle cost 10%, +2 to Body, Reaction, and Strength. Does not increase max | Increase lifestyle cost 10%. +2 Body, Reaction, and Strength. | — | |
 | 119 | Metabolic Stasis | Go into stasis instead of dying | Go into stasis instead of dying | — | |
 | 120 | Muscle Augmentation 1 | +1 to Strength | +1 Strength. | — | |
 | 121 | Muscle Augmentation 2 | +2 to Strength | +2 Strength. | — | |

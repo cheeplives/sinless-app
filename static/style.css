@@ -501,6 +501,18 @@ label.opt input{margin-top:3px}
   --pool-focus:#5aa9ff;
   --pool-resolve:#9d7bff;
   --pool-kismet:#f2c14e;
+  /* Attribute identity colours. Four of the six borrow the pool they hand their
+     FULL value to in computePools (rules.js): Strength→Brawn, Reaction→Finesse,
+     Intelligence→Focus, Willpower→Resolve. The other two genuinely don't have
+     one — Body splits 0.5/0.5 between Brawn and Finesse, and Charisma puts 0.5
+     into Resolve plus a quarter into whichever pool the player picked — so they
+     get hues of their own rather than a pool colour that would be a lie. */
+  --attr-str:var(--pool-brawn);
+  --attr-bod:#2fd0cf;
+  --attr-rea:var(--pool-finesse);
+  --attr-int:var(--pool-focus);
+  --attr-wil:var(--pool-resolve);
+  --attr-cha:#ff6ec7;
   /* one identity colour per bond slot, so four bound spirits stay tellable
      apart at a glance. Scheme-independent, like the pool colours above. */
   --bond-1:#5aa9ff;  --bond-1-glow:rgba(90,169,255,.18);
@@ -514,6 +526,10 @@ label.opt input{margin-top:3px}
   --pool-focus:#1868c9;
   --pool-resolve:#6d3fd1;
   --pool-kismet:#a8790a;
+  /* The four pool-borrowed attribute colours follow their pool automatically;
+     only the two independent hues need deepening for a white background. */
+  --attr-bod:#0e7d80;
+  --attr-cha:#c02f8f;
   --bond-1:#1868c9;  --bond-1-glow:rgba(24,104,201,.16);
   --bond-2:#1f9d5e;  --bond-2-glow:rgba(31,157,94,.16);
   --bond-3:#a8790a;  --bond-3-glow:rgba(168,121,10,.16);
@@ -581,10 +597,25 @@ label.opt input{margin-top:3px}
   color:var(--text);cursor:pointer}
 .sh-tag-select:hover{border-color:var(--manon-dim)}
 .sh-attrs{display:flex;gap:8px;flex-wrap:wrap;flex:1}
+/* One box shape for everything on this line — the six attributes, Ghost and the
+   ZR casting penalty. They're all "a standing figure about this character", so
+   they get identical width and height and differ only by colour. min-height is
+   what keeps a wrapped row matching the one above it: flex stretches boxes
+   within a row, but not across rows. */
 .sh-attr{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:7px 0 5px;
-  width:64px;text-align:center;position:relative}
+  width:78px;min-height:58px;text-align:center;position:relative}
 .sh-attr .k{font-size:10px;letter-spacing:.14em;color:var(--dim)}
 .sh-attr .v{font-family:var(--mono);font-size:21px;font-weight:600;color:var(--strong)}
+/* Each attribute carries its own colour on the label and the border, so the
+   line reads as six related things rather than six identical ones. The value
+   stays --strong: the number is what you're reading, and six coloured numerals
+   would be harder to scan, not easier. */
+.sh-attr.attr-strength{border-color:var(--attr-str)}    .sh-attr.attr-strength .k{color:var(--attr-str)}
+.sh-attr.attr-body{border-color:var(--attr-bod)}        .sh-attr.attr-body .k{color:var(--attr-bod)}
+.sh-attr.attr-reaction{border-color:var(--attr-rea)}    .sh-attr.attr-reaction .k{color:var(--attr-rea)}
+.sh-attr.attr-intelligence{border-color:var(--attr-int)}.sh-attr.attr-intelligence .k{color:var(--attr-int)}
+.sh-attr.attr-willpower{border-color:var(--attr-wil)}   .sh-attr.attr-willpower .k{color:var(--attr-wil)}
+.sh-attr.attr-charisma{border-color:var(--attr-cha)}    .sh-attr.attr-charisma .k{color:var(--attr-cha)}
 .sh-attr .adj{font-size:10px;font-family:var(--mono);color:var(--ok)}
 /* The cap is a superscript on the value, so it reads as "4 out of 20" with no
    separator eating width. line-height:0 keeps it from growing the line box, and
@@ -592,15 +623,16 @@ label.opt input{margin-top:3px}
 .sh-attr .cap{font-family:var(--mono);font-size:10px;font-weight:400;color:var(--dim);
   vertical-align:super;line-height:0;margin-left:1px}
 .sh-attr.at-max .cap{color:var(--bad)}
-/* Ghost Rating sits alongside the six but isn't one of them: no cap, wider to
-   fit "2d6", and the zoetic purple that marks everything magic in this app. */
+/* Ghost Rating sits alongside the six but isn't one of them: no cap, and the
+   zoetic purple that marks everything magic in this app. Unlike the six, its
+   value is coloured — there's no cap or adjustment to carry the identity, so
+   the number does it. */
 .sh-attr.ghost{border-color:var(--manon-dim)}
-.sh-attr.ghost .v{color:var(--manon);font-size:18px}
+.sh-attr.ghost .v{color:var(--manon)}
 /* The ZR casting penalty sits beside Ghost as a standing figure, but it is a
    penalty — red, so it never reads as another stat you're pleased to have. */
 .sh-attr.zr-pen{border-color:var(--bad)}
-.sh-attr.zr-pen .v{color:var(--bad);font-size:18px}
-.sh-attr.wide{width:78px}
+.sh-attr.zr-pen .v{color:var(--bad)}
 .sh-meters{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
 .sh-meter{border:1px solid var(--line);border-radius:8px;padding:7px 12px 5px;text-align:center;min-width:74px}
 .sh-meter .k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
@@ -852,6 +884,15 @@ label.opt input{margin-top:3px}
 
 .sh-notes{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
   color:var(--text);padding:10px;font-family:var(--body);font-size:13px;resize:vertical}
+/* Notes tab: the editor and the generated Dossier Notes side by side. An
+   explicit 2-track grid rather than the Overview's multi-column flow — there
+   are exactly two cards and which one lands where matters. `align-items:start`
+   keeps the shorter card its own height instead of stretching it to match.
+   min-width:0 lets a long generated line wrap rather than blowing its track. */
+.sh-notes-top{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;
+  margin-bottom:14px}
+.sh-notes-top>*{min-width:0;margin:0}
+@media (max-width:900px){ .sh-notes-top{grid-template-columns:1fr} }
 
 /* One card per pool, laid out 2×2 (see #13). Grid items default to
  * min-width:auto, so a long, unwrapping skill name would blow its track out;

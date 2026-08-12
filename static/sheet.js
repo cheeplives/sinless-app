@@ -180,6 +180,7 @@ const LIFESTYLE_EFFECTS = {
 
 let sheetTab = "overview";
 let expandedPool = null;      // pool card the user clicked open on Overview
+let imagesCollapsed = false;  // Images section folded shut on the Notes tab
 let playSaveTimer = null;
 let sheetMenuOpen = false;    // hamburger menu (Back to Chargen / Homebrew / Export / …)
 let sheetHeadObserver = null; // IntersectionObserver toggling the compact sticky strip
@@ -2848,7 +2849,8 @@ function shOverview(body) {
     // comparison. NOTE: `.v` now contains the cap, so anything reading the
     // value out of the DOM wants its first child text node, not textContent.
     attrsRow.append(el("div", {
-      class: "sh-attr" + (a.final >= a.max ? " at-max" : ""),
+      // attr-<name> carries the per-attribute colour (see --attr-* in style.css)
+      class: `sh-attr attr-${full.toLowerCase()}` + (a.final >= a.max ? " at-max" : ""),
       title: `${full} ${a.final} of a maximum ${a.max}`
         + (a.adjust ? ` (${a.adjust > 0 ? "+" : ""}${a.adjust} from augments and gear)` : ""),
     },
@@ -2859,8 +2861,8 @@ function shOverview(body) {
   }
   // Ghost Rating rides the attribute line: it's a standing figure you read off
   // the character, not a play meter, and it was the least-earning header chip.
-  // Marked `wide` and `ghost` so it reads as adjacent to the six, not one of them.
-  attrsRow.append(el("div", { class: "sh-attr ghost wide",
+  // Same box as the six, marked `ghost` so its colour says it isn't one of them.
+  attrsRow.append(el("div", { class: "sh-attr ghost",
     title: "Ghost Rating — the dice you roll to stay off the grid" },
     el("div", { class: "k" }, "GHOST"),
     el("div", { class: "v" }, CALC.zoetics.ghost_rating || "2d6")));
@@ -2874,16 +2876,19 @@ function shOverview(body) {
   const zrCastPen = Math.floor(CALC.zoetics.gear_zr);
   if (RULES.houseRule("zr") === "houserule"
       && CALC.magic.type !== "Hedge" && zrCastPen > 0) {
-    attrsRow.append(el("div", { class: "sh-attr zr-pen wide",
+    attrsRow.append(el("div", { class: "sh-attr zr-pen",
       title: `${CALC.zoetics.gear_zr} `
         + `${CALC.zoetics.gear_zr === 1 ? "point" : "points"} of gear/weapon ZR`
         + " — −1d per full point on Channeling, Conjuring and Sorcery" },
       el("div", { class: "k" }, "ZR CAST"),
       el("div", { class: "v" }, `−${zrCastPen}d`)));
   }
-  const poolCard = el("div", { class: "card sh-card" }, kismetRow,
-    el("h4", { class: "sh-h4" }, "Attributes"), attrsRow);
+  // The clicked pool's skills go ABOVE the attributes, next to the pool tiles
+  // that opened them — the list is the answer to the click, and pushing it under
+  // the attribute boxes put it further from the thing you just pressed.
+  const poolCard = el("div", { class: "card sh-card" }, kismetRow);
   if (expandedPool) poolCard.append(poolSkillList(expandedPool));
+  poolCard.append(el("h4", { class: "sh-h4" }, "Attributes"), attrsRow);
 
   // --- condition (wound penalty folded in — it's derived straight from these tracks)
   const { raw: rawWound, negated: woundNegated, doubled: woundDoubled, dice: wound } = woundPenalty();
@@ -3833,7 +3838,26 @@ function imagesCard() {
   CHAR.play.images = CHAR.play.images || [];
   const list = CHAR.play.images;
   const used = imagesUsed();
-  const card = el("div", { class: "card sh-card" }, el("h3", {}, "Images"));
+  // Pictures are the tallest thing on the Notes tab and the least often needed
+  // once they're set, so the whole section folds. The state is per-tab view
+  // state (stashView/restoreView), same as the expanded pool card, so it
+  // survives re-renders and tab switches without touching the character.
+  const collapsed = imagesCollapsed;
+  const card = el("div", { class: "card sh-card" },
+    el("div", { class: "sh-card-head" },
+      el("h3", {}, "Images",
+        list.length ? el("span", { class: "sub" }, ` ${list.length}`) : null),
+      counterBtn(collapsed ? "Show ▾" : "Hide ▴", () => {
+        imagesCollapsed = !imagesCollapsed;
+        renderSheet();
+      })));
+  if (collapsed) {
+    card.append(el("p", { class: "hint", style: "margin:2px 0 0" },
+      list.length
+        ? `${list.length} image${list.length === 1 ? "" : "s"} · ${fmtKB(used)} — hidden.`
+        : "No images."));
+    return card;
+  }
   card.append(el("p", { class: "hint", style: "margin:2px 0 8px" },
     `Portrait, crest, gang logo — up to ${IMAGE_MAX_COUNT}. Saved with the character, `
     + `so they sync and travel in an export. Large files are scaled to `
@@ -7172,18 +7196,24 @@ function shActions(body) {
 
 /* ------------------------------------------------ notes tab */
 function shNotes(body) {
+  // What you came here to write goes first and sits beside what the build has
+  // to tell you, so the two halves of "notes" are in one eyeful. The generated
+  // half only exists when there's something to say — with nothing beside it the
+  // editor takes the full width rather than leaving a hole.
   const autos = dossierNotes();
+  const notes = notesCard(18);
   if (autos.length) {
-    const card = el("div", { class: "card sh-card" },
+    const dossier = el("div", { class: "card sh-card" },
       el("h3", {}, "Dossier Notes"),
       el("p", { class: "hint" }, "Generated from your build — reminders that don't fit the other tabs."));
-    autos.forEach(n => card.append(el("div", { class: "sh-callout" }, "⚠ ", n)));
-    body.append(card);
+    autos.forEach(n => dossier.append(el("div", { class: "sh-callout" }, "⚠ ", n)));
+    body.append(el("div", { class: "sh-notes-top" }, notes, dossier));
+  } else {
+    body.append(notes);
   }
   const traits = heritageTraitsCard();
   if (traits) body.append(traits);
   body.append(imagesCard());
-  body.append(notesCard(18));
 }
 
 /* All heritage traits (features + uplift animal) with their listed effects. */

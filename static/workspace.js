@@ -46,7 +46,7 @@ function defaultView() {
  * them directly here. */
 function stashView(tab) {
   if (!tab) return;
-  tab.view = { activeTab, sheetTab, expandedPool };
+  tab.view = { activeTab, sheetTab, expandedPool, imagesCollapsed };
 }
 
 /* Persist a tab's character to its storage slot — only if it has a name (the
@@ -66,6 +66,7 @@ function restoreView(tab) {
   activeTab = v.activeTab || "priorities";
   sheetTab = v.sheetTab || "overview";
   expandedPool = v.expandedPool || null;
+  imagesCollapsed = !!v.imagesCollapsed;
   // One-shot upgrades that must run for chargen characters too, which never
   // reach ensurePlay(). Both are guarded and idempotent.
   if (typeof migrateHackingProgram === "function") migrateHackingProgram();

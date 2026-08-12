@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "208";
+const APP_VERSION = "209";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -389,6 +389,13 @@ function setHouseRule(id, value) {
 // render code that runs after recalc sees the right value).
 function currencyName() {
   return houseRule("currency") === "zuzus" ? "Zuzus" : "Woolongs";
+}
+/* ...and its glyph, which follows the name. Zuzus keep ㄓ; Woolongs use ₩.
+ * A function rather than a constant because the rule is per character and can
+ * change between renders — anything that caches this at load time will show one
+ * character's money on another's sheet. */
+function currencySymbol() {
+  return houseRule("currency") === "zuzus" ? "ㄓ" : "₩";
 }
 
 // Programs (any rating) that key off Electronic Warfare under the Classic EW
@@ -2582,14 +2589,16 @@ function droneSkillDice(character, data) {
  * the drone that grants it, so the sheet can report them where they matter
  * instead of leaving them on the Rigging tab.
  *
- * Deployed is linked OR Active, matching droneSkillDice — a drone is out there
- * or it isn't; how it's being flown doesn't change what it does for you. */
+ * Deployed is linked, Active OR the hotseat — a drone is out there or it isn't;
+ * how it's being flown doesn't change what it does for you, and the one you're
+ * personally piloting is the most deployed of all. */
 function droneCombatBonuses(character, data) {
   const rigging = ((character.play || {}).rigging || {});
   const deployed = {};
-  for (const map of [rigging.linked || {}, rigging.active || {}])
+  for (const map of [rigging.linked || {}, rigging.active || {}, rigging.hotseat || {}])
     for (const [key, on] of Object.entries(map)) if (on) deployed[key] = true;
-  const out = { initiative_dice: 0, dodge_notes: [], cover_notes: [], other_notes: [] };
+  const out = { initiative_dice: 0, dodge_notes: [], cover_notes: [],
+                vision_notes: [], other_notes: [] };
   for (const key of Object.keys(deployed)) {
     if (!key.startsWith("drones:")) continue;
     const unit = (character.drones || [])[+key.split(":")[1]];
@@ -2603,6 +2612,13 @@ function droneCombatBonuses(character, data) {
       if (init) { out.initiative_dice += toInt(init[1]); continue; }
       if (/dodge/i.test(c)) { out.dodge_notes.push({ text: c, source: label }); continue; }
       if (/cover/i.test(c)) { out.cover_notes.push({ text: c, source: label }); continue; }
+      // A sensor the drone is lending you — its feed is your feed while it's
+      // out. Joins the character's own optics rather than sitting on the
+      // Rigging tab, because it's the same question ("what can I see?").
+      if (/vision/i.test(c)) {
+        out.vision_notes.push({ text: c.replace(/^grants\s+/i, ""), source: label });
+        continue;
+      }
     }
   }
   return out;
@@ -2891,10 +2907,18 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
     const integratedMods = [];
     for (const modName of integratedNames) {
       const modRow = findRow(data.weapon_mods, "Modification", modName);
-      accMod += asNumber(modRow.AccMod);
+      // A built-in mod skips its ACCURACY PENALTY. The −2d on a silencer is the
+      // cost of hanging a can off the muzzle of a gun not built for one; a
+      // weapon designed around its suppressor doesn't pay it. The data says so
+      // itself — the Militech Whisper 1000's upgrade is "Integrated silencer
+      // mount (eliminates the -2d penalty for silencer)". Bonuses still apply:
+      // an integrated laser sight is still worth its +1.
+      const acc = asNumber(modRow.AccMod);
+      if (acc > 0) accMod += acc;
       concealMod += asNumber(modRow["Conceal Mod"]);
       integratedMods.push({ name: modName, slot: modRow.Slot,
-                            effect: modRow.Effect, integrated: true });
+                            effect: modRow.Effect, integrated: true,
+                            penalty_waived: acc < 0 ? acc : 0 });
     }
     for (const modName of entry.mods || []) {
       const modRow = findRow(data.weapon_mods, "Modification", modName);
@@ -4736,7 +4760,7 @@ function calculate(character) {
   const cashSpent = round2(Object.values(cashCategories).reduce((a, b) => a + b, 0));
   const cashRemaining = round2(priorities.starting_cash - cashSpent);
   if (cashRemaining < 0) {
-    errors.push(`Cash overspent by ㄓ${Math.round(-cashRemaining).toLocaleString("en-US")}.`);
+    errors.push(`Cash overspent by ${currencySymbol()}${Math.round(-cashRemaining).toLocaleString("en-US")}.`);
   }
   /* The creation budget is a record of what the BUILD cost. Live figures while
    * a character is in chargen; frozen at the last Finalize once they're in
@@ -4759,7 +4783,7 @@ function calculate(character) {
   // `cashRemaining`, is the balance that has to add up at the table.
   const playCash = asNumber((character.play || {}).cash);
   if (finalized && playCash < 0) {
-    playErrors.push(`Overdrawn by ㄓ${Math.round(-playCash).toLocaleString("en-US")}.`);
+    playErrors.push(`Overdrawn by ${currencySymbol()}${Math.round(-playCash).toLocaleString("en-US")}.`);
   }
 
   // Every character must live somewhere: at least one prepaid month of a lifestyle.
@@ -4809,6 +4833,12 @@ function calculate(character) {
   }
   combat.drone_dodge_notes = droneBonus.dodge_notes;
   combat.drone_cover_notes = droneBonus.cover_notes;
+  // A deployed drone's sensors join the character's own optics — same question,
+  // one answer — tagged with the drone so it's clear they leave when it does.
+  if (droneBonus.vision_notes.length) {
+    combat.optics_notes = [...(combat.optics_notes || []),
+      ...droneBonus.vision_notes.map(v => `${v.text} (${v.source})`)];
+  }
   const poolEffects = derivePoolEffects(character, data, heritage, augments, amp);
   const poolNotes = derivePoolNotes(heritage, augments, amp, martialArt, poolEffects);
   // Name the spirit behind each pool bonus that was folded in above, so the
@@ -4991,7 +5021,7 @@ return {
   FIRING_MODES, weaponFiringModes, firingMode, parseFiringMode,
   ammoFitsUnitWeapon,
   ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_FITS,
-  HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName,
+  HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName, currencySymbol,
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
   HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
   equippedDeckName,

@@ -54,22 +54,30 @@ const WINDFALL_TABLE = [
   "Gain a prototype Arcanatech (installed in a HQ: +1 to a brand stat permanently)",
   "Get 3d6 points of influence on a resource",
   "Get 3d6 points of Market Cap added to your brand's bank",
-  "Gain 3d6 × 4,000ㄓ in cash or gear of rarity 4 or less",
+  // The one entry that names money — kept as a token the renderer swaps for the
+  // live glyph, so this list stays a plain array of strings.
+  "Gain 3d6 × 4,000{¤} in cash or gear of rarity 4 or less",
 ];
 
 /* Roll a single die and any `NdM` dice-expressions embedded in a string,
  * substituting each with its rolled total (honouring a trailing ×K / × K,KKK
- * multiplier). "Gain 3d6×10 Techtronics" -> "Gain 90 Techtronics". */
+ * multiplier). "Gain 3d6×10 Techtronics" -> "Gain 90 Techtronics".
+ *
+ * Also resolves the `{¤}` money token to the live currency glyph — the tables
+ * these strings come from are plain arrays defined at load, long before a
+ * character (and so a currency house rule) exists. */
 function rollDie(sides) { return Math.floor(Math.random() * sides) + 1; }
 function rollDiceInText(text) {
-  return String(text).replace(
-    /(\d+)d(\d+)(?:\s*[×x*]\s*([\d,]+))?/gi,
-    (_m, n, sides, mult) => {
-      let total = 0;
-      for (let i = 0; i < +n; i++) total += rollDie(+sides);
-      if (mult) total *= parseInt(mult.replace(/,/g, ""), 10);
-      return total.toLocaleString();
-    });
+  return String(text)
+    .replace(/\{¤\}/g, () => RULES.currencySymbol())
+    .replace(
+      /(\d+)d(\d+)(?:\s*[×x*]\s*([\d,]+))?/gi,
+      (_m, n, sides, mult) => {
+        let total = 0;
+        for (let i = 0; i < +n; i++) total += rollDie(+sides);
+        if (mult) total *= parseInt(mult.replace(/,/g, ""), 10);
+        return total.toLocaleString();
+      });
 }
 
 // Hacking programs are priced in the programs table now (Hacking N = 5,000 × N).
@@ -4853,7 +4861,7 @@ function shMountEditor(entry, hostRow, hostActive) {
         `${m.name} · ${RULES.augmentEffZr(row, m)} `,
         hasZr ? el("button", { class: "chip-btn" + (m.alpha ? " alpha-on" : ""),
           title: (m.alpha ? "α-cyber grade — click to revert" : "Upgrade to α-cyber grade")
-            + ` (ZR −20% min 0.1, cost ×2 min +${CURRENCY_SYMBOL}1,000)`,
+            + ` (ZR −20% min 0.1, cost ×2 min +${currencySymbol()}1,000)`,
           onclick: async () => {
             const now = !m.alpha;
             // On a chargen host the mount object IS the creation record, so
@@ -5375,7 +5383,13 @@ function shGear(body) {
         // moving (an unpaid lifestyle adjustment) — show a dash, not "+ㄓ0".
         el("td", { class: "num", style: !entry.delta ? "color:var(--dim)"
                      : entry.delta > 0 ? "color:var(--ok)" : "color:var(--bad)" },
-          entry.delta ? (entry.delta > 0 ? "+" : "") + fmt(entry.delta).replace("ㄓ-", "−ㄓ") : "—"),
+          // fmt puts the glyph in front, so a negative reads "ㄓ-500"; move the
+          // sign out to the front. Keyed off the live glyph, not a literal.
+          entry.delta
+            ? (entry.delta > 0 ? "+" : "")
+              + fmt(entry.delta).replace(`${RULES.currencySymbol()}-`,
+                                         `−${RULES.currencySymbol()}`)
+            : "—"),
         // Undo is only offered where there is something to take back: a
         // purchase this ledger knows how to reverse.
         el("td", {}, (entry.undo && CASH_UNDO[entry.undo.kind])
@@ -5461,7 +5475,7 @@ function shAugments(body) {
     // ledger stays in step with the recalculated total.
     const alphaExtra = Math.round(Math.max(+r.Cost || 0, 1000) * augMult);
     const alphaCell = hasZr
-      ? el("label", { class: "opt", title: `α-cyber grade: ZR ${alphaZr} (−20%, min −0.1), cost ×2 (min +${CURRENCY_SYMBOL}1,000)` },
+      ? el("label", { class: "opt", title: `α-cyber grade: ZR ${alphaZr} (−20%, min −0.1), cost ×2 (min +${currencySymbol()}1,000)` },
           el("input", { type: "checkbox", ...(a.alpha ? { checked: 1 } : {}),
             onchange: async e => {
               a.alpha = e.target.checked;

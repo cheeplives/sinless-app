@@ -31,7 +31,11 @@ let activeTab = "priorities";
 let calcTimer = null;
 
 const RECALC_DEBOUNCE_MS = 200;   // how long to wait after a keystroke/stepper click before recalculating
-const CURRENCY_SYMBOL = "\u3113"; // woolongs, this setting's currency
+/* The money glyph, read fresh on every call: it follows the "currency" house
+   rule (\u3113 for Zuzus, \u20a9 for Woolongs) and that rule is per character, so a
+   constant captured at load would show one character's money on another's
+   sheet. */
+const currencySymbol = () => RULES.currencySymbol();
 
 const $ = (sel, el = document) => el.querySelector(sel);
 
@@ -69,7 +73,7 @@ const el = (tag, attrs = {}, ...kids) => {
  * into the page — el() skips nulls for its own children, and this is the same
  * courtesy for a bare parent.append(). */
 const appendIf = (parent, kid) => { if (kid != null) parent.append(kid); };
-const fmt = amount => CURRENCY_SYMBOL + Number(amount || 0).toLocaleString();
+const fmt = amount => currencySymbol() + Number(amount || 0).toLocaleString();
 
 /* Raw dice-pool formulas (match computePools in rules.js). Shown on the
  * chargen skills page so the composition is visible even before the "Nd"
@@ -1798,7 +1802,7 @@ function tabAugments(p) {
       const zrCell = el("td", { class: "num" },
         hasZr ? `ZR ${it.alpha ? alphaZr : +r.ZR}` : r.BI ? `BI ${r.BI}` : "");
       const alphaCtl = hasZr
-        ? el("label", { class: "opt", title: `\u03b1-cyber grade: ZR ${alphaZr} (\u221220%, min \u22120.1), cost \u00d72 (min +${CURRENCY_SYMBOL}1,000)` },
+        ? el("label", { class: "opt", title: `\u03b1-cyber grade: ZR ${alphaZr} (\u221220%, min \u22120.1), cost \u00d72 (min +${currencySymbol()}1,000)` },
             el("input", { type: "checkbox", ...(it.alpha ? { checked: "1" } : {}),
               onchange: e => {
                 it.alpha = e.target.checked;

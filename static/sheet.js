@@ -1023,9 +1023,13 @@ function overArmoredSlots() {
     .map(([slot, names]) => ({ slot, names }));
 }
 
-/* Replicant remaining-lifespan tracker shown in the Overview warning area.
- * Rolled once as (1d6+1)×12 months, then ticked down by hand as play advances.
- * Returns null for non-Replicants. */
+/* Replicant remaining-lifespan tracker. Rolled once as (1d6+1)×12 months, then
+ * ticked down by hand as play advances. Returns null for non-Replicants.
+ *
+ * Built fresh per call, and deliberately shown in two places — the Overview
+ * warning area and the Notes tab's Dossier Notes, where the rest of what being
+ * a Replicant costs you is written down. Both are live: only one tab renders at
+ * a time and both edit the same play field, so they cannot disagree. */
 function replicantLifespanTracker() {
   if (CHAR.heritage.type !== "Replicant") return null;
   const play = CHAR.play;
@@ -7202,11 +7206,15 @@ function shNotes(body) {
   // editor takes the full width rather than leaving a hole.
   const autos = dossierNotes();
   const notes = notesCard(18);
-  if (autos.length) {
+  // A Replicant's clock belongs with the rest of what being one costs you, not
+  // only on the Overview. Same live control, same play field.
+  const lifespan = replicantLifespanTracker();
+  if (autos.length || lifespan) {
     const dossier = el("div", { class: "card sh-card" },
       el("h3", {}, "Dossier Notes"),
       el("p", { class: "hint" }, "Generated from your build — reminders that don't fit the other tabs."));
     autos.forEach(n => dossier.append(el("div", { class: "sh-callout" }, "⚠ ", n)));
+    if (lifespan) dossier.append(lifespan);
     body.append(el("div", { class: "sh-notes-top" }, notes, dossier));
   } else {
     body.append(notes);

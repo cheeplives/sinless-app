@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "211";
+const APP_VERSION = "212";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -2663,12 +2663,23 @@ const SENSE_CAPABILITIES = [
     "ignore[^.]*\\b(?:low.?light|darkness|dark)\\b|treat darkness"
     + "|\\bsee better\\b[^.]*\\bdark|\\bcan see\\b[^.]*\\bdark"
     + "|\\bdetect[^.]*\\b(?:darkness|dark)\\b"],
-].map(([label, source]) => ({ label, re: new RegExp(source, "i") }));
+  // Seeing further is a perception capability, so it belongs here rather than
+  // only in optics_notes: the Imaging scope's whole effect is this, and
+  // Augmented Eyesight grants the same thing off a different table. Matches the
+  // phrasings the core rows already use -- "shift your range categories on
+  // firearms by one", "Shift one range category", "reduces the range category
+  // of a weapon by its rating" -- so homebrew using that wording is picked up
+  // for free, which is what the rest of this list is built on.
+  ["Range Shift", "(?:shift|reduc\\w*)[^.]*\\brange categor",
+    "Reduce Range Category by one"],
+].map(([label, source, effect]) => ({ label, effect: effect || "", re: new RegExp(source, "i") }));
 
-function senseCapability(source, clause) {
+/* Every capability a clause describes, not just the first: Augmented Eyesight
+ * states low-light vision AND the range shift in one sentence, so stopping at
+ * the first match silently dropped whichever came later in the list. */
+function senseCapabilities(source, clause) {
   const probe = source + " " + clause;
-  const hit = SENSE_CAPABILITIES.find(c => c.re.test(probe));
-  return hit ? hit.label : null;
+  return SENSE_CAPABILITIES.filter(c => c.re.test(probe));
 }
 
 /* Split on sentence ends so one clause of a long Effect can qualify without
@@ -2687,13 +2698,14 @@ function deriveSenseNotes(character, data, heritage, augments, droneVision) {
   const byCapability = new Map();
   const add = (from, source, text) => {
     for (const clause of senseClauses(text)) {
-      const capability = senseCapability(source, clause);
-      if (!capability) continue;
-      if (!byCapability.has(capability)) byCapability.set(capability, []);
-      const sources = byCapability.get(capability);
-      // One source grants a capability once, however many of its clauses say so.
-      if (!sources.some(s => s.name === source && s.from === from)) {
-        sources.push({ name: source, from });
+      for (const hit of senseCapabilities(source, clause)) {
+        if (!byCapability.has(hit.label))
+          byCapability.set(hit.label, { effect: hit.effect, sources: [] });
+        const { sources } = byCapability.get(hit.label);
+        // One source grants a capability once, however many clauses say so.
+        if (!sources.some(s => s.name === source && s.from === from)) {
+          sources.push({ name: source, from });
+        }
       }
     }
   };
@@ -2704,9 +2716,18 @@ function deriveSenseNotes(character, data, heritage, augments, droneVision) {
     const row = findRow(data.misc_gear, "Item", item.name);
     if (row) add("Gear", item.name, row.Effect);
   }
+  for (const w of character.weapons || []) {
+    if (w.equipped === false) continue;      // a holstered gun sees nothing
+    for (const mod of w.mods || []) {
+      const name = (mod && typeof mod === "object") ? mod.name : mod;
+      const row = findRow(data.weapon_mods, "Modification", name);
+      if (row) add("Weapon mod", name, row.Effect);
+    }
+  }
   // Already filtered to deployed drones by droneCombatBonuses.
   for (const v of droneVision || []) add("Drone", v.source, v.text);
-  return [...byCapability.entries()].map(([capability, sources]) => ({ capability, sources }));
+  return [...byCapability.entries()]
+    .map(([capability, { effect, sources }]) => ({ capability, effect, sources }));
 }
 
 function scoreKnowledgeSkills(character, finalIntelligence, finalCharisma,

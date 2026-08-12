@@ -1942,7 +1942,9 @@ function sensesBanner() {
   }
   for (const s of senses) {
     card.append(el("div", { class: "sh-sense" },
-      el("div", {}, s.capability),
+      el("div", {}, s.capability,
+        // Capabilities whose name doesn't state the mechanic carry one.
+        s.effect ? el("span", { class: "sub" }, ` — ${s.effect}`) : null),
       el("div", { class: "sub" },
         s.sources.map(src => `${src.name} (${src.from})`).join(" · "))));
   }

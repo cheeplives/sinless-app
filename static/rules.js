@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "210";
+const APP_VERSION = "211";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -2631,40 +2631,71 @@ function droneCombatBonuses(character, data) {
  * until now, which meant "can I see in the dark?" was a question you answered
  * by remembering.
  *
- * Matched on CAPABILITY PHRASING, not on sense words. "Eyes like a fly, but
- * softball sized" and "Changes color and shape of eyes" are cosmetic; Cyclopean
- * is a penalty; an Eye Laser is a weapon; Astral Senses is magic. All mention
- * eyes or senses and none belongs in this list. Requiring a phrase that
- * describes PERCEIVING keeps them out, and picks homebrew up for free when it
- * uses the same wording the core data does. Add a pattern when the data grows a
- * new way of saying it. */
-const SENSE_PATTERNS = [
-  "ignore[^.]*\\b(?:low.?light|darkness|dark)\\b",
-  "treat darkness",
-  "\\bcan see\\b", "\\bsee better\\b", "\\bsees? in\\b",
-  "\\bthermograph", "\\binfrared\\b", "\\bultraviolet\\b",
-  "\\becholocat", "\\bvision mag", "magnif\\w*\\s+vision",
-  "\\bdetect[^.]*\\b(?:darkness|dark)\\b",
-  "sound filtering", "\\bsonic\\b",
-];
-const SENSE_CLAUSE_RE = new RegExp(SENSE_PATTERNS.join("|"), "i");
+ * Grouped by CAPABILITY rather than listed per source. Two things that grant
+ * the same sense say so differently — the Thermographic augment's "Can see in
+ * thermographic spectrum" and the Roto-Drone's "Grants Thermographic Vision" —
+ * and one line naming both beats two lines saying the same thing twice.
+ */
+
+/* Each entry is one capability and the phrasings that grant it. The label is
+ * what the sheet shows.
+ *
+ * Order matters: first match wins, so the specific capabilities come before the
+ * catch-all darkness one. A clause is tested against "<source> <clause>", which
+ * is how "Echolocation Positioning" is recognised from an effect line that
+ * never uses the word.
+ *
+ * Deliberately narrow. Matching mere sense WORDS pulls in "Eyes like a fly, but
+ * softball sized", "Changes color and shape of eyes", Cyclopean (a penalty), an
+ * Eye Laser (a weapon) and Astral Senses (magic) — all mention eyes or senses,
+ * none is an enhanced sense. Every pattern here describes PERCEIVING, which is
+ * what keeps them out, and it picks homebrew up for free when it uses the
+ * wording the core data already does. */
+const SENSE_CAPABILITIES = [
+  ["Thermographic vision", "\\bthermograph"],
+  ["Infrared vision", "\\binfrared\\b"],
+  ["Ultraviolet vision", "\\bultraviolet\\b"],
+  ["Echolocation", "\\becholocat"],
+  ["Vision magnification", "\\bvision mag|magnif\\w*\\s+vision"],
+  ["Selective hearing", "sound filtering"],
+  ["Sonic protection", "\\bsonic\\b"],
+  ["Sees in darkness / low light",
+    "ignore[^.]*\\b(?:low.?light|darkness|dark)\\b|treat darkness"
+    + "|\\bsee better\\b[^.]*\\bdark|\\bcan see\\b[^.]*\\bdark"
+    + "|\\bdetect[^.]*\\b(?:darkness|dark)\\b"],
+].map(([label, source]) => ({ label, re: new RegExp(source, "i") }));
+
+function senseCapability(source, clause) {
+  const probe = source + " " + clause;
+  const hit = SENSE_CAPABILITIES.find(c => c.re.test(probe));
+  return hit ? hit.label : null;
+}
 
 /* Split on sentence ends so one clause of a long Effect can qualify without
- * dragging the rest of it along — Augmented Eyesight's range shift is a combat
- * note, not a sense. */
+ * dragging the rest along — Augmented Eyesight's firearm range shift is a
+ * combat note, not a sense. */
 function senseClauses(text) {
   return String(text || "").split(/(?<=[.;])\s+/)
     .map(c => c.trim().replace(/^grants\s+/i, ""))
-    .filter(c => c && SENSE_CLAUSE_RE.test(c));
+    .filter(Boolean);
 }
 
-/* [{ text, source, from }] for everything the character currently has. Gear is
- * included only while carried and drones only while deployed, because both can
- * be put down — this answers "what can I perceive right now". */
+/* [{ capability, sources: [{ name, from }] }], one row per distinct capability.
+ * Gear counts only while carried and a drone only while deployed, because both
+ * can be put down — this answers what the character can perceive right now. */
 function deriveSenseNotes(character, data, heritage, augments, droneVision) {
-  const out = [];
+  const byCapability = new Map();
   const add = (from, source, text) => {
-    for (const clause of senseClauses(text)) out.push({ text: clause, source, from });
+    for (const clause of senseClauses(text)) {
+      const capability = senseCapability(source, clause);
+      if (!capability) continue;
+      if (!byCapability.has(capability)) byCapability.set(capability, []);
+      const sources = byCapability.get(capability);
+      // One source grants a capability once, however many of its clauses say so.
+      if (!sources.some(s => s.name === source && s.from === from)) {
+        sources.push({ name: source, from });
+      }
+    }
   };
   for (const row of (heritage && heritage.traits) || []) add("Heritage", row.Name, row.Effects);
   for (const [row] of (augments && augments.rows) || []) add("Augment", row.Name, row.Effect);
@@ -2674,16 +2705,8 @@ function deriveSenseNotes(character, data, heritage, augments, droneVision) {
     if (row) add("Gear", item.name, row.Effect);
   }
   // Already filtered to deployed drones by droneCombatBonuses.
-  for (const v of droneVision || []) out.push({ text: v.text, source: v.source, from: "Drone" });
-  // Two augments can't grant the same sense twice, and a duplicate reads as a
-  // mistake rather than as twice the capability.
-  const seen = new Set();
-  return out.filter(s => {
-    const key = `${s.source} ${s.text}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  for (const v of droneVision || []) add("Drone", v.source, v.text);
+  return [...byCapability.entries()].map(([capability, sources]) => ({ capability, sources }));
 }
 
 function scoreKnowledgeSkills(character, finalIntelligence, finalCharisma,

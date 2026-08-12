@@ -189,6 +189,7 @@ const LIFESTYLE_EFFECTS = {
 let sheetTab = "overview";
 let expandedPool = null;      // pool card the user clicked open on Overview
 let imagesCollapsed = false;  // Images section folded shut on the Notes tab
+let sensesCollapsed = true;   // Enhanced Senses banner — starts folded
 let playSaveTimer = null;
 let sheetMenuOpen = false;    // hamburger menu (Back to Chargen / Homebrew / Export / …)
 let sheetHeadObserver = null; // IntersectionObserver toggling the compact sticky strip
@@ -1912,6 +1913,42 @@ function autoGrowTextarea(ta) {
   ta.style.height = `${ta.scrollHeight}px`;
 }
 
+/* Enhanced Senses, as a banner in the Overview callout strip beside the
+ * Replicant clock and the heritage-features line.
+ *
+ * Folded by default: it's a reference you open when the lights go out, not
+ * something to read every round, and unfolded it was long enough to push the
+ * Combat card's actual numbers off the screen. The count rides the summary so
+ * a glance still tells you whether there's anything in there.
+ *
+ * Returns null for a character with ordinary eyes and ears. */
+function sensesBanner() {
+  const senses = (CALC.combat && CALC.combat.senses) || [];
+  if (!senses.length) return null;
+  const card = el("div", { class: "sh-callout info sh-senses" },
+    el("div", { class: "sh-senses-head" },
+      el("span", {}, "👁 Enhanced Senses ",
+        el("b", {}, String(senses.length))),
+      counterBtn(sensesCollapsed ? "Show ▾" : "Hide ▴", () => {
+        sensesCollapsed = !sensesCollapsed;
+        renderSheet();
+      })));
+  if (sensesCollapsed) {
+    // The capability names alone, comma-joined — enough to know whether to open
+    // it without giving up a line per sense.
+    card.append(el("div", { class: "sub" },
+      senses.map(s => s.capability).join(" · ")));
+    return card;
+  }
+  for (const s of senses) {
+    card.append(el("div", { class: "sh-sense" },
+      el("div", {}, s.capability),
+      el("div", { class: "sub" },
+        s.sources.map(src => `${src.name} (${src.from})`).join(" · "))));
+  }
+  return card;
+}
+
 /* Bulk save management: tick several characters, delete them in one go.
  *
  * "Delete Character" only ever reaches the one that's open, so clearing out a
@@ -2854,6 +2891,9 @@ function shOverview(body) {
   // because that is what it moves.
   const fx = poolEffectsPanel();
   if (fx) body.append(fx);
+  // What this character can perceive — folded away until asked for.
+  const senses = sensesBanner();
+  if (senses) body.append(senses);
 
   // --- kismet + pools
   const kismetRow = el("div", { class: "sh-kismet" },
@@ -3025,17 +3065,6 @@ function shOverview(body) {
   // and any drone that's out. It sits at the bottom because it's a reference
   // you consult when the lights go off, not a number you read every round —
   // and it's absent entirely for a character with ordinary eyes and ears.
-  if ((c.senses || []).length) {
-    combatCard.append(el("h4", { class: "sh-h4", style: "margin-top:10px" }, "Enhanced Senses"));
-    // Capability first, attribution under it. Not statLine: that's a label /
-    // value pair for short labels, and "Vision Magnification 2" in the label
-    // column wraps to three lines in a card this narrow.
-    for (const s of c.senses) {
-      combatCard.append(el("div", { class: "sh-sense" },
-        el("div", {}, s.text),
-        el("div", { class: "sub" }, `${s.source} · ${s.from}`)));
-    }
-  }
   // Dodging is a roll, not a counter, so this card has no number to stare at —
   // it works like Soak: a button that opens the roller pointed at Finesse with
   // your passive dodge dice already in, and a note saying how many those are.

@@ -997,8 +997,10 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-saves-row{display:flex;align-items:flex-start;gap:10px;padding:6px 2px}
 .sh-saves-row + .sh-saves-row{border-top:1px solid var(--line-soft)}
 .sh-saves-row input{margin-top:3px;flex:0 0 auto}
-/* Enhanced Senses rows: what you can perceive, then where it comes from. Full
-   width rather than a label/value pair — the capabilities are sentences. */
+/* Enhanced Senses banner: a header row with its fold button, then one row per
+   capability with the things granting it underneath. */
+.sh-senses{display:flex;flex-direction:column;gap:2px}
+.sh-senses-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .sh-sense{padding:4px 0;font-size:12px}
 .sh-sense + .sh-sense{border-top:1px dashed var(--line-dash)}
 .sh-sense .sub{font-size:11px;margin-top:1px}

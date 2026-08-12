@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "214";
+const APP_VERSION = "215";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -1993,18 +1993,17 @@ function tallyAmpPowers(character, data, magicType, warnings, errors) {
     } else if (row.Name === "Attribute Increase" && ATTRIBUTES.includes(target)) {
       attributeAdjustment[target] += times;
     } else if (row.Name === "Expertise" && (target in SKILLS)) {
+      // Stays here: Expertise raises the skill's CAP as well as its rating
+      // (expertiseSkills), and "Skill Bonus" has no way to say that. It also
+      // targets a skill the player picks rather than one the row names.
       skillBonus[target] = (skillBonus[target] || 0) + EXPERTISE_SKILL_BONUS * times;
       expertiseSkills.add(target);
-    } else if (row.Name === "Eyes of the Raptor") {
-      skillBonus["Firearms"] = (skillBonus["Firearms"] || 0) + 2;
-    } else if (row.Name === "Might of the Bear") {
-      skillBonus["Unarmed Combat"] = (skillBonus["Unarmed Combat"] || 0) + 2;
-    } else if (row.Name === "Sting of the Scorpion") {
-      skillBonus["Melee Weapons"] = (skillBonus["Melee Weapons"] || 0) + 2;
-    } else if (row.Name === "Hidden Presence") {
-      skillBonus["Shadow"] = (skillBonus["Shadow"] || 0) + 2;
-      skillBonus["Subterfuge"] = (skillBonus["Subterfuge"] || 0) + 2;
     }
+    // Eyes of the Raptor, Might of the Bear, Sting of the Scorpion and Hidden
+    // Presence used to be four more branches here. They are now "Skill Bonus"
+    // columns on their own rows, read by gearSkillEffects like every other
+    // table's -- so homebrew amp powers can grant skill dice too, and a typo
+    // gets reported instead of silently granting nothing.
   }
 
   return {
@@ -3867,6 +3866,10 @@ function gearSkillEffects(character, data, warnings) {
   rowsOf(character.drones, "drones", "Drone");
   rowsOf((character.magic || {}).spells, "spells", "Name");
   rowsOf(character.rituals, "rituals", "Name");
+  // Amp powers. Play-bought powers are already merged into magic.amp_powers by
+  // applyPlayAdvances, which runs first, so this is the same set the hardcoded
+  // name checks used to see.
+  rowsOf((character.magic || {}).amp_powers, "amp_powers", "Name");
   // Mods fitted to an equipped weapon, and augments mounted in worn hosts.
   for (const w of character.weapons || []) {
     if (w.equipped === false) continue;

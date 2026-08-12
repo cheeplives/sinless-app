@@ -255,29 +255,35 @@ migration on the list and is the only one that would actually be wrong.
 |---|---|---|---|
 | `spells` | Bound Servant | Gain +2d to Sorcery/Channeling | Spells **are** read by `gearSkillEffects`, and unconditionally — a *known* spell grants its columns. Bound Servant costs 2 ZP and grants a permanent familiar, so that may be right. If it is, `Sorcery +2, Channeling +2` is the value. If a spell should only count while cast, that's a rules.js question affecting every spell. |
 
-### The largest remaining cluster
+### The largest remaining cluster — now done
 
-`amp_powers` has **no** `Skill Bonus` / `Skill Note` columns, so four powers are
-hardcoded by name in `resolveAmp` ([rules.js:1989](../../static/rules.js)) —
-exactly the shape that `Sound Filter`, `Rocket Boots`, `Compartment`,
-`Covert Synthskin` and `Amplification` were in before they became columns, a
-migration this repo has already done once and recorded in `P09-012`.
+`amp_powers` had **no** `Skill Bonus` / `Skill Note` columns, so four powers were
+hardcoded by name in `resolveAmp` — exactly the shape that `Sound Filter`,
+`Rocket Boots`, `Compartment`, `Covert Synthskin` and `Amplification` were in
+before they became columns, a migration this repo had already done once and
+recorded in `P09-012`.
 
-| Power | Hardcoded branch | Would become |
+| Power | Was | Now |
 |---|---|---|
 | Eyes of the Raptor | `skillBonus["Firearms"] += 2` | `Skill Bonus: Firearms +2` |
 | Might of the Bear | `skillBonus["Unarmed Combat"] += 2` | `Skill Bonus: Unarmed Combat +2` |
 | Sting of the Scorpion | `skillBonus["Melee Weapons"] += 2` | `Skill Bonus: Melee Weapons +2` |
 | Hidden Presence | `skillBonus["Shadow"] += 2; skillBonus["Subterfuge"] += 2` | `Skill Bonus: Shadow +2, Subterfuge +2` |
 
-All four Effect strings already state the right number, so the data is ready.
-What it needs is the two columns on `amp_powers`, a `rowsOf(amp.powers_taken,
-"amp_powers", "Name")` line in `gearSkillEffects`, and the four branches deleted.
+All four Effect strings already stated the right number, so the data was ready.
+`amp_powers` now carries both columns, `gearSkillEffects` reads them, and the
+four branches are gone. Homebrew amp powers can grant skill dice, and a misspelt
+skill is reported rather than silently granting nothing.
 
-`Expertise` is deliberately **not** in that table. It reads `+2 to Skill and it's
+Their Effect prose still restates the bonus, so these four join the
+[duplicates](#already-migrated--the-prose-is-now-a-duplicate) list above — the
+sentence should defer to the column rather than say it a second time.
+
+`Expertise` is deliberately still hardcoded. It reads `+2 to Skill and it's
 maximum` (also a typo — `it's` → `its`), and `Skill Bonus` has no way to say
-"and raise the cap". That is the same gap `RaisesMax` just closed for attributes,
-and it would need its own column to move.
+"and raise the cap"; it also targets a skill the *player* picks rather than one
+the row names. That is the same gap `RaisesMax` just closed for attributes, and
+it would need its own column to move.
 
 ---
 

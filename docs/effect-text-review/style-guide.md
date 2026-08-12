@@ -38,6 +38,11 @@ and a rewrite that breaks it silently changes a character sheet.
 -3d Focus Pool                      a penalty
 ```
 
+List several pools in **`POOL_NAMES` order — Brawn, Finesse, Focus, Resolve** —
+not the order the old sentence happened to use. Parsing doesn't care; a reader
+comparing two rows does. Always say "Pool", in every clause: a row that writes
+`+4d Focus Pool` and then `-2d Focus` is describing the same thing two ways.
+
 Drives the conditional pool toggles (Adrenal Pump, drugs, the Wildling shift).
 The number **must be signed** — `Brawn Pool (3)` is read as a target number and
 is deliberately not matched.
@@ -74,25 +79,57 @@ Use the skill's real name; the column parser rejects anything else with a
 warning. `SKILLS` has **Shadow**, not "Stealth", and **Reconnaissance** (alias
 "Recon") as the canonical form.
 
+### Numbers a column already carries
+
+State **what** is boosted; leave **how much** to the column.
+
+```
+Grants a bonus to Strength and Body.     augments: the attribute columns
+Grants Impact and Ballistic Armor.       augments: the armor columns
+Grants a bonus to Observation.           any table: Skill Bonus
+```
+
+The column is what the engine applies, so a number repeated in prose can only
+agree with it or be wrong — and drift is invisible until someone reads one and
+trusts it. Naming the stat keeps the row readable without a second source of
+truth.
+
+This does **not** apply to pool dice. A pool bonus lives only in the prose
+(`POOL_DICE_RE` reads it there), so its number is the rule, not a copy of one.
+Nor to rerolls: "reroll 1s and 2s" names dice faces, not a magnitude.
+
 ### Attributes
 
+Augments carry `Strength`, `Body`, `Reaction`, `Intelligence`, `Willpower` and
+`Charisma` columns, so the prose names them and stops:
+
 ```
-+1 Body
-+2 Body. +1 Strength.               two attributes = two sentences
+Grants a bonus to Body.
+Grants a bonus to Strength and Body.
 ```
 
-Lower case `body` and `to` are the current drift (`grants +1 to Body`,
-`+2 to body`). Drop `grants` and `to`; capitalise the attribute.
+Not `grants +1 to Body`, `+2 to body`, or `+1 Body` — see *Numbers a column
+already carries*. Capitalise the attribute; drop `grants … to` in favour of the
+one form above.
+
+Where a table has **no** column for the value (heritage traits' Dodge riders, an
+amp's simple-action grant), keep the number — it has nowhere else to live.
 
 ### Armor
 
+`Impact Armor` and `Ballistic Armor` are columns on augments and armor, so again
+the prose names them:
+
 ```
-+1 Ballistic Armor
-+2 Impact Armor
-+1 Ballistic/Impact Armor           when one number covers both
+Grants Impact Armor.
+Grants Impact and Ballistic Armor.
 ```
 
 Not `1 Impact armor`, `2 points of impact armor`, `+1B Armor`, or `2B/3I Armor`.
+
+The `B`/`I` shorthand is load-bearing elsewhere — `infusionStatMods`
+(rules.js:4411) parses `+2 to B/I armor` from spirit effects for real — so don't
+introduce it in tables that have the columns.
 
 ### Movement
 

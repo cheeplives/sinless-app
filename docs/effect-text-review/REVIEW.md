@@ -272,74 +272,58 @@ Kamakazi's "can double effect", Lick and Rage's "doubling". Those phrases are no
 that in mind: keep the number a player wants at the table, but it is no longer
 the only place the rule lives.
 
-### Numbers removed from prose because a column now carries them
+### Numbers that a column carries are named, not repeated
 
-Eighteen proposals were rewritten so the sentence stops restating a value the
-row already holds structurally. The column is what the engine applies; a second
-copy in prose can only ever agree or be wrong.
+Where a value lives in a structured column, the prose no longer states the
+number — it names **what** is boosted and leaves **how much** to the column:
 
-| Table | Row | Column that carries it | Proposal now reads |
-|---|---|---|---|
-| `augments` | Sound Filter | `Skill Bonus: Observation +1` | Allows for selective sound filtering. |
-| `augments` | Compartment | `Skill Note: Subterfuge: +6d to conceal an item in the body compartment` | 4 square cm storage area in body. |
-| `augments` | Covert Synthskin | `Skill Note: Shadow: reroll 1s/2s…` | (reroll sentence dropped; dodge, cameras and armor kept) |
-| `augments` | Rocket Boots | `Skill Note: Athletics: +8d & reroll 1s/2s when jumping` | Grants thrust compensation. |
-| `augments` | Amplification | `Skill Note: Observation: reroll 1s` | Allows for selective amplification of sounds. |
-| `augments` | Synaptic Enhancers | `RaisesMax` | (the "and maximums" parentheticals dropped) |
-| `augments` | Hyperthyroid | `RaisesMax` (unset) | ("Does not increase max." dropped) |
-| `amp_powers` | Eyes of the Raptor | `Skill Bonus: Firearms +2` | Sharpened accuracy with firearms. |
-| `amp_powers` | Might of the Bear | `Skill Bonus: Unarmed Combat +2` | Raw power in unarmed combat. |
-| `amp_powers` | Sting of the Scorpion | `Skill Bonus: Melee Weapons +2` | Prowess with melee weapons. |
-| `amp_powers` | Hidden Presence | `Skill Bonus: Shadow +2, Subterfuge +2` | Skin and clothes subtly match the surroundings while still. |
-| `misc_gear` | First Aid Kit | `Skill Bonus: Biotech +1` | Single-use field dressing kit. |
-| `misc_gear` | Trauma Kit | `Skill Bonus: Biotech +2` | Single-use trauma kit for serious injuries. |
-| `misc_gear` | Electronic Doctor Kit | `Skill Bonus: Biotech +3` + `Skill Note` | Single-use automated diagnostic and treatment kit. |
-| `misc_gear` | Cram | `Max Doses: 4` | ("Can chain up to 4." dropped) |
-| `misc_gear` | Kamakazi, Lick, Rage | `Max Doses: 2` | "A doubled dose raises Dependence to 3." |
+```
++4 Body. +4 Strength.        ->  Grants a bonus to Strength and Body.
++3 Impact Armor.             ->  Grants Impact Armor.
++1 to Observation tests.     ->  Grants a bonus to Observation.
+Grant +2 bonus to Biotech    ->  Single use. Grants a bonus to Biotech.
+```
 
-Two things this pass was careful about:
+The row still tells a reader what it does, and there is exactly one place the
+value lives. **57 proposals** are affected: 42 augment rows carrying an attribute
+or armor column, the four amp powers, the three medkits, and the skill/dose/max
+rows listed earlier.
 
-**Only the column-carried half goes.** Kamakazi's "Can double effect at 3
-Dependence" states two rules — the doubling, which `Max Doses` now carries, and
-a Dependence consequence, which **no column carries**. The doubling is dropped
-and the consequence kept. Cram's "Can chain up to 4" is the only one of the four
-that was purely redundant.
+Three deliberate exceptions:
 
-**Sound Filter keeps its last sentence.** Its Effect drives the Enhanced Senses
-banner through the phrase "sound filtering" (`SENSE_CAPABILITIES`, rules.js:2654).
-Trimming the row to just its skill bonus would have removed the character's
-Selective Hearing. The verifier confirms the hit survives.
+**Pool bonuses keep their numbers.** A pool bonus exists *only* in the prose —
+`POOL_DICE_RE` reads it there and no column carries it — so "+2d Brawn Pool"
+stays exactly as written. Removing that number would delete the rule, not
+relocate it.
 
-### The boundary: attribute and armor numbers stay
+**Rerolls keep their wording.** "Reroll 1s and 2s" names dice faces, not a bonus
+magnitude. Nothing is redundant about it, so Covert Synthskin, Rocket Boots and
+Amplification keep theirs.
 
-Every augment that grants an attribute also states it in prose — Bone
-Lacing-Plastic's `Body: "1"` column beside "Plastic bones. +1 Body." — and by a
-literal reading those are redundant too.
+**`Strength Enhancement 1–6` keep theirs.** "+N Strength to all limbs" is a
+different claim from the character's own Strength, and the row's second sentence
+exists to warn about exactly that mismatch.
 
-They are deliberately **not** stripped. **46 augment rows** carry an attribute or
-armor column, and stripping every sentence that only restates one splits them
-two ways:
+### Pool wording is now consistent
 
-- **22 rows would be left with an empty Effect.** Their entire Effect *is* the
-  numbers — `Muscle Replacement 4` is "+4 Body. +4 Strength."; `Dermal Plating 3`
-  is "+3 Body. +2 Impact Armor. +1 Ballistic Armor."; all six Muscle
-  Augmentations, all three Boosted Reflexes, all three Orthoskins.
-- **24 rows would survive** with real prose — `Wired Reflexes 1` keeps "1 melee
-  exploit action", `Reaction Enhancer 3` keeps "Doubles pain-based penalties",
-  the Bone Lacings keep "Immune to being stripped by energy weapons".
+`POOL_NAMES` is `Brawn, Finesse, Focus, Resolve` (rules.js:93), and three rows
+listed their pools in the order the original sentence happened to use:
 
-Effect is the human-readable summary a player reads; the columns are unlabelled
-data behind it, and an empty summary is worse than a redundant one. The skill and
-dose columns above are different in kind: they carry a *rule* the prose was
-restating loosely, and in Compartment's case inaccurately.
+| Row | Was | Now |
+|---|---|---|
+| Adrenal Pump | `+2d Resolve/Brawn/Finesse Pool` | `+2d Brawn/Finesse/Resolve Pool` |
+| Hyper Adrenal Pump | `+4d Resolve/Brawn/Finesse Pool` | `+4d Brawn/Finesse/Resolve Pool` |
+| Kamakazi | `+2d Finesse/Brawn Pool` | `+2d Brawn/Finesse Pool` |
 
-Note that `Strength Enhancement 1–6` only look like duplicates. "+N Strength to
-all limbs" is a different claim from the character's own Strength — the row's
-second sentence exists precisely to warn about the mismatch — so those keep
-their number whatever is decided here.
+`Sixgun` also dropped the word "Pool" from its second clause while keeping it in
+the first; both now read `Focus Pool`.
 
-If the 22 emptied rows are acceptable (their numbers would still show on the
-sheet, from the columns), this is a small change to the same script.
+Parsing is unaffected — `parsePoolDice` splits the list and doesn't care about
+order — which the verifier confirms. Catching that took a fix to the checker
+itself: it compared the parser's output as a *string*, so reordering the pools
+looked like a behaviour change when the pools and values were identical. It now
+sorts into `POOL_NAMES` order before comparing.
+
 
 ### Needs a ruling
 
@@ -599,30 +583,30 @@ Everything needing a decision beyond accept/reject on the wording.
 |---|---|---|---|---|---|
 | 1 | Knowledge Skillsoft | Requires a Chipjack. Each one adds a Knowledge skill point. | Requires a Chipjack. Each one adds a Knowledge skill point. | — | |
 | 2 | Automated Hypoinjectors | Subdermal implants that an inject 3 doses of meds/drugs as a free action | Subdermal implants that can inject 3 doses of meds/drugs as a free action. | — | **TYPO** — "an inject" corrected to "can inject" |
-| 3 | Bone Lacing-Plastic | Plastic bones, grants +1 to Body | Plastic bones. +1 Body. | — | |
-| 4 | Bone Lacing-Aluminum | Aluminum bones grants +2 to body and 1 Impact armor-immune to being stripped by energy weapons | Aluminum bones. +2 Body. +1 Impact Armor. Immune to being stripped by energy weapons. | — | |
-| 5 | Bone Lacing-Titanium | Titanium bones grants +3 to body and 2 Impact armor-immune to being stripped by energy weapons | Titanium bones. +3 Body. +2 Impact Armor. Immune to being stripped by energy weapons. | — | |
+| 3 | Bone Lacing-Plastic | Plastic bones, grants +1 to Body | Plastic bones. Grants a bonus to Body. | — | |
+| 4 | Bone Lacing-Aluminum | Aluminum bones grants +2 to body and 1 Impact armor-immune to being stripped by energy weapons | Aluminum bones. Grants a bonus to Body. Grants Impact Armor. Immune to being stripped by energy weapons. | — | |
+| 5 | Bone Lacing-Titanium | Titanium bones grants +3 to body and 2 Impact armor-immune to being stripped by energy weapons | Titanium bones. Grants a bonus to Body. Grants Impact Armor. Immune to being stripped by energy weapons. | — | |
 | 6 | Broadcast Jammer | Can activate to block EM. Grants immunity to cameras and blocks radio waves up to 12m. Also adds +2 hardening to devices w/n 12m | Can activate to block EM. Grants immunity to cameras. Blocks radio waves within 12m. +2 hardening to devices within 12m. | — | |
-| 7 | Compartment | 4 square cm storage area in body. +6 to Subterfuge to hide things within. | 4 square cm storage area in body. | — | |
-| 8 | Covert Synthskin | Color changing skin, tactical. Reroll 1s and 2s on Shadow tests. +1 to dodge. Immune to cameras. 1 Impact Armor | Color changing skin, tactical. +1 Dodge. Immune to cameras. +1 Impact Armor. | — | |
-| 9 | Dermal Plating 1 | +1 Body and 1 Impact Armor. | +1 Body. +1 Impact Armor. | — | |
-| 10 | Dermal Plating 2 | +2 Body and 2 Impact Armor | +2 Body. +2 Impact Armor. | — | |
-| 11 | Dermal Plating 3 | +3 Body, 2 Impact and 1 Ballistic Armor | +3 Body. +2 Impact Armor. +1 Ballistic Armor. | — | |
-| 12 | Muscle Replacement 1 | +1 to Body and Strength | +1 Body. +1 Strength. | — | |
-| 13 | Muscle Replacement 2 | +2 to Body and Strength | +2 Body. +2 Strength. | — | |
-| 14 | Muscle Replacement 3 | +3 to Body and Strength | +3 Body. +3 Strength. | — | |
-| 15 | Muscle Replacement 4 | +4 to Body and Strength | +4 Body. +4 Strength. | — | |
-| 16 | Muscle Replacement 5 | +5 to Body and Strength | +5 Body. +5 Strength. | — | |
-| 17 | Muscle Replacement 6 | +6 to Body and Strength | +6 Body. +6 Strength. | — | |
+| 7 | Compartment | 4 square cm storage area in body. +6 to Subterfuge to hide things within. | 4 square cm storage area in body. Grants a bonus to Subterfuge when concealing an item within. | — | |
+| 8 | Covert Synthskin | Color changing skin, tactical. Reroll 1s and 2s on Shadow tests. +1 to dodge. Immune to cameras. 1 Impact Armor | Color changing skin, tactical. Reroll 1s and 2s on Shadow tests while hiding in appropriate gear. +1 Dodge. Immune to cameras. Grants Impact Armor. | — | |
+| 9 | Dermal Plating 1 | +1 Body and 1 Impact Armor. | Grants a bonus to Body. Grants Impact Armor. | — | |
+| 10 | Dermal Plating 2 | +2 Body and 2 Impact Armor | Grants a bonus to Body. Grants Impact Armor. | — | |
+| 11 | Dermal Plating 3 | +3 Body, 2 Impact and 1 Ballistic Armor | Grants a bonus to Body. Grants Impact and Ballistic Armor. | — | |
+| 12 | Muscle Replacement 1 | +1 to Body and Strength | Grants a bonus to Strength and Body. | — | |
+| 13 | Muscle Replacement 2 | +2 to Body and Strength | Grants a bonus to Strength and Body. | — | |
+| 14 | Muscle Replacement 3 | +3 to Body and Strength | Grants a bonus to Strength and Body. | — | |
+| 15 | Muscle Replacement 4 | +4 to Body and Strength | Grants a bonus to Strength and Body. | — | |
+| 16 | Muscle Replacement 5 | +5 to Body and Strength | Grants a bonus to Strength and Body. | — | |
+| 17 | Muscle Replacement 6 | +6 to Body and Strength | Grants a bonus to Strength and Body. | — | |
 | 18 | Skillwires 1 | Requires Chipjack. Allows up to level 1 Skillsofts to be slotted. | Requires a Chipjack. Allows up to level 1 Skillsofts to be slotted. | — | |
 | 19 | Skillwires 2 | Requires Chipjack. Allows up to level 2 Skillsofts to be slotted. | Requires a Chipjack. Allows up to level 2 Skillsofts to be slotted. | — | |
 | 20 | Skillwires 3 | Requires Chipjack. Allows up to level 3 Skillsofts to be slotted. | Requires a Chipjack. Allows up to level 3 Skillsofts to be slotted. | — | |
 | 21 | Skillwires 4 | Requires Chipjack. Allows up to level 4 Skillsofts to be slotted. | Requires a Chipjack. Allows up to level 4 Skillsofts to be slotted. | — | |
 | 22 | Skillwires 5 | Requires Chipjack. Allows up to level 5 Skillsofts to be slotted. | Requires a Chipjack. Allows up to level 5 Skillsofts to be slotted. | — | |
 | 23 | Skillwires 6 | Requires Chipjack. Allows up to level 6 Skillsofts to be slotted. | Requires a Chipjack. Allows up to level 6 Skillsofts to be slotted. | — | |
-| 24 | Wired Reflexes 1 | +2 Reaction and 1 melee exploit action | +2 Reaction. 1 melee exploit action. | — | |
-| 25 | Wired Reflexes 2 | +4 Reaction and 2 melee exploit actions | +4 Reaction. 2 melee exploit actions. | — | |
-| 26 | Wired Reflexes 3 | +6 Reaction and 2 melee exploit actions | +6 Reaction. 2 melee exploit actions. | — | |
+| 24 | Wired Reflexes 1 | +2 Reaction and 1 melee exploit action | Grants a bonus to Reaction. 1 melee exploit action. | — | |
+| 25 | Wired Reflexes 2 | +4 Reaction and 2 melee exploit actions | Grants a bonus to Reaction. 2 melee exploit actions. | — | |
+| 26 | Wired Reflexes 3 | +6 Reaction and 2 melee exploit actions | Grants a bonus to Reaction. 2 melee exploit actions. | — | |
 | 27 | Arm Omni-kit | Allows for tools to mount in place of hand | Allows for tools to mount in place of hand | — | |
 | 28 | Cybergun Installation | Mounted gun inside arm. Takes 10 minutes to reload. Double Strength for recoil reduction. | Mounted gun inside arm. Takes 10 minutes to reload. Double Strength for recoil reduction. | — | |
 | 29 | Gyromount | Increases recoil capacity by 2. | +2 Recoil Capacity. | — | |
@@ -636,7 +620,7 @@ Everything needing a decision beyond accept/reject on the wording.
 | 37 | Movement Enhancement 1 | Add 2m to movement | +2m Movement | — | |
 | 38 | Movement Enhancement 2 | Add 4m to Movement | +4m Movement | — | |
 | 39 | Movement Enhancement 3 | Add 6m to Movement | +6m Movement | — | |
-| 40 | Rocket Boots | +8d to jumps and Athletics. Reroll 1s and 2s on jumps. Grants thrust compensation. | Grants thrust compensation. | — | |
+| 40 | Rocket Boots | +8d to jumps and Athletics. Reroll 1s and 2s on jumps. Grants thrust compensation. | Grants a bonus to Athletics for jumps, and rerolls 1s and 2s on them. Grants thrust compensation. | — | |
 | 41 | Strength Enhancement 1 | +1 Strength to all limbs. If greater than character strength you risk injury | +1 Strength to all limbs. If greater than character strength, you risk injury. | — | |
 | 42 | Strength Enhancement 2 | +2 Strength to all limbs. If greater than character strength you risk injury | +2 Strength to all limbs. If greater than character strength, you risk injury. | — | |
 | 43 | Strength Enhancement 3 | +3 Strength to all limbs. If greater than character strength you risk injury | +3 Strength to all limbs. If greater than character strength, you risk injury. | — | |
@@ -665,11 +649,11 @@ Everything needing a decision beyond accept/reject on the wording.
 | 66 | Left Leg Replacement-Chromed, RC | Limb-arm or leg replacement, chrome finish. Detachable and remote controllable up to 20m. | Limb-arm or leg replacement, chrome finish. Detachable. Remote controllable up to 20m. | — | |
 | 67 | Left Leg Replacement-Synthetic, RC | Limb-arm or leg replacement, synthskin finish. Detachable and remote controllable up to 20m. | Limb-arm or leg replacement, synthskin finish. Detachable. Remote controllable up to 20m. | — | |
 | 68 | Cybertechtronic Ears | Replacement auditory system. Can mount up to 0.5 ZR of mods without affecting ZP for casting | Replacement auditory system. Can mount up to 0.5 ZR of mods without affecting ZP for casting | — | |
-| 69 | Amplification | Can reroll 1s on Observation tests. Allows for selective amplification of sounds. | Allows for selective amplification of sounds. | — | |
+| 69 | Amplification | Can reroll 1s on Observation tests. Allows for selective amplification of sounds. | Reroll 1s on Observation tests. Allows for selective amplification of sounds. | — | |
 | 70 | Dampener | Dampener renders the user immune to the sonic effects of attacks. | Dampener renders the user immune to the sonic effects of attacks. | `sense: Sonic protection` | |
 | 71 | Echolocation Positioning | User can detect objects or people within 20m even in complete darkness. | User can detect objects or people within 20m even in complete darkness. | `sense: Echolocation` | |
 | 72 | Recorder | Requires datajack or memory. Can record audio recieved. | Requires a Datajack or Memory. Can record audio received. | — | **TYPO** — "recieved" corrected to "received" |
-| 73 | Sound Filter | +1 to Observation tests. Allows for selective sound filtering. | Allows for selective sound filtering. | `sense: Selective hearing` | |
+| 73 | Sound Filter | +1 to Observation tests. Allows for selective sound filtering. | Grants a bonus to Observation. Allows for selective sound filtering. | `sense: Selective hearing` | |
 | 74 | Cybertechtronic Eyes | Replacement visual system. Can mount up to 0.5 ZR of mods without affecting ZP for casting | Replacement visual system. Can mount up to 0.5 ZR of mods without affecting ZP for casting | — | |
 | 75 | AR Optical | AR Interface. Required to interact with AR | AR Interface. Required to interact with AR | — | |
 | 76 | Camera | Requires datajack or memory. Can record video recieved. | Requires a Datajack or Memory. Can record video received. | — | **TYPO** — "recieved" corrected to "received" |
@@ -698,43 +682,43 @@ Everything needing a decision beyond accept/reject on the wording.
 | 99 | Skillsoft 6 | Gain 6 Ranks in the skill purchased | Gain 6 Ranks in the skill purchased | — | |
 | 100 | Smartlink | Grants +1 to tests with Smartlink Capable guns | Grants +1 to tests with Smartlink Capable guns | — | |
 | 101 | Subvocal Mic | Requires Commlink. Subvocal mic to communicate silently. | Requires a Commlink. Subvocal mic to communicate silently. | — | |
-| 102 | Synaptic Enhancers | +2 to Reaction and Intelligence-and maximums. Speeds up brain processing and reaction times. | +2 Reaction. +2 Intelligence. Speeds up brain processing and reaction times. | — | |
+| 102 | Synaptic Enhancers | +2 to Reaction and Intelligence-and maximums. Speeds up brain processing and reaction times. | Grants a bonus to Reaction and Intelligence. Speeds up brain processing and reaction times. | — | |
 | 103 | Mobicycle | Legs convert to wheels. Move is 20m | Legs convert to wheels. Movement 20m. | — | |
 | 104 | Aquamobi | Legs convert to turbines. Grants water movement of 24m | Legs convert to turbines. Water movement 24m. | — | |
 | 105 | Railmobi | Legs convert to rail mount. Grants rail movement of 40m | Legs convert to a rail mount. Rail movement 40m. | — | |
-| 106 | Trackmobi | Can mount to tracked chasis. 6m movement, 1 wt mount, and 1 ballistic armor. | Can mount to a tracked chassis. Movement 6m. 1 wt mount. +1 Ballistic Armor. | — | **TYPO** — "chasis" corrected to "chassis" |
-| 107 | Delux Trackmobi | Can mount to tracked chasis. 8m movement, 2 wt mount, and 2 ballistic armor. | Can mount to a tracked chassis. Movement 8m. 2 wt mount. +2 Ballistic Armor. | — | **TYPO** — "chasis" corrected to "chassis". **CHECK** — the row's Name ("Delux Trackmobi") looks like a misspelling of "Deluxe"; not changed here since renaming a row is out of scope (needs a `RENAMED_*` migration map per the style guide) |
-| 108 | Luxury Trackmobi | Can mount to tracked chasis. 8m movement, 3 wt mount, and 2 ballistic and 1 impact armor. | Can mount to a tracked chassis. Movement 8m. 3 wt mount. +2 Ballistic Armor. +1 Impact Armor. | — | **TYPO** — "chasis" corrected to "chassis" |
+| 106 | Trackmobi | Can mount to tracked chasis. 6m movement, 1 wt mount, and 1 ballistic armor. | Can mount to a tracked chassis. Movement 6m. 1 wt mount. Grants Ballistic Armor. | — | **TYPO** — "chasis" corrected to "chassis" |
+| 107 | Delux Trackmobi | Can mount to tracked chasis. 8m movement, 2 wt mount, and 2 ballistic armor. | Can mount to a tracked chassis. Movement 8m. 2 wt mount. Grants Ballistic Armor. | — | **TYPO** — "chasis" corrected to "chassis". **CHECK** — the row's Name ("Delux Trackmobi") looks like a misspelling of "Deluxe"; not changed here since renaming a row is out of scope (needs a `RENAMED_*` migration map per the style guide) |
+| 108 | Luxury Trackmobi | Can mount to tracked chasis. 8m movement, 3 wt mount, and 2 ballistic and 1 impact armor. | Can mount to a tracked chassis. Movement 8m. 3 wt mount. Grants Impact and Ballistic Armor. | — | **TYPO** — "chasis" corrected to "chassis" |
 | 109 | Repulsors | Repulsors allowing vectored flight. 12m of flying movement up to 20 minutes with a 30m ceiling. Can lift 450 kg. Treat as in full cover, but double recoil penalties. | Repulsors allowing vectored flight. 12m of flying movement up to 20 minutes with a 30m ceiling. Can lift 450 kg. Treat as in full cover. Double recoil penalties. | — | **CONTRADICTS DESC** — the Description says the 12m figure is the flight *ceiling* ("move up to 12 m above surfaces") and 30m is the *movement speed* while flying ("movement of 30 m"); the Effect text has these two numbers swapped ("12m of flying movement ... with a 30m ceiling"). Not renumbered here — flagging for the data owner to pick the correct pairing |
-| 110 | Adrenal Pump | When active: +2 to Resolve, Brawn, and Finesse Pools for 10 minutes. At end, 9 stun damage. Recharge: 30/min, +1 stun to all dmg | When active: +2d Resolve/Brawn/Finesse Pool for 10 minutes. At end, 9 stun damage. Recharge: 30 minutes. +1 stun to all damage. | `pool Resolve+2, Brawn+2, Finesse+2` | **UNCLEAR** — "Recharge: 30/min" in the original is ambiguous (a 30-minute recharge time, vs. some per-minute rate); rendered here as "30 minutes" to match how "Recharge:" reads elsewhere in this table, but the true intent should be checked against the source |
-| 111 | Hyper Adrenal Pump | When active: +4 to Resolve, Brawn, and Finesse Pools for 10 minutes. At end, 9 stun damage. Recharge: 30/min, +1 stun to all dmg | When active: +4d Resolve/Brawn/Finesse Pool for 10 minutes. At end, 9 stun damage. Recharge: 30 minutes. +1 stun to all damage. | `pool Resolve+4, Brawn+4, Finesse+4` | **UNCLEAR** — same "30/min" ambiguity as Adrenal Pump (row 110) |
+| 110 | Adrenal Pump | When active: +2 to Resolve, Brawn, and Finesse Pools for 10 minutes. At end, 9 stun damage. Recharge: 30/min, +1 stun to all dmg | When active: +2d Brawn/Finesse/Resolve Pool for 10 minutes. At end, 9 stun damage. Recharge: 30 minutes. +1 stun to all damage. | `pool Resolve+2, Brawn+2, Finesse+2` | **UNCLEAR** — "Recharge: 30/min" in the original is ambiguous (a 30-minute recharge time, vs. some per-minute rate); rendered here as "30 minutes" to match how "Recharge:" reads elsewhere in this table, but the true intent should be checked against the source |
+| 111 | Hyper Adrenal Pump | When active: +4 to Resolve, Brawn, and Finesse Pools for 10 minutes. At end, 9 stun damage. Recharge: 30/min, +1 stun to all dmg | When active: +4d Brawn/Finesse/Resolve Pool for 10 minutes. At end, 9 stun damage. Recharge: 30 minutes. +1 stun to all damage. | `pool Resolve+4, Brawn+4, Finesse+4` | **UNCLEAR** — same "30/min" ambiguity as Adrenal Pump (row 110) |
 | 112 | Augmented Eyesight | Ignore penalties for low light, treat darkness as low light, and shift your range categories on firearms by one. | Ignore penalties for low light. Treat darkness as low light. Shift your range categories on firearms by one. | `sense: Sees in darkness / low light` | |
-| 113 | Bone Density | +2 Body and 2 Impact Armor | +2 Body. +2 Impact Armor. | — | |
-| 114 | Boosted Reflexes 1 | +2 Reaction | +2 Reaction | — | |
-| 115 | Boosted Reflexes 2 | +4 Reaction | +4 Reaction | — | |
-| 116 | Boosted Reflexes 3 | +6 Reaction | +6 Reaction | — | |
+| 113 | Bone Density | +2 Body and 2 Impact Armor | Grants a bonus to Body. Grants Impact Armor. | — | |
+| 114 | Boosted Reflexes 1 | Grants a bonus to Reaction. | Grants a bonus to Reaction. | — | |
+| 115 | Boosted Reflexes 2 | Grants a bonus to Reaction. | Grants a bonus to Reaction. | — | |
+| 116 | Boosted Reflexes 3 | Grants a bonus to Reaction. | Grants a bonus to Reaction. | — | |
 | 117 | Gills | Can breathe underwater | Can breathe underwater | — | |
 | 118 | Hyperthyroid | Increase lifestyle cost 10%, +2 to Body, Reaction, and Strength. Does not increase max | Increase lifestyle cost 10%. +2 Body, Reaction, and Strength. | — | |
 | 119 | Metabolic Stasis | Go into stasis instead of dying | Go into stasis instead of dying | — | |
-| 120 | Muscle Augmentation 1 | +1 to Strength | +1 Strength. | — | |
-| 121 | Muscle Augmentation 2 | +2 to Strength | +2 Strength. | — | |
-| 122 | Muscle Augmentation 3 | +3 to Strength | +3 Strength. | — | |
-| 123 | Muscle Augmentation 4 | +4 to Strength | +4 Strength. | — | |
-| 124 | Muscle Augmentation 5 | +5 to Strength | +5 Strength. | — | |
-| 125 | Muscle Augmentation 6 | +6 to Strength | +6 Strength. | — | |
-| 126 | Orthoskin 1 | 1 Impact armor | +1 Impact Armor. | — | |
-| 127 | Orthoskin 2 | 2 Impact and 1 Ballistic Armor | +2 Impact Armor. +1 Ballistic Armor. | — | |
-| 128 | Orthoskin 3 | 3 Impact and 2 Ballistic Armor | +3 Impact Armor. +2 Ballistic Armor. | — | |
+| 120 | Muscle Augmentation 1 | +1 to Strength | Grants a bonus to Strength. | — | |
+| 121 | Muscle Augmentation 2 | +2 to Strength | Grants a bonus to Strength. | — | |
+| 122 | Muscle Augmentation 3 | +3 to Strength | Grants a bonus to Strength. | — | |
+| 123 | Muscle Augmentation 4 | +4 to Strength | Grants a bonus to Strength. | — | |
+| 124 | Muscle Augmentation 5 | +5 to Strength | Grants a bonus to Strength. | — | |
+| 125 | Muscle Augmentation 6 | +6 to Strength | Grants a bonus to Strength. | — | |
+| 126 | Orthoskin 1 | 1 Impact armor | Grants Impact Armor. | — | |
+| 127 | Orthoskin 2 | 2 Impact and 1 Ballistic Armor | Grants Impact and Ballistic Armor. | — | |
+| 128 | Orthoskin 3 | 3 Impact and 2 Ballistic Armor | Grants Impact and Ballistic Armor. | — | |
 | 129 | Unmodified Organ Replacement | Unmodified organ replacement | Unmodified organ replacement | — | |
 | 130 | Unmodified Limb Replacement | Unmodified limb replacement | Unmodified limb replacement | — | |
 | 131 | Platelet Production Enhancement | Reduce physical damage by 1 (min 1), requires daily blood thinners | Requires daily blood thinners. Reduce physical damage by 1 (min 1). | — | |
 | 132 | Prehensile Tail | 2m prehensile tail | 2m prehensile tail | — | |
-| 133 | Reaction Enhancer 1 | +1 Reaction but doubles pain-based penalties | +1 Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
-| 134 | Reaction Enhancer 2 | +2 Reaction but doubles pain-based penalties | +2 Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
-| 135 | Reaction Enhancer 3 | +3 Reaction but doubles pain-based penalties | +3 Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
-| 136 | Reaction Enhancer 4 | +4 Reaction but doubles pain-based penalties | +4 Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
-| 137 | Reaction Enhancer 5 | +5 Reaction but doubles pain-based penalties | +5 Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
-| 138 | Reaction Enhancer 6 | +6 Reaction but doubles pain-based penalties | +6 Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
+| 133 | Reaction Enhancer 1 | +1 Reaction but doubles pain-based penalties | Grants a bonus to Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
+| 134 | Reaction Enhancer 2 | +2 Reaction but doubles pain-based penalties | Grants a bonus to Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
+| 135 | Reaction Enhancer 3 | +3 Reaction but doubles pain-based penalties | Grants a bonus to Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
+| 136 | Reaction Enhancer 4 | +4 Reaction but doubles pain-based penalties | Grants a bonus to Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
+| 137 | Reaction Enhancer 5 | +5 Reaction but doubles pain-based penalties | Grants a bonus to Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
+| 138 | Reaction Enhancer 6 | +6 Reaction but doubles pain-based penalties | Grants a bonus to Reaction. Doubles pain-based penalties. | `doubles wound penalty` | |
 | 139 | Shimmerskin | Can change skin tone. Can be immune to cameras | Can change skin tone. Can be immune to cameras | — | **UNCLEAR** — "Can be immune to cameras" doesn't state the condition under which immunity applies; preserved as written rather than guessing |
 | 140 | Synthskin | Synthetic skin to cover cyberware | Synthetic skin to cover cyberware | — | |
 | 141 | Biomonitor | Under-skin display on forearm. Displays vital body statistics | Under-skin display on forearm. Displays vital body statistics | — | |
@@ -901,16 +885,16 @@ substring "initiat" where the original didn't already have one.
 | 5 | Attribute Increase | +1 to Attribute (but not Max) per time purchased | +1 to a chosen Attribute (not its maximum). Can be taken multiple times. | — | |
 | 6 | Body Equilibrium | Can walk across liquid per normal Move. Cannot stop, leaves no trace | Can walk across liquids at normal Movement speed. Cannot stop while doing so, and leaves no trace. | — | |
 | 7 | Combat Mastery | +2 Exploit Actions in melee. | +2 Exploit Actions in melee. | — | Already canonical; no change. |
-| 8 | Eyes of the Raptor | +2 bonus dice to Firearms | Sharpened accuracy with firearms. | — | |
-| 9 | Might of the Bear | +2 bonus dice to Unarmed Combat | Raw power in unarmed combat. | — | |
-| 10 | Sting of the Scorpion | +2 bonus dice to Melee Weapons | Prowess with melee weapons. | — | |
+| 8 | Eyes of the Raptor | +2 bonus dice to Firearms | Grants a bonus to Firearms. | — | |
+| 9 | Might of the Bear | +2 bonus dice to Unarmed Combat | Grants a bonus to Unarmed Combat. | — | |
+| 10 | Sting of the Scorpion | +2 bonus dice to Melee Weapons | Grants a bonus to Melee Weapons. | — | |
 | 11 | Expertise | +2 to Skill and it's maximum | +2 to a chosen Skill and its maximum. | — | **TYPO**: "it's" → "its" (possessive, not a contraction). |
 | 12 | Fade from Vision | One target in combat can't see you (-6d). Switch target is Complex action | One target in combat cannot see you (-6d to their tests against you). Switching targets is a Complex Action. | — | |
 | 13 | Far Sight | Can observe w/n a city block. +2 Recon. Requires Trance (Complex) and sensor can be seen with Astral Senses | Can observe within a city block. +2d Reconnaissance. Requires entering a Trance (Complex Action); the sensor is visible to Astral Senses. | — | |
 | 14 | Flash Step | 1 Stun damage to teleport 10m. Free Action. | Take 1 Stun damage to teleport 10m. Free Action. | — | |
 | 15 | Flying Crane | Athletics test to increase jump. Each success=4m(standing)/8m(running)/2m(vert) | Athletics test to increase jump distance. Each success grants 4m from standing, 8m from a running start, or 2m vertical. | — | |
 | 16 | Ghost | Immune to all cameras. Cannot be recorded digitally | Immune to cameras. Cannot be recorded digitally. | — | |
-| 17 | Hidden Presence | +2 bonus on Shadow and Subterfuge | Skin and clothes subtly match the surroundings while still. | — | |
+| 17 | Hidden Presence | +2 bonus on Shadow and Subterfuge | Skin and clothes subtly match the surroundings while still. Grants a bonus to Shadow and Subterfuge. | — | |
 | 18 | Iron Fist | Can do physical damage w/o weapons (1/2STR+6). Can act as Reach(0) melee weapon. | Can deal physical damage without weapons (1/2STR+6). Can act as a Reach 0 melee weapon. | — | |
 | 19 | Perfect Situational Awareness | +3d on dodge, soak, and resistance rolls | +3d Dodge, Soak, and Resistance tests. | — | |
 | 20 | Rasputin's Blessing | +8d to resist poison/toxins/gases | +8d to resist poison, toxins, and gases. | — | |
@@ -1055,10 +1039,10 @@ Review only. No repo files were modified. 137 rows processed.
 | 4 | Deepweed | Tincture. Can percieve astral for couple of hours. -1d to all test after for few hours. | Tincture. Can perceive astral for a couple of hours. -1d to all tests afterward, for a few hours. | — | TYPO: "percieve" → "perceive". Duration ("a couple of hours" / "a few hours") stays vague — no number is recoverable from the row, and inventing one would be a rules change. |
 | 5 | Dorf | Inhaled powder or hypopatch. Ignore wound pen for 2 hrs. -2d Finesse for 12 hours | Inhaled powder or hypopatch. Ignore wound penalties for 2 hours. -2d Finesse Pool for 12 hours. | `pool Finesse-2` | CHECK — not wired: "wound pen" is two characters short of `/wound penalt/i`, but fixing the wording alone can't make this work — `removesWoundPenalty` (rules.js:4987) is only ever applied to augments, martial-art levels, and heritage traits; `misc_gear` is never handed to it. Standardizing the wording is worth doing for consistency, but the immunity needs a rules.js change (teaching `removesWoundPenalty` to read `misc_gear.Effect`) before it can appear on a sheet. Dorf is the only drug in this table that claims wound-penalty immunity. |
 | 6 | Glitter | Hallucinogenic eyedrops. Non addictive | Hallucinogenic eyedrops. Non-addictive. | — | |
-| 7 | Kamakazi | Nasal inhaler. +2 Finesse and Brawn for 15 minutes. Can double effect at 3 Dependence. | Nasal inhaler. +2d Finesse/Brawn Pool for 15 minutes. A doubled dose raises Dependence to 3. | `pool Finesse+2, Brawn+2` | TYPO: item name "Kamakazi" is very likely a misspelling of "Kamikaze" — flagged only; the Name column is not rewritten here (renaming orphans saved characters per the style guide). |
+| 7 | Kamakazi | Nasal inhaler. +2 Finesse and Brawn for 15 minutes. Can double effect at 3 Dependence. | Nasal inhaler. +2d Brawn/Finesse Pool for 15 minutes. A doubled dose raises Dependence to 3. | `pool Finesse+2, Brawn+2` | TYPO: item name "Kamakazi" is very likely a misspelling of "Kamikaze" — flagged only; the Name column is not rewritten here (renaming orphans saved characters per the style guide). |
 | 8 | Long Haul | Hypopatch. No sleep for 4 days w/o penalties | Hypopatch. No sleep for 4 days without penalties. | — | |
 | 9 | Simsense | Simsense experience, basic but enjoyable. | Simsense experience, basic but enjoyable. | — | |
-| 10 | Sixgun | Hypopatch. +4d Focus pool for 3 hrs. If addicted instead at -2d Focus w/o it. | Hypopatch. +4d Focus Pool for 3 hours. If addicted instead at -2d Focus without it. | `pool Focus+4` | Both clauses kept intentionally — the second (`-2d Focus`) is a real qualifier, not noise; the engine already resolves it correctly (first clause per pool wins). |
+| 10 | Sixgun | Hypopatch. +4d Focus pool for 3 hrs. If addicted instead at -2d Focus w/o it. | Hypopatch. +4d Focus Pool for 3 hours. If addicted, instead -2d Focus Pool without it. | `pool Focus+4` | Both clauses kept intentionally — the second (`-2d Focus`) is a real qualifier, not noise; the engine already resolves it correctly (first clause per pool wins). |
 | 11 | Smash | Liquid drops or powder for gums. Euphoric, impairs judgement, lowers inhibitions, no sleep for 8-12 hrs. | Liquid drops or powder for gums. Euphoric, impairs judgment, lowers inhibitions, no sleep for 8-12 hours. | — | Spelling: "judgement" → "judgment" for consistency with US spelling used elsewhere in this table (e.g. "colored" on Smoke Grenade). |
 | 12 | ACTH | Used to trigger Adrenal Pump | Used to trigger Adrenal Pump. | — | |
 | 13 | BioGel | Heals 2 Physical Condition boxes when applied | Heals 2 Physical Condition boxes when applied. | — | |
@@ -1067,9 +1051,9 @@ Review only. No repo files were modified. 137 rows processed.
 | 16 | Lick | Increase Finesse by 4 for 10/min. Doubling increases Dep to 3. | +4d Finesse Pool for 10 minutes. A doubled dose raises Dependence to 3. | — | NEW BEHAVIOUR: original has no signed number before the pool name ("Finesse by 4"), so `POOL_DICE_RE` never matches it — the pool bonus is currently invisible on the sheet. `misc_gear.Effect` is wired to the pool parser, so the rewrite genuinely makes `+4d Finesse Pool` reachable for the first time (a real behaviour change, not just wording). Lick is now flagged `Dose: 1` with `Max Doses: 2`, so the bonus arrives when a dose is USED rather than as a standing toggle, and stacks to two. UNCLEAR: "10/min" — read here as "10 minutes"; could instead mean "per minute" (an ongoing/stacking effect). Description is blank, so this can't be confirmed from context — flagging rather than guessing further. |
 | 17 | Rage | Increase Brawn by 4 for 10/min. Doubling increases Dep to 3. | +4d Brawn Pool for 10 minutes. A doubled dose raises Dependence to 3. | — | NEW BEHAVIOUR: same defect as Lick ("Brawn by 4" has no signed number before the pool name, so it never matched `POOL_DICE_RE`); rewrite makes `+4d Brawn Pool` reachable for the first time. Rage is now flagged `Dose: 1` with `Max Doses: 2` — its "doubling" — so the bonus arrives on Use and stacks to two. `misc_gear.Effect` is wired to the pool parser (unlike the wound-penalty case on Dorf), so this one really does change what the sheet computes. UNCLEAR: "10/min" — same ambiguity as Lick, same reasoning; not resolvable from the (blank) description. |
 | 18 | Stims | Heal 1d6 Stun Condition Boxes on use | Heal 1d6 Stun Condition Boxes on use. | — | |
-| 19 | First Aid Kit | Grant +1 bonus to Biotech tests | Single-use field dressing kit. | — | **MIGRATED** — the bonus now lives in the row's `Skill Bonus` column (`Biotech +1`) and the row is flagged `Dose: 1`, so it applies only while a dose is in use rather than while the kit sits in your bag. The prose keeps the number because it is worth reading at the table, but the column is what the engine applies. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
-| 20 | Trauma Kit | Grant +2 bonus to Biotech tests | Single-use trauma kit for serious injuries. | — | **MIGRATED** — `Skill Bonus: Biotech +2`, `Dose: 1`. Same treatment as the First Aid Kit. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
-| 21 | Electronic Doctor Kit | Grant +3 bonus to Biotech tests and can re-roll 1s. | Single-use automated diagnostic and treatment kit. | — | **MIGRATED** — `Skill Bonus: Biotech +3` plus `Skill Note: Biotech: reroll 1s`, `Dose: 1`. The one row in the table that splits cleanly across both columns. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
+| 19 | First Aid Kit | Grant +1 bonus to Biotech tests | Single use. Grants a bonus to Biotech. | — | **MIGRATED** — the bonus now lives in the row's `Skill Bonus` column (`Biotech +1`) and the row is flagged `Dose: 1`, so it applies only while a dose is in use rather than while the kit sits in your bag. The prose keeps the number because it is worth reading at the table, but the column is what the engine applies. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
+| 20 | Trauma Kit | Grant +2 bonus to Biotech tests | Single use. Grants a bonus to Biotech. | — | **MIGRATED** — `Skill Bonus: Biotech +2`, `Dose: 1`. Same treatment as the First Aid Kit. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
+| 21 | Electronic Doctor Kit | Grant +3 bonus to Biotech tests and can re-roll 1s. | Single use. Grants a bonus to Biotech, and rerolls 1s on it. | — | **MIGRATED** — `Skill Bonus: Biotech +3` plus `Skill Note: Biotech: reroll 1s`, `Dose: 1`. The one row in the table that splits cleanly across both columns. Confirmed safe: `POOL_NAMES` is exactly `["Brawn", "Finesse", "Focus", "Resolve"]` (rules.js:93) and `POOL_DICE_RE` is built from that list alone, so a signed number in front of "Biotech" matches nothing. Re-running the parser probe over the proposed text produces no new hit on this row. |
 | 22 | Arwin, Sleek | Augmented Reality Window, palm sized | Augmented Reality Window, palm-sized. | — | |
 | 23 | Arwin, Classic | Augmented Reality Window, expandable to 12" screen | Augmented Reality Window, expandable to 12" screen. | — | |
 | 24 | Arwin, Galactic | Augmented Reality Winow, expandable to 32" screen | Augmented Reality Window, expandable to 32" screen. | — | TYPO: "Winow" → "Window". |

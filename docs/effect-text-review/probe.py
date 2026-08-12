@@ -197,7 +197,12 @@ def probe_cell(table, column, name, text):
     if "pool" in parsers:
         pools = parse_pool_dice(text)
         if pools:
-            hits.append("pool " + ", ".join("%s%+d" % (p, n) for p, n in pools.items()))
+            # Sorted into POOL_NAMES order: parsePoolDice returns a dict, so its
+            # insertion order follows the sentence, not the mechanics. Comparing
+            # unsorted strings makes "+2 Resolve/Brawn" and "+2 Brawn/Resolve"
+            # look like a behaviour change when nothing has changed at all.
+            hits.append("pool " + ", ".join(
+                "%s%+d" % (p, pools[p]) for p in POOL_NAMES if p in pools))
     if "sense" in parsers:
         for clause in sense_clauses(text):
             cap = sense_capability(name, clause)

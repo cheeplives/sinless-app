@@ -105,6 +105,14 @@ const HOMEBREW_CONFIG = {
       hint: "new classes make new picker groups" },
     { key: "Cost", hint: "number" },
     { key: "Dependence", hint: "addiction factor" },
+    // Sits with Dependence: both describe something you take rather than carry.
+    { key: "Dose", select: () => ["", "1"],
+      optionLabel: v => v === "1"
+        ? "1 (taken as a dose — gets a Use button in play)"
+        : "(carried, not consumed)" },
+    { key: "Max Doses",
+      hint: "doses that can stack before the extra ones stop counting — blank reads as 1. "
+          + "Only meaningful with Dose set" },
     { key: "Weight", hint: "number" },
     { key: "Rarity", hint: "number" },
     { key: "Mount Types", datalist: () => ["Any",

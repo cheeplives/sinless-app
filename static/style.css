@@ -1004,6 +1004,24 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-sense{padding:4px 0;font-size:12px}
 .sh-sense + .sh-sense{border-top:1px dashed var(--line-dash)}
 .sh-sense .sub{font-size:11px;margin-top:1px}
+/* "Under the Effects Of": one row per drug currently in the character, its
+   swing beside it, and a ✕ per dose — doses wear off one at a time, so two
+   Crams get two dismiss buttons rather than one that drops both. Reuses the
+   conditional-effect row internals (.sh-fx-swing / .sh-fx-text) because it is
+   the same kind of information; only the controls differ. */
+.sh-doses{display:flex;flex-direction:column;gap:2px}
+.sh-doses-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sh-dose-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  padding:6px 0;border-top:1px solid var(--line-soft)}
+.sh-dose-what{min-width:0}
+.sh-dose-name{font-weight:600}
+.sh-dose-btns{display:flex;gap:4px;flex-wrap:wrap;flex:0 0 auto}
+.warn-text{color:var(--amber)}
+/* Sits under the qty stepper rather than beside it: the stepper corrects the
+   count, Use spends one, and stacking them keeps the two acts from being
+   misread as a pair of steppers. */
+.btn.use-dose{margin-top:4px;display:block;width:100%}
+.btn.use-dose.off{opacity:.45;cursor:not-allowed}
 .sh-ls-effect{font-size:11px;color:var(--dim);max-width:340px;margin-top:3px}
 .sh-inline-adjust{display:inline-flex;align-items:center;gap:6px}
 .sh-cash-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}

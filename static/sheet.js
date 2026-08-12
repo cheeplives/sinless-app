@@ -190,6 +190,7 @@ let sheetTab = "overview";
 let expandedPool = null;      // pool card the user clicked open on Overview
 let imagesCollapsed = false;  // Images section folded shut on the Notes tab
 let sensesCollapsed = true;   // Enhanced Senses banner — starts folded
+let dosesCollapsed = true;    // "Under the Effects Of" banner — starts folded
 let playSaveTimer = null;
 let sheetMenuOpen = false;    // hamburger menu (Back to Chargen / Homebrew / Export / …)
 let sheetHeadObserver = null; // IntersectionObserver toggling the compact sticky strip
@@ -1949,6 +1950,88 @@ function sensesBanner() {
   return card;
 }
 
+/* What the character is currently on, one row per dose.
+ *
+ * Folded by default like the senses banner, but it folds to something louder:
+ * an empty summary is fine for "what can I see", and actively misleading for
+ * "am I holding +4 Focus that's about to vanish". The collapsed line therefore
+ * names the drugs and the net swing.
+ *
+ * Each dose gets its own ✕ because doses wear off one at a time, not as a set.
+ * Nothing here expires on a timer — durations in this game are fiction-paced
+ * ("a few hours", "for 12 hrs"), and a clock that silently removed a bonus
+ * mid-fight would be worse than one the player closes themselves.
+ *
+ * Returns null when nothing is active. */
+function dosesBanner() {
+  const doses = activeDoses();
+  if (!doses.length) return null;
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+
+  // Group by drug so two Crams read as one row with a ×2, but keep every dose's
+  // uid so each can still be dismissed on its own.
+  const groups = [];
+  for (const d of doses) {
+    let g = groups.find(x => x.name === d.name);
+    if (!g) groups.push(g = { name: d.name, uids: [], effect: doseEffectFor(d.name) });
+    g.uids.push(d.uid);
+  }
+
+  const swingOf = g => {
+    if (!g.effect) return "";
+    const { counted } = doseTally(g.effect);
+    return Object.entries(g.effect.pools)
+      .map(([p, n]) => {
+        const total = n * counted;
+        return `${total > 0 ? "+" : "−"}${Math.abs(total)} ${p}`;
+      }).join(" · ");
+  };
+
+  const card = el("div", { class: "sh-callout warn sh-doses" },
+    el("div", { class: "sh-doses-head" },
+      el("span", {}, "💊 Under the Effects Of ",
+        el("b", {}, String(doses.length))),
+      counterBtn(dosesCollapsed ? "Show ▾" : "Hide ▴", () => {
+        dosesCollapsed = !dosesCollapsed;
+        renderSheet();
+      })));
+
+  if (dosesCollapsed) {
+    card.append(el("div", { class: "sub" },
+      groups.map(g => {
+        const swing = swingOf(g);
+        return g.name + (g.uids.length > 1 ? ` ×${g.uids.length}` : "")
+             + (swing ? ` (${swing})` : "");
+      }).join(" · ")));
+    return card;
+  }
+
+  for (const g of groups) {
+    const tally = g.effect ? doseTally(g.effect) : null;
+    const over = tally && tally.taken > tally.counted;
+    const swing = swingOf(g);
+    const row = el("div", { class: "sh-dose-row" },
+      el("div", { class: "sh-dose-what" },
+        el("span", { class: "sh-dose-name" }, g.name,
+          g.uids.length > 1 ? el("span", { class: "sub" }, ` ×${g.uids.length}`) : ""),
+        swing ? el("div", { class: "sh-fx-swing on" }, swing) : null,
+        // Says why the third Cram isn't doing anything, at the moment it stops.
+        over ? el("div", { class: "sub warn-text" },
+          `${tally.taken} taken, ${tally.counted} counting — stacks up to ${tally.cap}`) : null,
+        g.effect ? el("div", { class: "sh-fx-text sub", title: g.effect.text }, g.effect.text)
+                 : el("div", { class: "sub" }, "No dice effect — tracked for the record")),
+      ro ? null : el("div", { class: "sh-dose-btns" },
+        ...g.uids.map((uid, i) =>
+          el("button", { class: "btn small",
+            title: g.uids.length > 1
+              ? `Dismiss dose ${i + 1} of ${g.uids.length} — it wore off`
+              : `${g.name} wore off — remove it${swing ? ` (${swing} comes back out)` : ""}`,
+            onclick: () => dismissDose(uid) }, "✕"))));
+    card.append(row);
+  }
+  return card;
+}
+
 /* Bulk save management: tick several characters, delete them in one go.
  *
  * "Delete Character" only ever reaches the one that's open, so clearing out a
@@ -2894,6 +2977,11 @@ function shOverview(body) {
   // What this character can perceive — folded away until asked for.
   const senses = sensesBanner();
   if (senses) body.append(senses);
+
+  // Above the pools it moves, and above Kismet, because "what am I on" is the
+  // first thing to check when a pool total looks wrong.
+  const doses = dosesBanner();
+  if (doses) body.append(doses);
 
   // --- kismet + pools
   const kismetRow = el("div", { class: "sh-kismet" },
@@ -4826,25 +4914,71 @@ function shCarriedToggle(entry) {
  * selling, and the + is for stock you already have (buying goes through the Buy
  * section, which charges). A stack floors at 0 rather than 1, so an empty one
  * sits there as a reminder to restock; the ✕ is what removes it for good. */
+/* Move a stack by `delta`, flooring at 0, and log it. Returns how many actually
+ * moved — 0 when the stack was already empty, which is how a caller tells "one
+ * came out" from "there was nothing to take". */
+function adjustOwned(entry, delta) {
+  const before = ownedQty(entry);
+  entry.qty = Math.max(0, before + delta);
+  const moved = entry.qty - before;
+  // Carrying more than you own is nonsense; carriedQty already clamps on
+  // read, and this keeps the stored number honest too.
+  if (entry.carried_qty != null && entry.carried_qty > entry.qty)
+    setCarriedQty(entry, entry.qty);
+  logItemUse(entry.name, moved, entry.qty);
+  return moved;
+}
+
 function shUsesStepper(entry, onChange, unit = "use") {
   const val = el("span", { class: "sv" }, String(ownedQty(entry)));
   const btn = (delta, label, title) => el("button", { class: "btn small", title,
     onclick: async () => {
-      const before = ownedQty(entry);
-      entry.qty = Math.max(0, before + delta);
-      const moved = entry.qty - before;          // 0 when already empty
-      // Carrying more than you own is nonsense; carriedQty already clamps on
-      // read, and this keeps the stored number honest too.
-      if (entry.carried_qty != null && entry.carried_qty > entry.qty)
-        setCarriedQty(entry, entry.qty);
+      adjustOwned(entry, delta);
       val.textContent = String(entry.qty);
-      logItemUse(entry.name, moved, entry.qty);
       await onChange();
     } }, label);
   return el("span", { class: "stepper" },
     btn(-1, "–", `Spend one ${unit} (no refund)`),
     val,
     btn(1, "+", `Add one ${unit} you already own — buy more in the Buy section below`));
+}
+
+/* "Use" for a dose: spend one from the stack and start being under its effects.
+ *
+ * Two separate things happen and both matter — the stack goes down whether or
+ * not the drug does anything mechanical (Glitter is still gone), and a dose
+ * entry appears so the banner can show it and give it a dismiss.
+ *
+ * An empty stack disables the button rather than hiding it: the row is still
+ * there as a reminder to restock, and a button that vanished at zero would read
+ * as "this isn't a drug any more". */
+function shUseDoseBtn(entry, row, owned) {
+  const fx = doseEffectFor(entry.name);
+  const cap = RULES.gearMaxDoses(row);
+  const live = doseCount(entry.name);
+  const swing = fx ? Object.entries(fx.pools)
+    .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" · ") : "";
+
+  let title;
+  if (!owned) title = `None left — restock ${entry.name} before taking one`;
+  else if (fx && live >= cap)
+    title = `Take one more ${entry.name}. ${cap} already counting, so this dose `
+          + `adds nothing (stacks up to ${cap}) — but it still leaves the stack`;
+  else title = `Take one ${entry.name}`
+          + (swing ? ` — ${swing} until you dismiss it` : " — tracked in Under the Effects Of");
+
+  return el("button", {
+    class: "btn small use-dose" + (owned ? "" : " off"),
+    ...(owned ? {} : { disabled: 1 }),
+    title,
+    onclick: async () => {
+      if (adjustOwned(entry, -1) === 0) return;   // nothing left to take
+      takeDose(entry.name);
+      // Opening the banner on the first dose: the effect is live now and a
+      // folded summary is a poor way to learn that.
+      if (activeDoses().length === 1) dosesCollapsed = false;
+      await playChangedRecalc();
+    } }, "Use");
 }
 
 /* Mounted-augment editor for host gear (Power Armor, Arwin Goggles, homebrew
@@ -5263,7 +5397,11 @@ function shGear(body) {
       // section below, which charges.
       el("td", { class: "num" }, ro
         ? String(owned)
-        : shUsesStepper(g, playChangedRecalc, isAmmo ? "use" : "item")),
+        : [shUsesStepper(g, playChangedRecalc, isAmmo ? "use" : "item"),
+           // Taking one is a different act from correcting the count, so it gets
+           // its own button: the stepper says how many you have, Use says you
+           // just took one and puts it in the effects banner.
+           RULES.gearIsDose(r) ? shUseDoseBtn(g, r, owned) : null]),
       // Unit weight always; the carried subtotal too once it can differ from it.
       el("td", { class: "num sub" }, String(round1(unitWt)),
         (owned > 1 && unitWt > 0)
@@ -7376,7 +7514,55 @@ const BEAST_DICE_MAX = RULES.WILDLING_BEAST_DICE;
 
 function poolEffects() { return (CALC && CALC.pool_effects) || []; }
 
+/* ---- doses -----------------------------------------------------------------
+ * A drug is not a switch. You take a dose, it does something for a while, and
+ * then it wears off — so the state that matters is "what am I on right now",
+ * which is a list of doses, not a boolean per drug.
+ *
+ * Each dose is its own entry even when it's the same drug twice, because
+ * dismissing them independently is the whole point: two Crams taken ten minutes
+ * apart wear off ten minutes apart.
+ *
+ * Stacking is capped per row (`Max Doses`). Over the cap the extra doses still
+ * appear in the list — you did take them, and Dependence cares — but they stop
+ * contributing dice. */
+function activeDoses() {
+  return (CHAR.play && CHAR.play.doses) || [];
+}
+
+function doseCount(name) {
+  return activeDoses().filter(d => d.name === name).length;
+}
+
+/* How many doses of this effect are actually paying out, and how many were
+ * taken. `taken > counted` is what the panel reports as over the cap. */
+function doseTally(e) {
+  const taken = doseCount(e.label);
+  const cap = Math.max(1, +(e.max_doses || 1));
+  return { taken, counted: Math.min(taken, cap), cap };
+}
+
+function takeDose(name) {
+  CHAR.play.doses = CHAR.play.doses || [];
+  CHAR.play.doses.push({ uid: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                         name, at: new Date().toISOString() });
+}
+
+function dismissDose(uid) {
+  CHAR.play.doses = activeDoses().filter(d => d.uid !== uid);
+  playChanged();
+}
+
+/* Gear rows the engine marked as doses, keyed by name, so a gear row can ask
+ * "is this a dose, and what is it worth" without re-parsing anything. */
+function doseEffectFor(name) {
+  return poolEffects().find(e => e.dose && e.label === name) || null;
+}
+
 function poolEffectOn(id) {
+  const e = poolEffects().find(x => x.id === id);
+  // A dose effect ignores the switch entirely: it's on because a dose is live.
+  if (e && e.dose) return doseTally(e).counted > 0;
   return !!((CHAR.play.pool_effects || {})[id]);
 }
 
@@ -7384,11 +7570,16 @@ function activePoolEffects() {
   return poolEffects().filter(e => poolEffectOn(e.id));
 }
 
-/* The total swing every switched-on effect is worth to this pool right now. */
+/* The total swing every live effect is worth to this pool right now. Dose
+ * effects multiply by how many doses are counting; everything else is on once
+ * or not at all. */
 function poolEffectMod(pool) {
   if (!CHAR.play) return 0;
   let n = 0;
-  for (const e of activePoolEffects()) n += e.pools[pool] || 0;
+  for (const e of activePoolEffects()) {
+    const each = e.pools[pool] || 0;
+    n += e.dose ? each * doseTally(e).counted : each;
+  }
   return n;
 }
 
@@ -7422,7 +7613,10 @@ const POOL_EFFECT_FORMS = {
  * Overview callout strip beside the Replicant lifespan tracker, because these
  * are things you flip mid-fight and they belong above the pools they move. */
 function poolEffectsPanel() {
-  const list = poolEffects();
+  // Doses live in their own banner with a Use button and a per-dose dismiss.
+  // Giving them an On/Off here as well would be two controls for one bonus,
+  // and the two would disagree the moment either was touched.
+  const list = poolEffects().filter(e => !e.dose);
   if (!list.length) return null;
   const play = CHAR.play;
   const ro = !!(activeTabObj() && activeTabObj().readonly);

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "215";
+const APP_VERSION = "216";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -611,6 +611,10 @@ function defaultCharacter() {
       // swing they add is applied by the sheet on top of CALC, never baked into
       // it — see derivePoolEffects.
       pool_effects: {},
+      // Doses taken and not yet worn off: [{ uid, name, at }], one entry per
+      // dose so two of the same drug can be dismissed independently. Drives the
+      // gear half of pool_effects — see gearIsDose.
+      doses: [],
       beast_dice: WILDLING_BEAST_DICE,   // Wildling: "Beast" dice left this round
       pool_used: {},
       // Actions spent so far this round, keyed "simple" or an exploit kind
@@ -4140,22 +4144,42 @@ function parsePoolDice(text) {
   return Object.keys(out).length ? out : null;
 }
 
+/* ---- doses -----------------------------------------------------------------
+ * Gear you take rather than carry: a drug, a stim, a patch. `Class` can't answer
+ * this — "Meds" covers BioGel, which is consumed, and the First Aid Kit, which
+ * is a reusable tool — so the flag is explicit, like Oneshot and RaisesMax.
+ *
+ * Max Doses is the stacking cap. Blank reads as 1, so a second dose of Sixgun is
+ * tracked without doubling its bonus; Cram's "can chain up to 4" is a 4. */
+function gearIsDose(row) {
+  return String((row && row.Dose) || "").trim() === "1";
+}
+
+function gearMaxDoses(row) {
+  const n = toInt(asNumber((row && row["Max Doses"]) || 0));
+  return n > 0 ? n : 1;
+}
+
 function derivePoolEffects(character, data, heritage, augments, amp) {
   const seen = new Set();
   const effects = [];
-  const add = (id, label, source, text) => {
+  const add = (id, label, source, text, extra) => {
     if (!text || seen.has(id)) return;
     const pools = parsePoolDice(text);
     if (!pools) return;
     seen.add(id);
-    effects.push({ id, label, source, text: String(text).trim(), pools });
+    effects.push({ id, label, source, text: String(text).trim(), pools, ...extra });
   };
   for (const row of heritage.traits) add(`heritage:${row.Name}`, row.Name, "Heritage", row.Effects);
   for (const [row] of augments.rows) add(`augment:${row.Name}`, row.Name, "Augment", row.Effect);
   for (const item of character.gear || []) {
     if (item.carried === false) continue;
     const row = findRow(data.misc_gear, "Item", item.name);
-    if (row) add(`gear:${item.name}`, item.name, "Gear", row.Effect);
+    // A dose isn't a switch you flip — it's something you took, and it stays
+    // taken until it wears off. Marked here so the sheet drives it from the
+    // dose list instead of offering an On/Off that would compete with it.
+    if (row) add(`gear:${item.name}`, item.name, "Gear", row.Effect,
+                 gearIsDose(row) ? { dose: true, max_doses: gearMaxDoses(row) } : null);
   }
   for (const name of amp.powers_taken) {
     const row = findRow(data.amp_powers, "Name", name);
@@ -5105,6 +5129,7 @@ return {
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
   weaponIntegratedMods, weaponIsOneshot, ONESHOT_NOTE,
+  gearIsDose, gearMaxDoses,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,
   weaponBaseCost, weaponModCost, weaponModCostPercent,

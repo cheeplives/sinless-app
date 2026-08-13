@@ -938,6 +938,35 @@ path by which play could reach into the creation record.
   with a statblock on their Condition card they have no claim to.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-038: A mod fitted in play is read from the kit, never from the build
+- **Type:** correctness
+- **Steps:** Any character. Builds the one fixture that can catch this: the
+  chargen record carries BARE items and the kit carries the same items WITH mods
+  — the state a character reaches by buying a mod after Finalize. Restores what
+  it found.
+- **Check:**
+
+      (async () => { const c = CHAR; const T = DATA.tables; const snap = JSON.stringify([c.finalized, c.weapons, c.decks, c.rigs, c.drones, c.programs, c.play.kit, c.play.kit_baseline, c.play.rigging]); const rigName = T.rigs.find(r => /VCR/i.test(r["Rig Type"]))["Rig Type"]; const bare = { weapons: [{ name: "FN-RAL Heavy Assault", equipped: true, mods: [] }], decks: [{ name: "Mars Claymore", mods: [], hacking: "Hacking 4", carried: true }], rigs: [{ name: rigName, mods: [] }], drones: [{ name: "Bug-Spy", carried: true, weapons: [], mods: [] }], programs: ["Hacking 4"] }; const modded = { weapons: [{ name: "FN-RAL Heavy Assault", equipped: true, mods: ["Bi-pod (Rifle Only)"] }], decks: [{ name: "Mars Claymore", mods: ["Input Validation", "Range Extension"], hacking: "Hacking 4", carried: true }], rigs: [{ name: rigName, mods: ["Military Grade Hardening"] }], drones: [{ name: "Bug-Spy", carried: true, weapons: [], mods: [] }], programs: ["Hacking 4"], armor: [], gear: [], augments: [], vehicles: [], knowledge_skills: [] }; c.finalized = true; ensurePlay(); Object.assign(c, JSON.parse(JSON.stringify(bare))); c.play.kit = JSON.parse(JSON.stringify(modded)); c.play.kit_baseline = JSON.parse(JSON.stringify(modded)); c.play.rigging = { active_rig: rigName, linked: { "drones:0": true }, active: {}, hotseat: {}, units: {} }; await recalc(); const droneRow = T.drones.find(d => d.Drone === "Bug-Spy"); const out = { weaponRecoilMod: (CALC.weapons[0] || {}).recoil_mod, deckHardening: RULES.deckHardening(allDecks()[0], T), deckRange: RULES.deckHackRange(allDecks()[0], T), rigOwn: RULES.rigStats(allRigs()[0], T).hardening, linkedDrone: unitHardening(droneRow, { hardening: 0 }, "drones:0"), droneBase: RULES.hardeningOf(droneRow) }; const [f, w, dk, rg, dr, pg, kit, kb, rig] = JSON.parse(snap); c.finalized = f; c.weapons = w; c.decks = dk; c.rigs = rg; c.drones = dr; c.programs = pg; c.play.kit = kit; c.play.kit_baseline = kb; c.play.rigging = rig; await recalc(); return out; })()
+
+- **Expected:** `{ "weaponRecoilMod": 1, "deckHardening": 5, "deckRange": 15, "rigOwn": 2, "linkedDrone": 4, "droneBase": 2 }`
+- **Note:** Every value here is zero or base if the reader looked at the chargen
+  record instead of the kit. That is the entire point of the case, and it is
+  worth knowing how the bug it guards against got shipped.
+
+  The rig-hardening feature was "verified" twice against fixtures that wrote the
+  SAME rig into both `CHAR.rigs` and `play.kit.rigs`. With both sides identical,
+  a reader looking at the wrong one still produces the right answer, so the
+  fixture agreed with the code and neither was right. The bug only surfaced on a
+  real character who had bought the mod after Finalize.
+
+  So the shape of this fixture is the assertion: **bare in the build, modded in
+  the kit.** Anything that reads gear during play must be exercised against a
+  character where those two disagree, or the test is testing nothing.
+
+  `linkedDrone: 4` against `droneBase: 2` is the specific regression —
+  rigHardeningFor now sources from `allRigs()` rather than `CHAR.rigs`.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

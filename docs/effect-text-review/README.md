@@ -22,6 +22,7 @@ entry in `sw.js`. That's the point of keeping it together.
 | `verify.py` | re-runs the probe over every *proposed* rewrite and diffs |
 | `check_originals.py` | every Original still matches `static/data.js` |
 | `column_drift.py` | where prose and the structured column disagree |
+| `column_echo.py` | where prose and the structured column agree — a number said twice |
 | `near_miss.py` | text describing a mechanic the engine can't quite read |
 
 ## The one you'll actually run
@@ -122,6 +123,17 @@ python docs/effect-text-review/near_miss.py
 against the structured column holding the same value. It currently finds no
 genuine contradiction — the numbers agree, and it's the language that varies,
 which is what made this pass a bounded rewrite rather than a data audit.
+
+`column_echo.py` asks the opposite question: where do they agree so exactly that
+the sentence is a *copy* of the column? Those are the rows the style guide wants
+reworded to name the stat and let the column hold the value. By default it reads
+the Proposed text out of `REVIEW.md`, since the originals are full of these and
+removing them is the point of the pass; `--data` scans `static/data.js` instead.
+
+It exists because two rows slipped the main sweep — `rig_mods` Bonus Link and
+`heritage_features` Rat — and both for the same reason: that sweep worked from a
+hand-written list of columns which nobody had added `Link` or `All` to. This one
+takes the column names from the data, so it can't fall behind the schema.
 
 `near_miss.py` separates two things that look alike:
 

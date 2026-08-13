@@ -653,9 +653,16 @@ label.opt input{margin-top:3px}
 .sh-meter.cash{border-color:var(--amber);cursor:pointer}
 .sh-meter.cash .v{color:var(--amber)}
 .sh-meter.cash .plus{color:var(--dim);font-size:13px}
-/* Wounds: neutral while clean, alarmed once it's costing dice. */
+/* Wounds: neutral while clean, alarmed once it's costing dice. Still used by
+   the compact sticky strip, which is where the wound penalty lives now. */
 .sh-meter.cond{border-color:var(--bad)}
 .sh-meter.cond .v{color:var(--bad)}
+/* Move and Armor both open a detail box, so both take the pointer the cash
+   meter has always had. Move dims its unit the way Kismet dims its maximum —
+   the metres are the figure, "m" is just what they're in. */
+.sh-meter.move,.sh-meter.armor{cursor:pointer}
+.sh-meter.move{border-color:var(--roll-dim)}
+.sh-meter.move .v{color:var(--roll)}
 /* Kismet: a meter, not a pool. Same colour it wore as a tile so it's the same
    resource, dimmed to red once it's all spent — unlike the pools beside it,
    nothing refills this on New Round, so "empty" is a state that persists and
@@ -1037,9 +1044,9 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-saves-row{display:flex;align-items:flex-start;gap:10px;padding:6px 2px}
 .sh-saves-row + .sh-saves-row{border-top:1px solid var(--line-soft)}
 .sh-saves-row input{margin-top:3px;flex:0 0 auto}
-/* Enhanced Senses detail, opened from the header tile: one row per capability
-   with the things granting it underneath. Anchored to the tile in fixed
-   coordinates by openSensesPopover(), which also closes it on scroll — the
+/* Header-tile detail boxes — Senses, Move, Armor, and the Kismet roller. One
+   row per thing, with its sources underneath. Anchored to the tile in fixed
+   coordinates by openAnchoredPopover(), which also closes it on scroll — the
    position would otherwise stop pointing at the tile the moment the page moved. */
 .sh-popover{position:fixed;z-index:90;min-width:230px;max-width:340px;
   background:var(--panel);border:1px solid var(--line);border-radius:8px;
@@ -1049,6 +1056,8 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-sense{padding:4px 0;font-size:12px}
 .sh-sense + .sh-sense{border-top:1px dashed var(--line-dash)}
 .sh-sense .sub{font-size:11px;margin-top:1px}
+/* A limit the character is currently on the wrong side of. */
+.sh-sense.bad > div:first-child{color:var(--bad)}
 /* "Under the Effects Of": one row per drug currently in the character, its
    swing beside it, and a ✕ per dose — doses wear off one at a time, so two
    Crams get two dismiss buttons rather than one that drops both. Reuses the

@@ -1005,7 +1005,11 @@ function dossierNotes() {
   else if (CALC.zoetics.amp_offline)
     notes.push(`AMP POWERS OFFLINE: ZP is ${CALC.zoetics.zp_remaining} — Amp ZP spent plus carried ZR exceeds your Zoetic Potential. Shed ZR or lose the powers.`);
   for (const msg of CALC.zoetics.mount_errors || []) notes.push(msg);
-  if (moveSpecial()) notes.push("Movement: " + moveSpecial());
+  // Special movement is NOT a note. Dossier notes are a warning strip — things
+  // that are wrong or dangerous — and "climbs at full speed" is neither; it's a
+  // standing capability, and it read as an alarm purely because this was the
+  // only place with a list to push it onto. The Move tile in the header owns
+  // all of it now, prose quirks and structured alt-modes together.
   // Heritage features are NOT a note. They were listed here as one, which put a
   // red ⚠ callout on every uplift character saying nothing but the trait names —
   // no effects, no problem to act on, and the header already names them. The
@@ -1595,21 +1599,14 @@ function sheetHeader() {
    * per-character figures are. The header is the only chrome visible from EVERY
    * tab, so it now carries what you consult every round instead. */
 
-  const wound = woundPenalty();
-  const physMax = CALC.condition.physical, stunMax = CALC.condition.stun;
-  const phys = Math.min(play.physical_damage || 0, physMax);
-  const stun = Math.min(play.stun_damage || 0, stunMax);
-  const woundTitle = wound.negated
-    ? "Wound penalties negated — damage is tracked but costs you no dice"
-    : `Physical ${phys}/${physMax}, Stun ${stun}/${stunMax}`
-      + ` — every 3 boxes on either track is ${wound.doubled ? "−2" : "−1"} die`
-      + (wound.dice < 0 ? ". The roller already takes these off every test." : "");
-
   const right = el("div", { class: "sh-meters" },
-    el("div", { class: "sh-meter" + (wound.dice < 0 ? " cond" : ""), title: woundTitle },
-      el("div", { class: "k" }, "Wounds"),
-      el("div", { class: "v" }, wound.dice < 0 ? `${wound.dice}d` : "0"),
-      el("span", { class: "sub" }, `P ${phys}/${physMax} · S ${stun}/${stunMax}`)),
+    // Move replaces Wounds here. Wounds was the only meter in this band that
+    // was already on screen twice: the Condition card carries both damage
+    // tracks and the penalty in full, and the compact sticky strip carries the
+    // penalty everywhere else, so nothing is lost by dropping the tile. Move,
+    // by contrast, had no home outside the Combat card, and it's consulted
+    // constantly — every turn someone asks how far they get.
+    moveMeter(),
     // Kismet takes the slot Initiative used to hold, keeping this band at the
     // four tiles it was built for. Initiative was the one meter here you could
     // only read — its Combat-tab card shows the same "12d+8" and is where you
@@ -1623,12 +1620,7 @@ function sheetHeader() {
     kismetMeter(),
     // Consulted on every incoming hit, so it earns the slot Ghost gave up —
     // Ghost is a standing signature and now sits on the attribute line.
-    el("div", { class: "sh-meter armor",
-      title: `Ballistic ${CALC.combat.ballistic_armor} / Impact ${CALC.combat.impact_armor}`
-        + " — ballistic lowers damage, impact applies to melee" },
-      el("div", { class: "k" }, "Armor"),
-      el("div", { class: "v" }, `${CALC.combat.ballistic_armor} / ${CALC.combat.impact_armor}`),
-      el("span", { class: "sub" }, "bal · imp")),
+    armorMeter(),
     el("div", { class: "sh-meter cash", role: "button", tabindex: "0",
       title: `Adjust ${RULES.currencyName().toLowerCase()}`, onclick: adjustCash,
       onkeydown: e => { if (e.key === "Enter") adjustCash(); } },
@@ -1856,6 +1848,125 @@ function closeSheetPopover() {
   return kind;
 }
 
+/* Everything the character's legs (or wheels, or wings) can do.
+ *
+ * `move_special` is heritage quirks in prose ("cannot run", "climbs at full
+ * speed"); `move_modes` is structured alternates from chrome (Fly 14m, Swim
+ * 10m). They arrive from different places in the engine and used to be shown
+ * in different places too — the prose as a red ⚠ dossier note, the modes as a
+ * Combat-card stat line — which meant a character with both had their movement
+ * described in two unrelated parts of the sheet. This gathers all of it. */
+function moveDetail() {
+  const c = CALC.combat;
+  return {
+    metres: c.move,
+    special: Array.isArray(c.move_special) ? c.move_special.filter(Boolean) : [],
+    modes: c.move_modes || [],
+  };
+}
+
+/* Move, in the slot Wounds used to hold. Always clickable: even with nothing
+ * exotic to report, the box explains where the number comes from, and a tile
+ * that is sometimes a button and sometimes not is worse than one that always
+ * answers. */
+function moveMeter() {
+  const { metres, special, modes } = moveDetail();
+  const extras = special.length + modes.length;
+  return el("div", {
+    class: "sh-meter move" + (extras ? " has-detail" : ""),
+    role: "button", tabindex: "0",
+    title: `Move ${metres} m per turn`
+      + (extras ? " — click for the rest of how this character gets around" : " — click for detail"),
+    "aria-label": `Move ${metres} metres`,
+    onclick: () => openMovePopover(),
+    onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openMovePopover(); } },
+  },
+    el("div", { class: "k" }, "Move"),
+    el("div", { class: "v" }, String(metres), el("span", { class: "max" }, " m")),
+    el("span", { class: "sub" }, modes.length
+      ? modes.map(m => m.mode).join(" · ")
+      : (special.length ? "see notes" : "on foot")));
+}
+
+function openMovePopover() {
+  openAnchoredPopover({
+    kind: "move", anchorSel: ".sh-meter.move", label: "Movement",
+    build: (refresh, close) => {
+      const { metres, special, modes } = moveDetail();
+      const body = [popoverHead("🏃 Movement", close),
+        el("div", { class: "sh-sense" },
+          el("div", {}, `Ground ${metres} m`),
+          el("div", { class: "sub" }, "Per turn, walking or running"))];
+      for (const m of modes) {
+        body.push(el("div", { class: "sh-sense" },
+          el("div", {}, `${m.mode} ${m.meters} m`),
+          el("div", { class: "sub" }, m.name)));
+      }
+      // Heritage quirks are prose and stay prose — they qualify how the numbers
+      // above are used ("cannot run"), so flattening them into a figure would
+      // lose the condition that makes them worth reading.
+      for (const note of special) {
+        body.push(el("div", { class: "sh-sense" },
+          el("div", { class: "sub" }, note)));
+      }
+      if (!modes.length && !special.length) {
+        body.push(el("div", { class: "sh-roller-hint" },
+          "No alternate movement types — this character gets around on the ground."));
+      }
+      return body;
+    },
+  });
+}
+
+/* Armor, with the Max Ballistic / Min Impact pair behind a click.
+ *
+ * The two figures are a gear-shopping constraint, not a combat number: they say
+ * what this character can still wear before the armor starts working against
+ * them. Consulting them mid-fight is rare enough that they don't earn header
+ * space of their own, and rare is exactly what a popover is for. */
+function armorMeter() {
+  const c = CALC.combat;
+  return el("div", {
+    class: "sh-meter armor", role: "button", tabindex: "0",
+    title: `Ballistic ${c.ballistic_armor} / Impact ${c.impact_armor}`
+      + " — ballistic lowers damage, impact applies to melee."
+      + " Click for your Max Ballistic and Min Impact.",
+    "aria-label": `Armor: ballistic ${c.ballistic_armor}, impact ${c.impact_armor}`,
+    onclick: () => openArmorPopover(),
+    onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openArmorPopover(); } },
+  },
+    el("div", { class: "k" }, "Armor"),
+    el("div", { class: "v" }, `${c.ballistic_armor} / ${c.impact_armor}`),
+    el("span", { class: "sub" }, "bal · imp"));
+}
+
+function openArmorPopover() {
+  openAnchoredPopover({
+    kind: "armor", anchorSel: ".sh-meter.armor", label: "Armor limits",
+    build: (refresh, close) => {
+      const c = CALC.combat;
+      const over = c.ballistic_armor > c.max_ballistic;
+      const under = c.impact_armor < c.min_impact;
+      return [
+        popoverHead("🛡 Armor", close),
+        el("div", { class: "sh-sense" },
+          el("div", {}, `Worn ${c.ballistic_armor} ballistic / ${c.impact_armor} impact`),
+          el("div", { class: "sub" }, "Ballistic lowers damage taken; impact applies to melee")),
+        el("div", { class: "sh-sense" + (over ? " bad" : "") },
+          el("div", {}, `Max Ballistic ${c.max_ballistic}`),
+          el("div", { class: "sub" }, over
+            ? `Over by ${c.ballistic_armor - c.max_ballistic} — ballistic above your maximum does nothing`
+            : "The most ballistic armor this character benefits from")),
+        el("div", { class: "sh-sense" + (under ? " bad" : "") },
+          el("div", {}, `Min Impact ${c.min_impact}`),
+          el("div", { class: "sub" }, under
+            ? `Short by ${c.min_impact - c.impact_armor} impact`
+            : "The impact rating this character should not drop below")),
+      ];
+    },
+  });
+}
+
 /* Kismet die pool — 1 die to start, +1 per 10 Kismet earned during play
  * (lifetime, from play.kismet_earned; never shrinks).
  *
@@ -1892,34 +2003,38 @@ function kismetMeter() {
       btn("↺", () => setUsed(0), "Reset Kismet dice to full")));
 }
 
-/* Kismet die roller: a popover opened by clicking the header meter.
+/* One anchored popover, opened from a header tile.
  *
- * Deliberately its own thing rather than another mode on the combat roller
- * (openPoolRoller / rollerState): no wound penalty, no bonus dice, no pool
- * choice. Kismet dice ARE the pool — picking how many to roll and spending
- * that many out of it are the same act, which is what "not subject to any
- * penalties or anything else" means here. 4-6 is still a Success, because
- * that half of the game's math doesn't change just because the dice are rare.
+ * Five tiles now open one of these (Kismet, Senses, Move, Armor, and whatever
+ * comes next), and they all want the same six behaviours: place under the tile
+ * and flip up when the viewport bottom is close, close on Escape / outside
+ * click / scroll / resize, close when the tile that owns it goes away, toggle
+ * shut when that tile is clicked again, and never coexist with another. Those
+ * are fiddly enough individually that a second hand-written copy had already
+ * drifted from the first; this is the one implementation.
  *
- * State lives in this closure, not in a module-level object the way
- * rollerState does, because it doesn't need to survive being torn down —
- * closing it forgets it, same as the senses popover. What it DOES need to
- * survive is its own Roll button: spending a Kismet die calls setUsed(), which
- * calls playChanged(), which calls renderSheet() — and renderSheet() only ever
- * clears out #sheet (see its first line), never document.body. Appending here
- * exactly like openSensesPopover does is what keeps this box alive through
- * that rebuild. The one thing THAT rebuild does replace is the meter tile
- * itself, so the anchor is re-found by selector on every use rather than held
- * as a captured node that would otherwise go stale mid-session. */
-function openKismetRoller() {
+ * `anchorSel` is a selector, not a node, and that is load-bearing rather than
+ * stylistic: anything a popover does that changes play state re-renders the
+ * sheet, which replaces the tile. Held as a captured node, the anchor would
+ * stop matching the tile the user is actually clicking — the toggle would read
+ * as an outside-click followed by a fresh open, and the box would never shut.
+ * Re-finding it every time costs a querySelector and removes the whole class
+ * of bug. P06-033 pins that case down.
+ *
+ * `build(refresh)` returns the box's children and may call `refresh` to redraw
+ * after changing something. The box lives on document.body, not inside #sheet,
+ * because renderSheet() clears #sheet and only #sheet — that is what lets a
+ * popover survive the re-render its own buttons cause.
+ *
+ * Returns { refresh, close } for callers that need to drive it. */
+function openAnchoredPopover({ kind, anchorSel, label, build, cls }) {
   // Clicking the tile while this is already up closes it instead of rebuilding
   // it — the tile is a toggle, not a re-open button.
-  if (closeSheetPopover() === "kismet") return;
-  const getAnchor = () => document.querySelector(".sh-meter.kismet");
-  const state = { count: 1, dice: [] };
+  if (closeSheetPopover() === kind) return null;
+  const getAnchor = () => document.querySelector(anchorSel);
 
-  const box = el("div", { class: "sh-popover sh-kismet-roller", role: "dialog",
-    "aria-label": "Kismet dice roller", "data-popover": "kismet" });
+  const box = el("div", { class: "sh-popover" + (cls ? " " + cls : ""),
+    role: "dialog", "aria-label": label, "data-popover": kind });
   document.body.append(box);
 
   const place = () => {
@@ -1927,6 +2042,8 @@ function openKismetRoller() {
     if (!anchor) { close(); return; }
     const r = anchor.getBoundingClientRect();
     const w = box.offsetWidth, h = box.offsetHeight;
+    // Prefer below-left-aligned; flip above when the viewport bottom is closer
+    // than the box is tall, and clamp horizontally so it never leaves the page.
     const top = (r.bottom + h + 8 <= window.innerHeight) ? r.bottom + 6
               : Math.max(6, r.top - h - 6);
     const left = Math.max(6, Math.min(r.left, window.innerWidth - w - 6));
@@ -1941,6 +2058,8 @@ function openKismetRoller() {
     window.removeEventListener("scroll", close, true);
     window.removeEventListener("resize", close);
   };
+  // Stashed so closeSheetPopover() can tear this down properly when it only has
+  // the node: a bare remove() would orphan all four listeners below.
   box._close = close;
   const onKey = e => { if (e.key === "Escape") close(); };
   // A pointerdown on the tile is left alone so the click that follows reaches
@@ -1954,54 +2073,78 @@ function openKismetRoller() {
   window.addEventListener("scroll", close, true);
   window.addEventListener("resize", close);
 
-  const refresh = () => {
-    const { max, used, remaining } = kismetPoolState();
-    // Never offer more than what's actually left, and never less than 1 while
-    // there's anything to roll at all.
-    state.count = remaining > 0 ? Math.max(1, Math.min(state.count, remaining)) : 0;
-    const successes = state.dice.filter(v => v >= 4).length;
-
-    const stepBtn = (delta, title) => el("button", { class: "sh-roller-step", title,
-      onclick: () => { state.count = Math.max(1, Math.min(remaining, state.count + delta)); refresh(); } },
-      delta < 0 ? "–" : "+");
-
-    const body = [
-      el("div", { class: "sh-popover-head" }, "🎲 Kismet Dice",
-        el("button", { class: "sh-roller-close", title: "Close", onclick: close }, "✕")),
-    ];
-
-    if (remaining < 1) {
-      body.push(el("div", { class: "sh-roller-avail" }, "No Kismet dice left to roll."));
-    } else {
-      body.push(el("div", { class: "sh-roller-controls" },
-        stepBtn(-1, "One fewer die"),
-        el("span", { class: "sh-roller-count" }, `${state.count}d6`),
-        stepBtn(1, "One more die"),
-        el("button", { class: "btn sh-roller-roll",
-          onclick: () => {
-            state.dice = Array.from({ length: state.count }, rollerD6);
-            kismetPoolState().setUsed(used + state.count);   // -> playChanged() -> renderSheet()
-            refresh();
-          } }, "Roll")),
-        el("div", { class: "sh-roller-avail" }, `${remaining} of ${max} available`));
-    }
-
-    if (state.dice.length) {
-      body.push(el("div", { class: "sh-roller-dice" },
-        ...state.dice.map(v => el("span",
-          { class: "sh-roller-die static" + (v >= 4 ? " hit" : "") }, String(v)))),
-        el("div", { class: "sh-roller-succ" },
-          el("b", {}, String(successes)), ` Success${successes === 1 ? "" : "es"}`));
-    }
-    body.push(el("div", { class: "sh-roller-hint" },
-      "4–6 = Success. Kismet dice roll clean — no wound penalty, no bonus dice, "
-      + "nothing else added or taken off."));
-
-    box.replaceChildren(...body);
-    place();
-  };
-
+  const refresh = () => { box.replaceChildren(...build(refresh, close)); place(); };
   refresh();
+  return { refresh, close };
+}
+
+/* A popover's title bar, with the ✕ that closes it. */
+function popoverHead(title, close) {
+  return el("div", { class: "sh-popover-head" }, title,
+    el("button", { class: "sh-roller-close", title: "Close", onclick: close }, "✕"));
+}
+
+/* Kismet die roller: a popover opened by clicking the header meter.
+ *
+ * Deliberately its own thing rather than another mode on the combat roller
+ * (openPoolRoller / rollerState): no wound penalty, no bonus dice, no pool
+ * choice. Kismet dice ARE the pool — picking how many to roll and spending
+ * that many out of it are the same act, which is what "not subject to any
+ * penalties or anything else" means here. 4-6 is still a Success, because
+ * that half of the game's math doesn't change just because the dice are rare.
+ *
+ * State lives in this closure rather than a module-level object the way
+ * rollerState does, because it doesn't need to survive being torn down —
+ * closing it forgets it. Surviving its own Roll button is a different matter,
+ * and openAnchoredPopover handles that. */
+function openKismetRoller() {
+  const state = { count: 1, dice: [] };
+  openAnchoredPopover({
+    kind: "kismet", anchorSel: ".sh-meter.kismet", cls: "sh-kismet-roller",
+    label: "Kismet dice roller",
+    build: (refresh, close) => {
+      const { max, used, remaining } = kismetPoolState();
+      // Never offer more than what's actually left, and never less than 1 while
+      // there's anything to roll at all.
+      state.count = remaining > 0 ? Math.max(1, Math.min(state.count, remaining)) : 0;
+      const successes = state.dice.filter(v => v >= 4).length;
+
+      const stepBtn = (delta, title) => el("button", { class: "sh-roller-step", title,
+        onclick: () => { state.count = Math.max(1, Math.min(remaining, state.count + delta)); refresh(); } },
+        delta < 0 ? "–" : "+");
+
+      const body = [popoverHead("🎲 Kismet Dice", close)];
+
+      if (remaining < 1) {
+        body.push(el("div", { class: "sh-roller-avail" }, "No Kismet dice left to roll."));
+      } else {
+        body.push(el("div", { class: "sh-roller-controls" },
+          stepBtn(-1, "One fewer die"),
+          el("span", { class: "sh-roller-count" }, `${state.count}d6`),
+          stepBtn(1, "One more die"),
+          el("button", { class: "btn sh-roller-roll",
+            onclick: () => {
+              state.dice = Array.from({ length: state.count }, rollerD6);
+              kismetPoolState().setUsed(used + state.count);   // -> playChanged() -> renderSheet()
+              refresh();
+            } }, "Roll")),
+          el("div", { class: "sh-roller-avail" }, `${remaining} of ${max} available`));
+      }
+
+      if (state.dice.length) {
+        body.push(el("div", { class: "sh-roller-dice" },
+          ...state.dice.map(v => el("span",
+            { class: "sh-roller-die static" + (v >= 4 ? " hit" : "") }, String(v)))),
+          el("div", { class: "sh-roller-succ" },
+            el("b", {}, String(successes)), ` Success${successes === 1 ? "" : "es"}`));
+      }
+      body.push(el("div", { class: "sh-roller-hint" },
+        "4–6 = Success. Kismet dice roll clean — no wound penalty, no bonus dice, "
+        + "nothing else added or taken off."));
+
+      return body;
+    },
+  });
 }
 
 function adjustCash() {
@@ -2117,62 +2260,18 @@ function sensesTile() {
  *
  * Anchored to the tile rather than centred as a modal — it's a peek at a
  * reference, and a full backdrop for "what gives me thermographic vision" would
- * be heavier than the question. Closes on click-outside, Escape, scroll or
- * resize, because a box pinned to fixed coordinates stops pointing at anything
- * the moment the page moves under it — or on a second click of the tile that
- * opened it, which is the way out most people reach for first.
- *
- * The tile is re-found by selector rather than passed in, because any re-render
- * while this is open replaces that node: a captured reference would stop
- * matching the tile the user is actually clicking, and the toggle would read as
- * an outside-click-then-reopen. */
+ * be heavier than the question. */
 function openSensesPopover(senses) {
-  if (closeSheetPopover() === "senses") return;
-  const getAnchor = () => document.querySelector(".sh-pool.senses");
-  const box = el("div", { class: "sh-popover", role: "dialog",
-    "aria-label": "Enhanced senses", "data-popover": "senses" },
-    el("div", { class: "sh-popover-head" }, "👁 Enhanced Senses"),
-    ...senses.map(s => el("div", { class: "sh-sense" },
-      el("div", {}, s.capability),
-      el("div", { class: "sub" },
-        s.sources.map(src => `${src.name} (${src.from})`).join(" · ")))));
-  document.body.append(box);
-
-  const place = () => {
-    const anchor = getAnchor();
-    if (!anchor) { close(); return; }
-    const r = anchor.getBoundingClientRect();
-    const w = box.offsetWidth, h = box.offsetHeight;
-    // Prefer below-left-aligned; flip above when the viewport bottom is closer
-    // than the box is tall, and clamp horizontally so it never leaves the page.
-    const top = (r.bottom + h + 8 <= window.innerHeight) ? r.bottom + 6
-              : Math.max(6, r.top - h - 6);
-    const left = Math.max(6, Math.min(r.left, window.innerWidth - w - 6));
-    box.style.top = `${top}px`;
-    box.style.left = `${left}px`;
-  };
-
-  const close = () => {
-    box.remove();
-    document.removeEventListener("keydown", onKey, true);
-    document.removeEventListener("pointerdown", onOutside, true);
-    window.removeEventListener("scroll", close, true);
-    window.removeEventListener("resize", close);
-  };
-  box._close = close;
-  const onKey = e => { if (e.key === "Escape") close(); };
-  // The tile is spared here so its click can reach the toggle in the opener.
-  const onOutside = e => {
-    const anchor = getAnchor();
-    if (!box.contains(e.target) && !(anchor && anchor.contains(e.target))) close();
-  };
-  document.addEventListener("keydown", onKey, true);
-  document.addEventListener("pointerdown", onOutside, true);
-  window.addEventListener("scroll", close, true);
-  window.addEventListener("resize", close);
-
-  // After close exists, so the no-anchor bail inside can call it.
-  place();
+  openAnchoredPopover({
+    kind: "senses", anchorSel: ".sh-pool.senses", label: "Enhanced senses",
+    build: (refresh, close) => [
+      popoverHead("👁 Enhanced Senses", close),
+      ...senses.map(s => el("div", { class: "sh-sense" },
+        el("div", {}, s.capability),
+        el("div", { class: "sub" },
+          s.sources.map(src => `${src.name} (${src.from})`).join(" · ")))),
+    ],
+  });
 }
 
 /* What the character is currently on, one row per dose.

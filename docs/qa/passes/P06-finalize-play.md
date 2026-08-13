@@ -780,6 +780,28 @@ path by which play could reach into the creation record.
   the data sits in the same object, and only the iteration order keeps them apart.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-032: The Kismet roller ignores the wound penalty and spends what it rolls
+- **Type:** correctness
+- **Steps:** Any finalized character, Overview tab, wounded (so a penalty
+  actually exists to ignore). Clicks the real meter tile and the real Roll
+  button.
+- **Check:**
+
+      (() => { const c = CHAR; ensurePlay(); c.play.kismet_earned = 25; c.play.physical_damage = 3; recalc(); kismetPoolState().setUsed(0); renderSheet(); const wound = woundPenalty(); document.querySelector(".sh-meter.kismet").click(); const step = () => document.querySelectorAll(".sh-popover .sh-roller-step")[1]; step().click(); step().click(); const requested = document.querySelector(".sh-popover .sh-roller-count").textContent; document.querySelector(".sh-popover .sh-roller-roll").click(); const thrown = document.querySelectorAll(".sh-popover .sh-roller-die").length; const remaining = kismetPoolState().remaining; document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); return { woundDice: wound.dice, requested, thrown, remaining }; })()
+
+- **Expected:** `{ "woundDice": -1, "requested": "3d6", "thrown": 3, "remaining": 0 }`
+- **Note:** `woundDice: -1` is the setup working — this character really is
+  carrying a wound penalty, the same one `openPoolRoller` would take off any
+  other test on this sheet. `thrown` matching `requested` exactly (3 of 3, not
+  2) is the assertion: nothing in this roller reads `woundPenalty()` at all, by
+  design, because Kismet dice are the character choosing to spend a rare
+  resource on raw luck, not a skill test the fiction can penalize.
+
+  `remaining: 0` is the other half — the roll actually spent what it rolled,
+  through the same `kismetPoolState().setUsed()` the meter's own −/+/↺ buttons
+  use. There's no separate ledger for "dice the roller spent."
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

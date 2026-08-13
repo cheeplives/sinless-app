@@ -500,7 +500,15 @@ label.opt input{margin-top:3px}
   --pool-finesse:#5fd39a;
   --pool-focus:#5aa9ff;
   --pool-resolve:#9d7bff;
-  --pool-kismet:#f2c14e;
+  /* Kismet's own hue, not shared with anything else. It used to sit at #f2c14e
+     -- close enough to --amber (money, #e8a33d) that the Kismet meter and the
+     cash meter read as the same colour sitting side by side in the header.
+     A lime/chartreuse (~67° hue) has nothing else near it: amber sits at ~36°,
+     the green pool/--ok family at ~151°, so it reads as clearly its own thing
+     in both directions rather than "close to X." Deliberately independent of
+     data-scheme (like the other four pool colours above) -- Kismet means the
+     same thing whichever accent the player has chosen. */
+  --pool-kismet:#c9d94a;
   /* Attribute identity colours. Four of the six borrow the pool they hand their
      FULL value to in computePools (rules.js): Strength→Brawn, Reaction→Finesse,
      Intelligence→Focus, Willpower→Resolve. The other two genuinely don't have
@@ -525,7 +533,7 @@ label.opt input{margin-top:3px}
   --pool-finesse:#1f9d5e;
   --pool-focus:#1868c9;
   --pool-resolve:#6d3fd1;
-  --pool-kismet:#a8790a;
+  --pool-kismet:#7d8f1c;   /* same lime hue as dark mode, deepened for white */
   /* The four pool-borrowed attribute colours follow their pool automatically;
      only the two independent hues need deepening for a white background. */
   --attr-bod:#0e7d80;
@@ -1203,6 +1211,11 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-die.hit{color:var(--ok);border-color:var(--ok)}
 .sh-roller-die.sel{outline:2px solid var(--manon);outline-offset:1px}
 .sh-roller-die.spent{opacity:.5;cursor:default}
+/* Kismet dice are display-only — no tap-to-reroll — so they drop the pointer
+   cursor .sh-roller-die otherwise implies. */
+.sh-roller-die.static{cursor:default}
+.sh-kismet-roller .sh-roller-controls{margin-bottom:6px}
+.sh-kismet-roller .sh-roller-avail{font-size:11px;color:var(--dim);margin-bottom:8px}
 .sh-roller-succ{font-family:var(--disp);font-size:14px;margin-bottom:8px}
 .sh-roller-succ b{color:var(--ok);font-size:20px}
 /* initiative mode: "3 Successes + 8 = 11 Initiative" */

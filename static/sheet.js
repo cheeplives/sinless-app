@@ -1855,8 +1855,14 @@ function kismetMeter() {
   return el("div", {
     class: "sh-meter kismet" + (remaining ? "" : " spent"),
     title: `Kismet dice: ${remaining} of ${max} left — 1 to start, +1 per 10 Kismet`
-      + " earned. These do NOT refresh on New Round.",
+      + " earned. These do NOT refresh on New Round."
+      + (ro ? "" : " Click to roll some."),
     "aria-label": `Kismet dice ${remaining} of ${max}`,
+    // The mini-buttons below stopPropagation, so a click that lands on the tile
+    // itself (not on −/+/↺) opens the roller instead of doing nothing.
+    ...(ro ? {} : { role: "button", tabindex: "0",
+      onclick: () => openKismetRoller(),
+      onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openKismetRoller(); } } }),
   },
     el("div", { class: "k" }, "Kismet"),
     el("div", { class: "v" }, String(remaining),
@@ -1865,6 +1871,113 @@ function kismetMeter() {
       btn("−", () => setUsed(used + 1), "Spend a Kismet die"),
       btn("+", () => setUsed(used - 1), "Return a spent Kismet die"),
       btn("↺", () => setUsed(0), "Reset Kismet dice to full")));
+}
+
+/* Kismet die roller: a popover opened by clicking the header meter.
+ *
+ * Deliberately its own thing rather than another mode on the combat roller
+ * (openPoolRoller / rollerState): no wound penalty, no bonus dice, no pool
+ * choice. Kismet dice ARE the pool — picking how many to roll and spending
+ * that many out of it are the same act, which is what "not subject to any
+ * penalties or anything else" means here. 4-6 is still a Success, because
+ * that half of the game's math doesn't change just because the dice are rare.
+ *
+ * State lives in this closure, not in a module-level object the way
+ * rollerState does, because it doesn't need to survive being torn down —
+ * closing it forgets it, same as the senses popover. What it DOES need to
+ * survive is its own Roll button: spending a Kismet die calls setUsed(), which
+ * calls playChanged(), which calls renderSheet() — and renderSheet() only ever
+ * clears out #sheet (see its first line), never document.body. Appending here
+ * exactly like openSensesPopover does is what keeps this box alive through
+ * that rebuild. The one thing THAT rebuild does replace is the meter tile
+ * itself, so the anchor is re-found by selector on every use rather than held
+ * as a captured node that would otherwise go stale mid-session. */
+function openKismetRoller() {
+  document.querySelector(".sh-popover")?.remove();
+  const getAnchor = () => document.querySelector(".sh-meter.kismet");
+  const state = { count: 1, dice: [] };
+
+  const box = el("div", { class: "sh-popover sh-kismet-roller", role: "dialog",
+    "aria-label": "Kismet dice roller" });
+  document.body.append(box);
+
+  const place = () => {
+    const anchor = getAnchor();
+    if (!anchor) { close(); return; }
+    const r = anchor.getBoundingClientRect();
+    const w = box.offsetWidth, h = box.offsetHeight;
+    const top = (r.bottom + h + 8 <= window.innerHeight) ? r.bottom + 6
+              : Math.max(6, r.top - h - 6);
+    const left = Math.max(6, Math.min(r.left, window.innerWidth - w - 6));
+    box.style.top = `${top}px`;
+    box.style.left = `${left}px`;
+  };
+
+  const close = () => {
+    box.remove();
+    document.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("pointerdown", onOutside, true);
+    window.removeEventListener("scroll", close, true);
+    window.removeEventListener("resize", close);
+  };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  const onOutside = e => {
+    const anchor = getAnchor();
+    if (!box.contains(e.target) && !(anchor && anchor.contains(e.target))) close();
+  };
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("pointerdown", onOutside, true);
+  window.addEventListener("scroll", close, true);
+  window.addEventListener("resize", close);
+
+  const refresh = () => {
+    const { max, used, remaining } = kismetPoolState();
+    // Never offer more than what's actually left, and never less than 1 while
+    // there's anything to roll at all.
+    state.count = remaining > 0 ? Math.max(1, Math.min(state.count, remaining)) : 0;
+    const successes = state.dice.filter(v => v >= 4).length;
+
+    const stepBtn = (delta, title) => el("button", { class: "sh-roller-step", title,
+      onclick: () => { state.count = Math.max(1, Math.min(remaining, state.count + delta)); refresh(); } },
+      delta < 0 ? "–" : "+");
+
+    const body = [
+      el("div", { class: "sh-popover-head" }, "🎲 Kismet Dice",
+        el("button", { class: "sh-roller-close", title: "Close", onclick: close }, "✕")),
+    ];
+
+    if (remaining < 1) {
+      body.push(el("div", { class: "sh-roller-avail" }, "No Kismet dice left to roll."));
+    } else {
+      body.push(el("div", { class: "sh-roller-controls" },
+        stepBtn(-1, "One fewer die"),
+        el("span", { class: "sh-roller-count" }, `${state.count}d6`),
+        stepBtn(1, "One more die"),
+        el("button", { class: "btn sh-roller-roll",
+          onclick: () => {
+            state.dice = Array.from({ length: state.count }, rollerD6);
+            kismetPoolState().setUsed(used + state.count);   // -> playChanged() -> renderSheet()
+            refresh();
+          } }, "Roll")),
+        el("div", { class: "sh-roller-avail" }, `${remaining} of ${max} available`));
+    }
+
+    if (state.dice.length) {
+      body.push(el("div", { class: "sh-roller-dice" },
+        ...state.dice.map(v => el("span",
+          { class: "sh-roller-die static" + (v >= 4 ? " hit" : "") }, String(v)))),
+        el("div", { class: "sh-roller-succ" },
+          el("b", {}, String(successes)), ` Success${successes === 1 ? "" : "es"}`));
+    }
+    body.push(el("div", { class: "sh-roller-hint" },
+      "4–6 = Success. Kismet dice roll clean — no wound penalty, no bonus dice, "
+      + "nothing else added or taken off."));
+
+    box.replaceChildren(...body);
+    place();
+  };
+
+  refresh();
 }
 
 function adjustCash() {

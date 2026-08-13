@@ -50,6 +50,7 @@ there invalidates everything downstream.
 | 11 | [P11](passes/P11-security-client.md) | XSS, storage, service worker, prototype pollution | 45 min |
 | 12 | [P12](passes/P12-security-server.md) | **Checklist only — do not run unprompted** | 20 min |
 | 13 | [P13](passes/P13-responsive.md) | Tablet and desktop readability at five viewports | 45–60 min |
+| 14 | [P15](passes/P15-effect-text-landmines.md) | Three `data.js` cells that must not be "corrected" | 15 min |
 
 Roughly 9–11 hours for a complete sweep across about 14 sessions. Passes 6–10 are
 independent of each other and can be run in any order or in parallel sessions.

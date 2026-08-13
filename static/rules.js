@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "217";
+const APP_VERSION = "218";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -4183,6 +4183,28 @@ function gearMaxDoses(row) {
   return n > 0 ? n : 1;
 }
 
+/* The `misc_gear` rows behind the doses currently running, deduplicated.
+ *
+ * Carrying a drug and being on it are different states, and only the second one
+ * grants anything — so anything reading dose effects has to start here rather
+ * than from `character.gear`. Deduplicated because these feed yes/no questions
+ * (does anything suppress wound penalties?) where a second Dorf adds nothing;
+ * callers that care how many are live, like the pool-dice stacking in
+ * `gearSkillEffects`, count `play.doses` themselves and clamp to `Max Doses`. */
+function liveDoseRows(character, data) {
+  const seen = new Set();
+  const rows = [];
+  for (const d of ((character.play || {}).doses) || []) {
+    const name = d && d.name;
+    if (!name || seen.has(name)) continue;
+    const row = findRow(data.misc_gear, "Item", name);
+    if (!row || !gearIsDose(row)) continue;
+    seen.add(name);
+    rows.push(row);
+  }
+  return rows;
+}
+
 function derivePoolEffects(character, data, heritage, augments, amp) {
   const seen = new Set();
   const effects = [];
@@ -5040,12 +5062,19 @@ function calculate(character) {
   // Some sources zero out condition-track wound penalties (Pain Nullifier
   // augment, the Shibumi martial art, …). Detect data-driven: any effect text
   // that both mentions "wound penalt(y)" and a removal verb.
+  // A live dose counts too. Dorf's whole selling point is exactly this, and it
+  // never worked: `misc_gear` was not one of the tables scanned, so the text
+  // said "ignore wound penalties" and nothing read it. It is deliberately the
+  // DOSE and not the carried item — a painkiller in your pocket kills no pain —
+  // which is the same rule the medkits' Biotech dice already follow.
   const removesWoundPenalty = text =>
     /wound penalt/i.test(text) && /(remove|ignore|negat|nullif|zero|no\b)/i.test(text);
+  const doses = liveDoseRows(character, data);
   combatOut.wound_penalty_negated =
     augments.rows.some(([row]) => removesWoundPenalty(row.Effect || row.Description || ""))
     || martialArt.levels.some(lvl => removesWoundPenalty(lvl.Effect || ""))
-    || heritage.traits.some(row => removesWoundPenalty(row.Effects || ""));
+    || heritage.traits.some(row => removesWoundPenalty(row.Effects || ""))
+    || doses.some(row => removesWoundPenalty(row.Effect || ""));
 
   // Others double them — the Reaction Enhancer bioware ("+N Reaction but
   // doubles pain-based penalties") trades pain tolerance for reflexes. Scanned
@@ -5058,6 +5087,11 @@ function calculate(character) {
       doublesWoundPenalty(row.Effect || row.Description || ""))?.[0]?.Name
     || martialArt.levels.find(lvl => doublesWoundPenalty(lvl.Effect || ""))?.Style
     || heritage.traits.find(row => doublesWoundPenalty(row.Effects || ""))?.Name
+    // Doses cut both ways. No shipped drug doubles wound penalties today, but
+    // the pair is scanned identically everywhere else and a homebrew drug that
+    // says so should behave, rather than being silently ignored because only the
+    // flattering half of the mechanic was wired up.
+    || doses.find(row => doublesWoundPenalty(row.Effect || ""))?.Item
     || "";
   combatOut.wound_penalty_doubled = !combatOut.wound_penalty_negated && !!doublingSource;
   combatOut.wound_penalty_doubled_by = combatOut.wound_penalty_doubled ? doublingSource : "";
@@ -5152,7 +5186,7 @@ return {
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
   weaponIntegratedMods, weaponIsOneshot, ONESHOT_NOTE,
-  gearIsDose, gearMaxDoses,
+  gearIsDose, gearMaxDoses, liveDoseRows,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,
   weaponBaseCost, weaponModCost, weaponModCostPercent,

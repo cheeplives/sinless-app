@@ -676,6 +676,45 @@ path by which play could reach into the creation record.
   applied on top of it.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-029: A live dose can suppress wound penalties; a carried one cannot
+- **Type:** correctness
+- **Steps:** No fixture. The check builds four throwaway characters.
+- **Check:**
+
+      (() => { const mk = (augs, doses) => { const c = RULES.defaultCharacter(); c.priorities = {heritage:2, magic:0, attributes:1, skills:3, resources:4}; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.augments = augs.map(n => ({ name: n })); c.gear = [{ name: "Dorf", qty: 1 }]; c.finalized = true; c.play = { doses }; return c; }; const r = c => { const k = RULES.calculate(c); return { negated: k.combat.wound_penalty_negated, doubled: k.combat.wound_penalty_doubled, by: k.combat.wound_penalty_doubled_by }; }; const dose = [{ uid: "a", name: "Dorf" }]; return { carriedOnly: r(mk([], [])), oneDoseLive: r(mk([], dose)), painNullifier: r(mk(["Pain Nullifier"], [])), reactionEnhOnly: r(mk(["Reaction Enhancer 2"], [])), reactionEnhPlusDorf: r(mk(["Reaction Enhancer 2"], dose)), dedup: RULES.liveDoseRows(mk([], [{uid:"a",name:"Dorf"},{uid:"b",name:"Dorf"}]), DATA.tables).map(x => x.Item) }; })()
+
+- **Expected:**
+
+      { "carriedOnly":         { "negated": false, "doubled": false, "by": "" },
+        "oneDoseLive":         { "negated": true,  "doubled": false, "by": "" },
+        "painNullifier":       { "negated": true,  "doubled": false, "by": "" },
+        "reactionEnhOnly":     { "negated": false, "doubled": true,  "by": "Reaction Enhancer 2" },
+        "reactionEnhPlusDorf": { "negated": true,  "doubled": false, "by": "" },
+        "dedup": ["Dorf"] }
+
+- **Note:** `carriedOnly` is the case, exactly as in P06-028: a painkiller in
+  your pocket kills no pain. If that flips to `true`, buying Dorf has become
+  permanent wound immunity for the price of 25.
+
+  `painNullifier` is the regression guard. `removesWoundPenalty` used to be
+  handed only augments, martial-art levels and heritage traits; adding doses must
+  not disturb the three paths that already worked.
+
+  `reactionEnhPlusDorf` fixes the precedence in place. Negation beats doubling —
+  twice nothing is still nothing — and a dose has to obey that rule too, so
+  `doubled` goes false and `by` empties. If both flags ever read true at once the
+  condition track has two masters.
+
+  `dedup` covers `liveDoseRows` collapsing repeats. Two Dorf doses are a real
+  state (Dependence counts them) but this is a yes/no question, and a caller that
+  cares about magnitude — the pool stacking in `gearSkillEffects` — counts
+  `play.doses` itself and clamps to `Max Doses`.
+
+  Dorf's Effect must read "wound penalties". It shipped for a long time as
+  "wound pen", two characters short of `/wound penalt/i` — the row promised
+  immunity that no code could see.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

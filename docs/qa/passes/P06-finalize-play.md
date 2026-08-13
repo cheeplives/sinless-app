@@ -802,6 +802,57 @@ path by which play could reach into the creation record.
   use. There's no separate ledger for "dice the roller spent."
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-033: A second click on a header tile closes its popover
+- **Type:** correctness
+- **Steps:** Any finalized character with at least one enhanced sense (so the
+  Senses tile exists), Overview tab. Each tap sends a real `pointerdown` before
+  the click, because the outside-close listener runs on `pointerdown` and the
+  toggle runs on `click` — a test that only clicks would never exercise the
+  interaction between them.
+- **Check:**
+
+      (() => { const c = CHAR; ensurePlay(); c.play.kismet_earned = 25; recalc(); kismetPoolState().setUsed(0); sheetTab = "overview"; renderSheet(); const tap = sel => { const n = document.querySelector(sel); n.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, composed: true })); n.click(); }; const open = () => { const p = document.querySelector(".sh-popover"); return p ? p.dataset.popover : "none"; }; const seq = []; tap(".sh-meter.kismet"); seq.push(open()); tap(".sh-meter.kismet"); seq.push(open()); tap(".sh-pool.senses"); seq.push(open()); tap(".sh-meter.kismet"); seq.push(open()); const tile = document.querySelector(".sh-meter.kismet"); document.querySelector(".sh-popover .sh-roller-roll").click(); const replaced = tile !== document.querySelector(".sh-meter.kismet"); tap(".sh-meter.kismet"); seq.push(open()); kismetPoolState().setUsed(0); return { seq, replaced, boxes: document.querySelectorAll(".sh-popover").length }; })()
+
+- **Expected:** `{ "seq": ["kismet", "none", "senses", "kismet", "none"], "replaced": true, "boxes": 0 }`
+- **Note:** Three separate promises in one sequence. `kismet → none` is the
+  toggle. `senses` following an open Kismet box, and `boxes: 0` at the end, is
+  the one-at-a-time rule: opening either tile closes whatever was up, and
+  nothing ever stacks.
+
+  `replaced: true` is the case that makes this worth testing rather than
+  assuming. Rolling spends a die, which re-renders the sheet, which builds a
+  *new* Kismet tile node — so the last `none` is a toggle performed against a
+  tile that did not exist when the popover opened. That only works because both
+  openers re-find their anchor by selector; a captured node reference would make
+  the final tap read as an outside click followed by a fresh open, and the box
+  would stay stubbornly on screen.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-034: The header carries four meters, and Initiative is not one of them
+- **Type:** correctness
+- **Steps:** Any finalized character, Overview tab, in a window wider than
+  1024px (below that the band unrolls to a single 4-across row by design, and
+  `cols` reads 4).
+- **Check:**
+
+      (() => { sheetTab = "overview"; renderSheet(); const meters = [...document.querySelectorAll(".sheet-head .sh-meter")].map(m => m.querySelector(".k").textContent); const card = [...document.querySelectorAll("#sheet h3")].find(h => h.textContent === "Initiative"); return { meters: meters.slice(0, 3), count: meters.length, cash: meters[3] === RULES.currencyName(), cols: getComputedStyle(document.querySelector(".sh-meters")).gridTemplateColumns.split(" ").length, initInHeader: meters.some(k => /Initiative/i.test(k)), initCardHasDice: !!card && /^\d+d\+\d+$/.test(card.parentElement.querySelector(".big").textContent), initRollButton: !!document.querySelector(".sh-init-roll") }; })()
+
+- **Expected:** `{ "meters": ["Wounds", "Kismet", "Armor"], "count": 4, "cash": true, "cols": 2, "initInHeader": false, "initCardHasDice": true, "initRollButton": true }`
+- **Note:** The band is a fixed 2x2 of exactly four tiles, not an auto-fitting
+  strip — `count: 4` and `cols: 2` together are what "the 2x2 block" means, and
+  a fifth tile appearing would break both at once.
+
+  The fourth key isn't spelled out because it's the currency name, which the
+  data can rename; `cash: true` checks it against `RULES.currencyName()` rather
+  than pinning today's word.
+
+  `initInHeader: false` with `initCardHasDice` and `initRollButton` both true is
+  the actual claim: Initiative left the header without leaving the sheet. The
+  header tile could only be read, while the Combat card shows the same `Nd+N`,
+  rolls it, and records the result — so removing the tile cost a quarter of a
+  scarce band and lost nothing.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

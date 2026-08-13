@@ -1596,7 +1596,6 @@ function sheetHeader() {
    * tab, so it now carries what you consult every round instead. */
 
   const wound = woundPenalty();
-  const init = sheetInitiative();
   const physMax = CALC.condition.physical, stunMax = CALC.condition.stun;
   const phys = Math.min(play.physical_damage || 0, physMax);
   const stun = Math.min(play.stun_damage || 0, stunMax);
@@ -1611,16 +1610,16 @@ function sheetHeader() {
       el("div", { class: "k" }, "Wounds"),
       el("div", { class: "v" }, wound.dice < 0 ? `${wound.dice}d` : "0"),
       el("span", { class: "sub" }, `P ${phys}/${physMax} · S ${stun}/${stunMax}`)),
-    el("div", { class: "sh-meter init",
-      title: `Initiative — roll ${init.dice} Focus dice and add Reaction ${init.bonus}`
-        + (init.notes.length ? ` (${init.notes.join("; ")})` : "") },
-      el("div", { class: "k" }, "Initiative"),
-      el("div", { class: "v" }, `${init.dice}d+${init.bonus}`)),
-    // Kismet dice sit up here with Initiative rather than in the pool row.
-    // They are not a pool in the sense the other five tiles are: they don't
-    // refresh on New Round, they're not spent per test, and they have no temp
-    // track — they're a slow-burning resource measured in whole sessions. Down
-    // among the pools they read as a fifth thing that empties every round.
+    // Kismet takes the slot Initiative used to hold, keeping this band at the
+    // four tiles it was built for. Initiative was the one meter here you could
+    // only read — its Combat-tab card shows the same "12d+8" and is where you
+    // actually roll it and record the result, so the copy up here was costing a
+    // quarter of the band to duplicate a number.
+    //
+    // Kismet earns the slot instead, but it is NOT one of the pools below: it
+    // doesn't refresh on New Round, isn't spent per test, and has no temp track
+    // — it's a slow-burning resource measured in whole sessions, and among four
+    // tiles that refill every round it read as a fifth thing that empties.
     kismetMeter(),
     // Consulted on every incoming hit, so it earns the slot Ghost gave up —
     // Ghost is a standing signature and now sits on the attribute line.
@@ -1837,10 +1836,30 @@ function headerPoolTile(pool) {
     ...notes.map(n => el("div", { class: "sh-pool-note" }, n)));
 }
 
+/* Close whatever header popover is open, and say which one it was.
+ *
+ * Two things need this. Only one popover may be open at a time, so opening
+ * either one shuts the other; and clicking the tile you opened from should
+ * close its own box rather than tear it down and build an identical one, which
+ * is what "click again to close" means. Both fall out of the same call: the
+ * opener closes what's there, and returns early if what it closed was its own.
+ *
+ * Each box carries its owner in data-popover and its teardown on _close.
+ * Calling remove() directly would leave the keydown/pointerdown/scroll/resize
+ * listeners bound to a node no longer in the document, so the real close() is
+ * stashed on the element for anyone holding only the node. */
+function closeSheetPopover() {
+  const open = document.querySelector(".sh-popover");
+  if (!open) return null;
+  const kind = open.dataset.popover || "";
+  (open._close || (() => open.remove()))();
+  return kind;
+}
+
 /* Kismet die pool — 1 die to start, +1 per 10 Kismet earned during play
  * (lifetime, from play.kismet_earned; never shrinks).
  *
- * A meter in the header's top row, beside Initiative, rather than a sixth pool
+ * A meter in the header's top row, in the slot Initiative held, rather than a sixth pool
  * tile. Kismet dice keep their own used-count in `play.pool_used.Kismet`, but
  * they are NOT one of the round-cycle pools: New Round walks POOL_ORDER, which
  * is the four attribute pools and deliberately not this. Spend a Kismet die and
@@ -1893,12 +1912,14 @@ function kismetMeter() {
  * itself, so the anchor is re-found by selector on every use rather than held
  * as a captured node that would otherwise go stale mid-session. */
 function openKismetRoller() {
-  document.querySelector(".sh-popover")?.remove();
+  // Clicking the tile while this is already up closes it instead of rebuilding
+  // it — the tile is a toggle, not a re-open button.
+  if (closeSheetPopover() === "kismet") return;
   const getAnchor = () => document.querySelector(".sh-meter.kismet");
   const state = { count: 1, dice: [] };
 
   const box = el("div", { class: "sh-popover sh-kismet-roller", role: "dialog",
-    "aria-label": "Kismet dice roller" });
+    "aria-label": "Kismet dice roller", "data-popover": "kismet" });
   document.body.append(box);
 
   const place = () => {
@@ -1920,7 +1941,10 @@ function openKismetRoller() {
     window.removeEventListener("scroll", close, true);
     window.removeEventListener("resize", close);
   };
+  box._close = close;
   const onKey = e => { if (e.key === "Escape") close(); };
+  // A pointerdown on the tile is left alone so the click that follows reaches
+  // the toggle above; closing here would let that click re-open the box.
   const onOutside = e => {
     const anchor = getAnchor();
     if (!box.contains(e.target) && !(anchor && anchor.contains(e.target))) close();
@@ -2080,7 +2104,7 @@ function sensesTile() {
     title: `${senses.length} enhanced ${senses.length === 1 ? "sense" : "senses"}`
       + " — click for what grants each",
     "aria-label": `Enhanced senses: ${senses.map(s => s.capability).join(", ")}`,
-    onclick: e => openSensesPopover(e.currentTarget, senses),
+    onclick: () => openSensesPopover(senses),
     onkeydown: e => { if (e.key === "Enter" || e.key === " ") e.currentTarget.click(); },
   },
     el("div", { class: "k" }, "Senses"),
@@ -2095,11 +2119,18 @@ function sensesTile() {
  * reference, and a full backdrop for "what gives me thermographic vision" would
  * be heavier than the question. Closes on click-outside, Escape, scroll or
  * resize, because a box pinned to fixed coordinates stops pointing at anything
- * the moment the page moves under it. */
-function openSensesPopover(anchor, senses) {
-  document.querySelector(".sh-popover")?.remove();
+ * the moment the page moves under it — or on a second click of the tile that
+ * opened it, which is the way out most people reach for first.
+ *
+ * The tile is re-found by selector rather than passed in, because any re-render
+ * while this is open replaces that node: a captured reference would stop
+ * matching the tile the user is actually clicking, and the toggle would read as
+ * an outside-click-then-reopen. */
+function openSensesPopover(senses) {
+  if (closeSheetPopover() === "senses") return;
+  const getAnchor = () => document.querySelector(".sh-pool.senses");
   const box = el("div", { class: "sh-popover", role: "dialog",
-    "aria-label": "Enhanced senses" },
+    "aria-label": "Enhanced senses", "data-popover": "senses" },
     el("div", { class: "sh-popover-head" }, "👁 Enhanced Senses"),
     ...senses.map(s => el("div", { class: "sh-sense" },
       el("div", {}, s.capability),
@@ -2108,6 +2139,8 @@ function openSensesPopover(anchor, senses) {
   document.body.append(box);
 
   const place = () => {
+    const anchor = getAnchor();
+    if (!anchor) { close(); return; }
     const r = anchor.getBoundingClientRect();
     const w = box.offsetWidth, h = box.offsetHeight;
     // Prefer below-left-aligned; flip above when the viewport bottom is closer
@@ -2118,7 +2151,6 @@ function openSensesPopover(anchor, senses) {
     box.style.top = `${top}px`;
     box.style.left = `${left}px`;
   };
-  place();
 
   const close = () => {
     box.remove();
@@ -2127,12 +2159,20 @@ function openSensesPopover(anchor, senses) {
     window.removeEventListener("scroll", close, true);
     window.removeEventListener("resize", close);
   };
+  box._close = close;
   const onKey = e => { if (e.key === "Escape") close(); };
-  const onOutside = e => { if (!box.contains(e.target) && !anchor.contains(e.target)) close(); };
+  // The tile is spared here so its click can reach the toggle in the opener.
+  const onOutside = e => {
+    const anchor = getAnchor();
+    if (!box.contains(e.target) && !(anchor && anchor.contains(e.target))) close();
+  };
   document.addEventListener("keydown", onKey, true);
   document.addEventListener("pointerdown", onOutside, true);
   window.addEventListener("scroll", close, true);
   window.addEventListener("resize", close);
+
+  // After close exists, so the no-anchor bail inside can call it.
+  place();
 }
 
 /* What the character is currently on, one row per dose.

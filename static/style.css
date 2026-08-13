@@ -641,11 +641,11 @@ label.opt input{margin-top:3px}
    penalty — red, so it never reads as another stat you're pleased to have. */
 .sh-attr.zr-pen{border-color:var(--bad)}
 .sh-attr.zr-pen .v{color:var(--bad)}
-/* auto-fit rather than a fixed count: the band carries four meters for a broke
-   mundane and five once Kismet joined them, and it reflows on width instead of
-   needing a breakpoint per population. */
-.sh-meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));
-  gap:8px;align-content:start}
+/* Exactly four meters, always: Wounds, Kismet, Armor, Money. A fixed 2x2 rather
+   than auto-fit, because a fixed count is what the population actually is — and
+   auto-fit at this width would collapse to a 4-wide strip of thin tiles that
+   fights the identity column beside it for room. */
+.sh-meters{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
 .sh-meter{border:1px solid var(--line);border-radius:8px;padding:7px 12px 5px;text-align:center;min-width:74px}
 .sh-meter .k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
 .sh-meter .v{font-family:var(--mono);font-size:18px;font-weight:600;color:var(--strong);white-space:nowrap}
@@ -653,12 +653,9 @@ label.opt input{margin-top:3px}
 .sh-meter.cash{border-color:var(--amber);cursor:pointer}
 .sh-meter.cash .v{color:var(--amber)}
 .sh-meter.cash .plus{color:var(--dim);font-size:13px}
-/* Wounds: neutral while clean, alarmed once it's costing dice. Initiative rides
-   the dice colour, matching every other "this is what you roll" figure. */
+/* Wounds: neutral while clean, alarmed once it's costing dice. */
 .sh-meter.cond{border-color:var(--bad)}
 .sh-meter.cond .v{color:var(--bad)}
-.sh-meter.init{border-color:var(--roll-dim)}
-.sh-meter.init .v{color:var(--roll)}
 /* Kismet: a meter, not a pool. Same colour it wore as a tile so it's the same
    resource, dimmed to red once it's all spent — unlike the pools beside it,
    nothing refills this on New Round, so "empty" is a state that persists and
@@ -1316,9 +1313,9 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   .sh-top{flex-direction:column}
   .sh-ident{width:100%}
   .sh-desc{max-width:none;width:100%;flex-basis:auto}
-  /* Full width, but let the auto-fit above decide how many fit — pinning it to
-     4 stranded the 5th meter alone on its own row. */
-  .sh-meters{margin-left:0;width:100%}
+  /* Stacked layout has the whole width to work with, so the 2x2 unrolls into a
+     single 4-across row rather than sitting as a squat block under the name. */
+  .sh-meters{margin-left:0;width:100%;grid-template-columns:repeat(4,minmax(0,1fr))}
   /* .sh-heritage-abilities is its own full-width band now and needs no cap
      lifted; .sh-ls-effect still sits inside the identity column. */
   .sh-ls-effect{max-width:none}

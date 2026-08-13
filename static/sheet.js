@@ -3089,7 +3089,17 @@ function underbarrelWeapons() {
       const row = (DATA.tables.weapons || []).find(x => x.Weapon === grants);
       // A GrantsWeapon naming a row this browser doesn't have (homebrew the
       // player hasn't installed) is skipped rather than rendered as a blank gun.
-      if (row) out.push({ name: grants, row, host: host.name, mod: modName });
+      if (!row) continue;
+      // A granted gun still needs somewhere to keep what it's loaded with, which
+      // round is chambered and which firing mode is set — the same state an
+      // owned weapon keeps on its own entry. It has no entry of its own, so the
+      // state lives on the HOST, keyed by the mod that granted it: one mod per
+      // underbarrel slot, so the key is unique, and it travels with the host
+      // through the kit like every other play edit.
+      const store = (host.ub_state = host.ub_state || {});
+      const state = (store[modName] = store[modName] || {});
+      state.name = grants;                       // firingModeControls labels from this
+      out.push({ name: grants, row, host: host.name, mod: modName, state });
     }
   }
   return out;
@@ -4191,22 +4201,36 @@ function shOverview(body) {
         ins: 2000 + idx, getOrder: () => undefined, setOrder: () => {},
         cells: () => {
           const r = ub.row;
+          const st = ub.state;
           const ubModes = RULES.weaponFiringModes(r);
+          const ubMode = ubModes.includes(st.mode) ? st.mode : (ubModes[0] || "");
           const rs = weaponRollSpec(ub.name, r.Type, r.Accuracy || 0, [], r.Reach);
-          const ro2 = !!(activeTabObj() && activeTabObj().readonly);
+          // An underslung launcher chambers a grenade and runs a magazine
+          // exactly like the M31-a1G does — it is the same kind of weapon, and
+          // the only thing that made it different was having no entry to keep
+          // the round count on. Its damage comes from whatever is loaded.
+          const gren = loadedGrenadeFor(st);
+          const dmg = gren.row ? (gren.row.Damage || r.Damage) : (r.Damage || "—");
           return {
             name: el("b", {}, ub.name, " ", el("span", { class: "sh-tag" }, "Underbarrel")),
             stats: el("td", { class: "sub" },
               `${r.Type || ""}`,
               weaponSkillDice(ub.name, r.Type, r.Accuracy || 0, [], r.Reach),
-              ` · Acc ${r.Accuracy || 0} · DMG ${r.Damage || "—"} · Pen ${r.Pen || 0}`
+              ` · Acc ${r.Accuracy || 0} · `,
+              el("span", gren.row ? { class: "wpn-ammo-mod", title: `${gren.name} chambered` } : {},
+                `DMG ${dmg}`),
+              ` · Pen ${r.Pen || 0}`
               + barrierBit(r, r.Bar)
               + (r.Ammo ? ` · Mag ${r.Ammo}` : "")
               + ` · Hardening ${RULES.hardeningOf(r)}`,
-              el("div", { class: "sub wpn-mods" }, `Under ${ub.host} — via the ${ub.mod} mod`)),
-            fire: el("td", { class: "sub" },
-              ro2 ? "—" : (ubModes.length ? attackButton(ub.name, rs) : attackButton(ub.name, rs))),
-            ammo: el("td", { class: "sub" }, "—"),
+              el("div", { class: "sub wpn-mods" }, `Under ${ub.host} — via the ${ub.mod} mod`),
+              gren.notes.length
+                ? el("div", { class: "sub wpn-ammo-note" }, `${gren.name}: ${gren.notes.join(" · ")}`)
+                : null),
+            fire: el("td", { class: "sub" }, ubModes.length
+              ? firingModeControls(st, r, {}, ubModes, ubMode, false, rs, ub.name)
+              : ((activeTabObj() && activeTabObj().readonly) ? "—" : attackButton(ub.name, rs))),
+            ammo: el("td", { class: "sub" }, munitionPicker(st, r)),
           };
         },
       }));
@@ -6219,16 +6243,22 @@ function shGear(body) {
     // in the list but carry no sell control — you remove the mod instead.
     underbarrelWeapons().forEach(ub => {
       const r = ub.row;
+      const gren = loadedGrenadeFor(ub.state);
       t.append(el("tr", {},
         el("td", {}, el("b", {}, ub.name), " ",
           el("span", { class: "sh-tag" }, "Underbarrel"),
+          el("span", { class: "sub sh-gear-dice" },
+            weaponSkillDice(ub.name, r.Type, r.Accuracy || 0, [], r.Reach)),
           el("div", { class: "sub" }, `Fitted to ${ub.host} — remove the ${ub.mod} mod to lose it`)),
         el("td", { class: "sub" },
-          `${r.Type || ""} · Acc ${r.Accuracy || 0} · DMG ${r.Damage || "—"}`
+          `${r.Type || ""} · Acc ${r.Accuracy || 0}`
+          + ` · DMG ${gren.row ? (gren.row.Damage || r.Damage) : (r.Damage || "—")}`
           + ` · ${r["Firing modes"] || "—"} · Pen ${r.Pen || 0}${barrierBit(r, r.Bar)}`
           + (r.Ammo ? ` · Ammo ${r.Ammo}` : "")
           + ` · Hardening ${RULES.hardeningOf(r)}`),
-        el("td", { class: "sub" }, "—"),
+        // The chambered grenade is pickable here as well as on the Overview,
+        // matching every other weapon row on this tab.
+        el("td", { class: "sub" }, munitionPicker(ub.state, r)),
         el("td", {}, "")));
     });
     weaponCard.append(t);

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "229";
+const APP_VERSION = "230";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -457,6 +457,37 @@ function hackingProgramRating(name) {
 /* What a deck needs to run properly: ½ MCP, rounded down, minimum 1. */
 function deckHackingRequired(deckRow) {
   return Math.max(1, Math.floor(toInt(asNumber((deckRow || {}).MCP)) / 2));
+}
+
+/* How far a deck reaches. Every deck hacks at 10 m; two mods extend it, and the
+ * distance is read out of the mod's own Effect text ("Extends Hacking range to
+ * 15m") rather than kept in a lookup here. That's deliberate: a homebrew deck
+ * mod that says the same thing works without the engine being taught about it,
+ * which is the whole promise of the homebrew editor, and the number can never
+ * drift from the text a player reads on the mod.
+ *
+ * Range is set, not added — a mod says what the range BECOMES. Only one such mod
+ * is allowed per deck (see deckRangeConflict); when a saved deck somehow carries
+ * both, the longer wins so the reported figure stays deterministic while the
+ * error tells the player to drop one. */
+const BASE_HACK_RANGE_METERS = 10;
+const HACK_RANGE_RE = /hacking range to\s*(\d+)\s*m/i;
+function hackRangeOfMod(modRow) {
+  const m = HACK_RANGE_RE.exec(String((modRow || {}).Effect || ""));
+  return m ? toInt(m[1]) : 0;
+}
+function deckRangeMods(entry, data) {
+  return (((entry || {}).mods) || [])
+    .map(name => findRow(data.deck_mods, "Deck Mod", name))
+    .filter(row => row && hackRangeOfMod(row) > 0);
+}
+function deckHackRange(entry, data) {
+  const ranges = deckRangeMods(entry, data).map(hackRangeOfMod);
+  return ranges.length ? Math.max(...ranges) : BASE_HACK_RANGE_METERS;
+}
+function deckRangeConflict(entry, data) {
+  const rows = deckRangeMods(entry, data);
+  return rows.length > 1 ? rows.map(r => r["Deck Mod"]) : null;
 }
 
 /* Exactly one deck and one rig are equipped — jacked in — at a time. A
@@ -3396,6 +3427,13 @@ function priceDecking(character, data, gearCostMultiplier, warnings, errors) {
       errors.push(`${entry.name}: deck mod slots exceeded `
                   + `(${slotsUsed}/${slotCapacity}).`);
     }
+    // Range mods set the range rather than adding to it, so a second one has
+    // nothing to do but overwrite the first — the slots it costs are wasted.
+    const clash = deckRangeConflict(entry, data);
+    if (clash) {
+      errors.push(`${entry.name}: ${clash.join(" and ")} both set the hacking `
+                  + "range — fit only one.");
+    }
     deckCost += round2(cost * gearCostMultiplier);
   }
 
@@ -5307,6 +5345,7 @@ return {
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName, currencySymbol,
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
   HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
+  BASE_HACK_RANGE_METERS, deckHackRange, deckRangeConflict,
   equippedDeckName,
   SPEAKER_BOND_MAX, speakerBondCount,
   KIT_CATEGORIES, applyPlayAdvances,

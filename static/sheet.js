@@ -6835,7 +6835,9 @@ function shDecking(body) {
         el("div", { class: "sh-advrow" + (isActive ? " active-row" : ""), style: "border:0;padding:0" },
           el("span", {}, el("b", {}, d.name),
             el("span", { class: "sub" },
-              ` MCP ${r.MCP} · Hardening ${r.Hardening} · Threads ${r.Threads} · Core ${r.Core} · I/O ${r.IO}`)),
+              ` MCP ${r.MCP} · Hardening ${r.Hardening} · Threads ${r.Threads} · Core ${r.Core} · I/O ${r.IO}`
+              // Range is per-deck because the mods that change it are per-deck.
+              + ` · Range ${RULES.deckHackRange(d, DATA.tables)} m`)),
           isActive ? el("span", { class: "chip ok" }, "Active")
             : counterBtn("Set Active", () => {
                 dk.active_deck = d.name; dk.loaded = []; playChanged();

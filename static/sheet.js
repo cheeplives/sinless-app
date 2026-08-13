@@ -191,6 +191,7 @@ let expandedPool = null;      // pool card the user clicked open on Overview
 let imagesCollapsed = false;  // Images section folded shut on the Notes tab
 let sensesCollapsed = true;   // Enhanced Senses banner — starts folded
 let dosesCollapsed = true;    // "Under the Effects Of" banner — starts folded
+let fxCollapsed = true;       // Conditional Effects panel — starts folded
 let playSaveTimer = null;
 let sheetMenuOpen = false;    // hamburger menu (Back to Chargen / Homebrew / Export / …)
 let sheetHeadObserver = null; // IntersectionObserver toggling the compact sticky strip
@@ -1006,8 +1007,10 @@ function dossierNotes() {
     notes.push(`AMP POWERS OFFLINE: ZP is ${CALC.zoetics.zp_remaining} — Amp ZP spent plus carried ZR exceeds your Zoetic Potential. Shed ZR or lose the powers.`);
   for (const msg of CALC.zoetics.mount_errors || []) notes.push(msg);
   if (moveSpecial()) notes.push("Movement: " + moveSpecial());
-  if ((CHAR.heritage.features || []).length)
-    notes.push(`Heritage features: ${CHAR.heritage.features.join(", ")}.`);
+  // Heritage features are NOT a note. They were listed here as one, which put a
+  // red ⚠ callout on every uplift character saying nothing but the trait names —
+  // no effects, no problem to act on, and the header already names them. The
+  // header band (sh-heritage-abilities) carries them with their effects now.
   return notes;
 }
 
@@ -1574,10 +1577,7 @@ function sheetHeader() {
       el("span", { class: "sh-tag magic" }, CALC.magic.type),
       lsSelect),
     activeLs && LIFESTYLE_EFFECTS[activeLs.name]
-      ? el("div", { class: "sh-ls-effect" }, LIFESTYLE_EFFECTS[activeLs.name]) : null,
-    heritageAbilities.length
-      ? el("div", { class: "sh-heritage-abilities" },
-          el("b", {}, "Abilities: "), heritageAbilities.join(" · ")) : null);
+      ? el("div", { class: "sh-ls-effect" }, LIFESTYLE_EFFECTS[activeLs.name]) : null);
 
   // interactive pool tiles live up here — pools matter more than attributes
   const pools = el("div", { class: "sh-head-pools" },
@@ -1647,11 +1647,24 @@ function sheetHeader() {
   // Top band: identity (hamburger + name, details underneath) on the left,
   // description in the middle, meters on the right.
   const top = el("div", { class: "sh-top" }, ident, descField, right);
+  // Heritage abilities, full-width, directly above the pools.
+  //
+  // This used to be two things in two places: a squeezed "Abilities:" line in
+  // the identity column, and a separate "Heritage features:" callout in the
+  // Overview body listing the same traits by name with no effects. The callout
+  // was pure duplication and the line had a third of the width to say the same
+  // thing, so it wrapped to three rows. One band, the full width of the header,
+  // says it once — and it belongs above the pools because several of these
+  // traits are exactly what those pool numbers are already counting.
+  const heritageBand = heritageAbilities.length
+    ? el("div", { class: "sh-heritage-abilities" },
+        el("b", {}, "Abilities: "), heritageAbilities.join(" · "))
+    : null;
   // Pool band: the four pool tiles as a single 1×4 row travelling across to sit
   // under the meters. (Load/Save/New moved into the ☰ menu.)
   const poolBar = el("div", { class: "sh-poolbar" }, pools);
 
-  head.append(top, poolBar);
+  head.append(top, ...(heritageBand ? [heritageBand] : []), poolBar);
   return head;
 }
 
@@ -1937,10 +1950,11 @@ function sensesBanner() {
   if (sensesCollapsed) {
     // The capability names alone, comma-joined — enough to know whether to open
     // it without giving up a line per sense.
-    card.append(el("div", { class: "sub" },
+    card.append(el("div", { class: "sh-fold-sum" },
       senses.map(s => s.capability).join(" · ")));
     return card;
   }
+  card.classList.add("is-open");
   for (const s of senses) {
     card.append(el("div", { class: "sh-sense" },
       el("div", {}, s.capability),
@@ -1995,7 +2009,7 @@ function dosesBanner() {
       })));
 
   if (dosesCollapsed) {
-    card.append(el("div", { class: "sub" },
+    card.append(el("div", { class: "sh-fold-sum" },
       groups.map(g => {
         const swing = swingOf(g);
         return g.name + (g.uids.length > 1 ? ` ×${g.uids.length}` : "")
@@ -2003,6 +2017,7 @@ function dosesBanner() {
       }).join(" · ")));
     return card;
   }
+  card.classList.add("is-open");
 
   for (const g of groups) {
     const tally = doseTally(g.name);
@@ -2967,9 +2982,11 @@ function shOverview(body) {
   // Replicants have a fixed remaining lifespan, rolled once and ticked down.
   const lifespan = replicantLifespanTracker();
   if (lifespan) body.append(lifespan);
-  // Anything the build can switch on for extra pool dice — the Wildling shift,
-  // a triggered Adrenal Pump, a drug you're dosed on. Sits above the pools
-  // because that is what it moves.
+  // Three folding banners, stacked: what you can switch on, what you can
+  // perceive, what you're currently on. All three start folded — together they
+  // used to cost most of a screen before the first card, and each one answers a
+  // question you ask occasionally rather than a number you read every round.
+  // Their folded summaries carry enough to tell you whether to open them.
   const fx = poolEffectsPanel();
   if (fx) body.append(fx);
   // What this character can perceive — folded away until asked for.
@@ -7659,12 +7676,31 @@ function poolEffectsPanel() {
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const anyOn = list.some(e => poolEffectOn(e.id));
 
+  const onList = list.filter(e => poolEffectOn(e.id));
+
   const card = el("div", { class: `sh-callout sh-fx ${anyOn ? "warn" : "info"}` },
     el("div", { class: "sh-fx-head" },
-      el("b", {}, "Conditional Effects"),
-      el("span", { class: "sub" },
-        anyOn ? `${list.filter(e => poolEffectOn(e.id)).length} of ${list.length} active`
-              : `${list.length} available — none active`)));
+      el("span", {}, anyOn ? "⚡ " : "○ ", el("b", {}, "Conditional Effects"), " ",
+        el("b", {}, anyOn ? `${onList.length}/${list.length}` : String(list.length))),
+      counterBtn(fxCollapsed ? "Show ▾" : "Hide ▴", () => {
+        fxCollapsed = !fxCollapsed;
+        renderSheet();
+      })));
+
+  // Folded, this has to answer one question: is anything altering my pools right
+  // now? So the summary names what's ON and what it's worth, and falls back to
+  // the available names only when nothing is — the same split the doses banner
+  // uses, and for the same reason. A bare count would make "none active" and
+  // "Adrenal Pump running" look identical at a glance.
+  if (fxCollapsed) {
+    card.append(el("div", { class: "sh-fold-sum" },
+      anyOn
+        ? onList.map(e => `${e.label} (${Object.entries(e.pools)
+            .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" ")})`).join(" · ")
+        : list.map(e => e.label).join(" · ") + " — none active"));
+    return card;
+  }
+  card.classList.add("is-open");
 
   for (const e of list) {
     const on = poolEffectOn(e.id);

@@ -970,17 +970,32 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-unit-details{margin:6px 0 4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:2px 8px}
 .sh-unit-details>summary{cursor:pointer;font-size:12px;color:var(--dim);padding:4px 0;user-select:none}
 .sh-unit-details[open]>summary{color:var(--text);margin-bottom:4px}
-.sh-callout{border-left:3px solid var(--bad);background:rgba(255,93,108,.08);padding:8px 12px;
-  margin-bottom:12px;font-size:13px;border-radius:0 6px 6px 0}
+.sh-callout{border-left:3px solid var(--bad);background:rgba(255,93,108,.08);padding:6px 10px;
+  margin-bottom:6px;font-size:12.5px;border-radius:0 6px 6px 0}
 .sh-callout.lifestyle{border-color:var(--manon-dim);background:rgba(157,123,255,.07);margin-top:10px}
 .sh-callout.warn{border-color:var(--amber);background:var(--alert-warn-bg)}
 .sh-callout.info{border-color:var(--line);background:transparent;color:var(--dim)}
+/* The three foldable banners (Conditional Effects, Enhanced Senses, Under the
+   Effects Of) stack directly on top of each other above the Overview cards, so
+   their FOLDED height is the number that matters — three of them at the old
+   8px/12px rhythm cost about a third of a laptop viewport before a single card
+   appeared. Folded, each is now one head row and one summary line.
+   The head keeps a real tap target (the fold button sets the height) while the
+   text around it shrinks; the summary is clamped to two lines so a character on
+   six drugs can't push the cards off-screen the way an unclamped list would. */
+.sh-fx-head,.sh-senses-head,.sh-doses-head{display:flex;align-items:center;
+  justify-content:space-between;gap:10px;min-height:22px}
+.sh-fx-head .btn,.sh-senses-head .btn,.sh-doses-head .btn{padding:2px 8px;font-size:11px}
+.sh-fold-sum{font-size:11px;color:var(--dim);margin-top:1px;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+/* Open, the banners want their old breathing room back -- the compactness is
+   for the folded state, not a general squeeze on content you deliberately
+   opened. */
+.sh-callout.is-open{padding-bottom:8px}
 /* Conditional pool effects: one row per switchable bonus (Adrenal Pump, a drug,
    the Wildling shift) — what it is and what it's worth on the left, the switch
    on the right, and its own effect text underneath so the ruling is at hand. */
 .sh-fx{display:flex;flex-direction:column;gap:2px}
-.sh-fx-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
-  margin-bottom:4px}
 .sh-fx-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
   padding:6px 0;border-top:1px solid var(--line-soft)}
 .sh-fx-what{min-width:0}
@@ -1000,7 +1015,6 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 /* Enhanced Senses banner: a header row with its fold button, then one row per
    capability with the things granting it underneath. */
 .sh-senses{display:flex;flex-direction:column;gap:2px}
-.sh-senses-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .sh-sense{padding:4px 0;font-size:12px}
 .sh-sense + .sh-sense{border-top:1px dashed var(--line-dash)}
 .sh-sense .sub{font-size:11px;margin-top:1px}
@@ -1010,7 +1024,6 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
    conditional-effect row internals (.sh-fx-swing / .sh-fx-text) because it is
    the same kind of information; only the controls differ. */
 .sh-doses{display:flex;flex-direction:column;gap:2px}
-.sh-doses-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .sh-dose-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
   padding:6px 0;border-top:1px solid var(--line-soft)}
 .sh-dose-what{min-width:0}
@@ -1067,7 +1080,11 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .chip .chip-btn:hover{opacity:1}
 .chip .chip-btn.alpha-on{color:var(--ok);font-weight:700;opacity:1}
 /* header heritage abilities line */
-.sh-heritage-abilities{font-size:11px;color:var(--dim);max-width:640px;margin-top:4px}
+/* Its own band across the full header width, sitting between the identity/meters
+   row and the pool tiles. Was a 640px-capped line inside the identity column,
+   where it wrapped to three rows saying what it now says in one or two. */
+.sh-heritage-abilities{font-size:11px;color:var(--dim);margin-top:10px;
+  padding-left:8px;border-left:2px solid var(--line);line-height:1.45}
 .sh-heritage-abilities b{color:var(--text)}
 /* weapon-mod slot color coding (applies to browser items + fitted chips) */
 .mod-overbarrel{color:var(--slot-overbarrel)}
@@ -1261,7 +1278,9 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   .sh-ident{width:100%}
   .sh-desc{max-width:none;width:100%;flex-basis:auto}
   .sh-meters{margin-left:0;width:100%;grid-template-columns:repeat(4,minmax(0,1fr))}
-  .sh-heritage-abilities,.sh-ls-effect{max-width:none}
+  /* .sh-heritage-abilities is its own full-width band now and needs no cap
+     lifted; .sh-ls-effect still sits inside the identity column. */
+  .sh-ls-effect{max-width:none}
 }
 /* Chargen keeps its summary rail as a sidebar down to ~11" tablets (portrait
  * ≈ 820px) — just progressively narrower — rather than burying it below the

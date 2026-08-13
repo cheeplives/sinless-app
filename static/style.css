@@ -633,7 +633,11 @@ label.opt input{margin-top:3px}
    penalty — red, so it never reads as another stat you're pleased to have. */
 .sh-attr.zr-pen{border-color:var(--bad)}
 .sh-attr.zr-pen .v{color:var(--bad)}
-.sh-meters{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+/* auto-fit rather than a fixed count: the band carries four meters for a broke
+   mundane and five once Kismet joined them, and it reflows on width instead of
+   needing a breakpoint per population. */
+.sh-meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));
+  gap:8px;align-content:start}
 .sh-meter{border:1px solid var(--line);border-radius:8px;padding:7px 12px 5px;text-align:center;min-width:74px}
 .sh-meter .k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
 .sh-meter .v{font-family:var(--mono);font-size:18px;font-weight:600;color:var(--strong);white-space:nowrap}
@@ -647,6 +651,14 @@ label.opt input{margin-top:3px}
 .sh-meter.cond .v{color:var(--bad)}
 .sh-meter.init{border-color:var(--roll-dim)}
 .sh-meter.init .v{color:var(--roll)}
+/* Kismet: a meter, not a pool. Same colour it wore as a tile so it's the same
+   resource, dimmed to red once it's all spent — unlike the pools beside it,
+   nothing refills this on New Round, so "empty" is a state that persists and
+   should look like one. */
+.sh-meter.kismet{border-color:var(--pool-kismet)}
+.sh-meter.kismet .v{color:var(--pool-kismet)}
+.sh-meter.kismet.spent .v{color:var(--bad)}
+.sh-meter-btns{display:flex;gap:4px;justify-content:center;margin-top:1px}
 .sh-meter .sub{display:block;font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:1px}
 .sh-cmeter.cond{color:var(--bad);border-color:var(--bad)}
 .sh-tabs{display:flex;gap:2px;justify-content:flex-end;flex-wrap:wrap}
@@ -727,6 +739,14 @@ label.opt input{margin-top:3px}
 .sh-pool.focus{border-color:var(--pool-focus)}   .sh-pool.focus .k{color:var(--pool-focus)}
 .sh-pool.resolve{border-color:var(--pool-resolve)}.sh-pool.resolve .k{color:var(--pool-resolve)}
 .sh-pool.kismet{border-color:var(--pool-kismet);cursor:default}.sh-pool.kismet .k{color:var(--pool-kismet)}
+/* Enhanced Senses takes the pool row's fifth slot. Deliberately quieter than
+   the four pools — it's a reference, not a resource, so it borrows the tile
+   shape without competing with numbers you spend. */
+.sh-pool.senses{border-color:var(--line);border-style:dashed}
+.sh-pool.senses .k{color:var(--dim)}
+.sh-pool.senses .v{font-size:24px;color:var(--text)}
+.sh-senses-list{font-size:10px;color:var(--dim);line-height:1.35;margin-top:2px;
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .sh-pool:hover,.sh-pool.open{box-shadow:0 0 14px rgba(157,123,255,.25);transform:translateY(-1px)}
 
 /* pool tiles living in the sheet header (compact, with dice tracking) */
@@ -983,9 +1003,9 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
    The head keeps a real tap target (the fold button sets the height) while the
    text around it shrinks; the summary is clamped to two lines so a character on
    six drugs can't push the cards off-screen the way an unclamped list would. */
-.sh-fx-head,.sh-senses-head,.sh-doses-head{display:flex;align-items:center;
+.sh-fx-head,.sh-doses-head{display:flex;align-items:center;
   justify-content:space-between;gap:10px;min-height:22px}
-.sh-fx-head .btn,.sh-senses-head .btn,.sh-doses-head .btn{padding:2px 8px;font-size:11px}
+.sh-fx-head .btn,.sh-doses-head .btn{padding:2px 8px;font-size:11px}
 .sh-fold-sum{font-size:11px;color:var(--dim);margin-top:1px;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 /* Open, the banners want their old breathing room back -- the compactness is
@@ -1012,9 +1032,15 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-saves-row{display:flex;align-items:flex-start;gap:10px;padding:6px 2px}
 .sh-saves-row + .sh-saves-row{border-top:1px solid var(--line-soft)}
 .sh-saves-row input{margin-top:3px;flex:0 0 auto}
-/* Enhanced Senses banner: a header row with its fold button, then one row per
-   capability with the things granting it underneath. */
-.sh-senses{display:flex;flex-direction:column;gap:2px}
+/* Enhanced Senses detail, opened from the header tile: one row per capability
+   with the things granting it underneath. Anchored to the tile in fixed
+   coordinates by openSensesPopover(), which also closes it on scroll — the
+   position would otherwise stop pointing at the tile the moment the page moved. */
+.sh-popover{position:fixed;z-index:90;min-width:230px;max-width:340px;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:8px 12px 10px;box-shadow:0 10px 24px rgba(0,0,0,.5)}
+.sh-popover-head{font-family:var(--disp);font-size:12px;letter-spacing:.06em;
+  color:var(--dim);padding-bottom:5px;margin-bottom:3px;border-bottom:1px solid var(--line)}
 .sh-sense{padding:4px 0;font-size:12px}
 .sh-sense + .sh-sense{border-top:1px dashed var(--line-dash)}
 .sh-sense .sub{font-size:11px;margin-top:1px}
@@ -1277,7 +1303,9 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   .sh-top{flex-direction:column}
   .sh-ident{width:100%}
   .sh-desc{max-width:none;width:100%;flex-basis:auto}
-  .sh-meters{margin-left:0;width:100%;grid-template-columns:repeat(4,minmax(0,1fr))}
+  /* Full width, but let the auto-fit above decide how many fit — pinning it to
+     4 stranded the 5th meter alone on its own row. */
+  .sh-meters{margin-left:0;width:100%}
   /* .sh-heritage-abilities is its own full-width band now and needs no cap
      lifted; .sh-ls-effect still sits inside the identity column. */
   .sh-ls-effect{max-width:none}

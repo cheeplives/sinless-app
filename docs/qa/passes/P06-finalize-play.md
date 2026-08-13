@@ -753,6 +753,33 @@ path by which play could reach into the creation record.
   case per path is the point, not one per row.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-031: New Round refills the four pools and leaves Kismet dice alone
+- **Type:** correctness
+- **Steps:** Any finalized character, Overview tab. The check spends dice,
+  clicks the real New Round button, and reads the result.
+- **Check:**
+
+      (() => { const c = CHAR; ensurePlay(); c.play.kismet_earned = 25; recalc(); kismetPoolState().setUsed(0); for (const p of POOL_ORDER) poolState(p).setUsed(2); kismetPoolState().setUsed(2); renderSheet(); const before = { pools: POOL_ORDER.map(p => poolState(p).remaining), kismet: kismetPoolState().remaining, kismetMax: kismetPoolState().max }; [...document.querySelectorAll("button")].find(b => b.textContent.includes("New Round")).click(); const after = { pools: POOL_ORDER.map(p => poolState(p).remaining), kismet: kismetPoolState().remaining }; return { before, after, refilled: POOL_ORDER.every(p => poolState(p).remaining === poolState(p).max) }; })()
+
+- **Expected:** `before.kismet` is 1 (of 3), and **`after.kismet` is still 1**.
+  `refilled` is `true` — every attribute pool comes back to its own max.
+- **Note:** The two halves of this are one rule: New Round means a fresh round,
+  and Kismet dice are not a per-round resource. They're 1 to start plus 1 per 10
+  Kismet earned across the character's life, and spending one is meant to sting
+  until you deliberately reset it. If `after.kismet` ever equals `before.kismetMax`,
+  Kismet has silently become free.
+
+  `refilled` is the other half, and it has to be checked in the same case: it
+  would be trivially easy to "fix" a Kismet reset by narrowing what New Round
+  touches and take an attribute pool out with it. The button walks `POOL_ORDER`
+  (`["Brawn","Finesse","Focus","Resolve"]`), which is the entire mechanism —
+  Kismet is excluded by not being in that list, not by a special case.
+
+  Kismet's own used-count does live in `play.pool_used.Kismet`, alongside the
+  four, which is why this is worth a standing test rather than an obvious truth:
+  the data sits in the same object, and only the iteration order keeps them apart.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

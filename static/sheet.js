@@ -189,7 +189,6 @@ const LIFESTYLE_EFFECTS = {
 let sheetTab = "overview";
 let expandedPool = null;      // pool card the user clicked open on Overview
 let imagesCollapsed = false;  // Images section folded shut on the Notes tab
-let sensesCollapsed = true;   // Enhanced Senses banner — starts folded
 let dosesCollapsed = true;    // "Under the Effects Of" banner — starts folded
 let fxCollapsed = true;       // Conditional Effects panel — starts folded
 let playSaveTimer = null;
@@ -1579,9 +1578,13 @@ function sheetHeader() {
     activeLs && LIFESTYLE_EFFECTS[activeLs.name]
       ? el("div", { class: "sh-ls-effect" }, LIFESTYLE_EFFECTS[activeLs.name]) : null);
 
-  // interactive pool tiles live up here — pools matter more than attributes
+  // Interactive pool tiles live up here — pools matter more than attributes.
+  // The fifth slot Kismet used to hold is now Enhanced Senses: a tile rather
+  // than a banner because what it answers ("can I see in this?") is a property
+  // of the character like a pool is, not an event log. Absent entirely for
+  // ordinary eyes and ears, and the four pools simply take the width back.
   const pools = el("div", { class: "sh-head-pools" },
-    ...POOL_ORDER.map(headerPoolTile), kismetPoolTile());
+    ...POOL_ORDER.map(headerPoolTile), sensesTile());
 
   /* ZP, total ZR and the ZR casting penalty used to sit here and no longer do.
    * ZP and ZR are creation budgets that barely move in play, and both already
@@ -1613,6 +1616,12 @@ function sheetHeader() {
         + (init.notes.length ? ` (${init.notes.join("; ")})` : "") },
       el("div", { class: "k" }, "Initiative"),
       el("div", { class: "v" }, `${init.dice}d+${init.bonus}`)),
+    // Kismet dice sit up here with Initiative rather than in the pool row.
+    // They are not a pool in the sense the other five tiles are: they don't
+    // refresh on New Round, they're not spent per test, and they have no temp
+    // track — they're a slow-burning resource measured in whole sessions. Down
+    // among the pools they read as a fifth thing that empties every round.
+    kismetMeter(),
     // Consulted on every incoming hit, so it earns the slot Ghost gave up —
     // Ghost is a standing signature and now sits on the attribute line.
     el("div", { class: "sh-meter armor",
@@ -1829,21 +1838,30 @@ function headerPoolTile(pool) {
 }
 
 /* Kismet die pool — 1 die to start, +1 per 10 Kismet earned during play
- * (lifetime, from play.kismet_earned; never shrinks). Tracked as its own
- * used-dice counter, same pattern as the four attribute pools above. */
-function kismetPoolTile() {
+ * (lifetime, from play.kismet_earned; never shrinks).
+ *
+ * A meter in the header's top row, beside Initiative, rather than a sixth pool
+ * tile. Kismet dice keep their own used-count in `play.pool_used.Kismet`, but
+ * they are NOT one of the round-cycle pools: New Round walks POOL_ORDER, which
+ * is the four attribute pools and deliberately not this. Spend a Kismet die and
+ * it stays spent until you reset it yourself — that is the whole point of the
+ * resource, and sitting it among four tiles that refill every round was the
+ * wrong promise. P06-031 holds that line. */
+function kismetMeter() {
   const { max, used, remaining, setUsed } = kismetPoolState();
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
   const btn = (label, fn, title) => el("button", { class: "mini-btn", title,
     onclick: e => { e.stopPropagation(); fn(); } }, label);
   return el("div", {
-    class: "sh-pool kismet",
-    title: `Kismet dice: ${remaining} of ${max} left — 1 to start, +1 per 10 Kismet earned`,
+    class: "sh-meter kismet" + (remaining ? "" : " spent"),
+    title: `Kismet dice: ${remaining} of ${max} left — 1 to start, +1 per 10 Kismet`
+      + " earned. These do NOT refresh on New Round.",
     "aria-label": `Kismet dice ${remaining} of ${max}`,
   },
     el("div", { class: "k" }, "Kismet"),
     el("div", { class: "v" }, String(remaining),
       el("span", { class: "max" }, ` / ${max}`)),
-    el("div", { class: "sh-pool-btns" },
+    ro ? null : el("div", { class: "sh-meter-btns" },
       btn("−", () => setUsed(used + 1), "Spend a Kismet die"),
       btn("+", () => setUsed(used - 1), "Return a spent Kismet die"),
       btn("↺", () => setUsed(0), "Reset Kismet dice to full")));
@@ -1927,41 +1945,81 @@ function autoGrowTextarea(ta) {
   ta.style.height = `${ta.scrollHeight}px`;
 }
 
-/* Enhanced Senses, as a banner in the Overview callout strip beside the
- * Replicant clock and the heritage-features line.
+/* Enhanced Senses, as a header tile in the pool row's fifth slot.
  *
- * Folded by default: it's a reference you open when the lights go out, not
- * something to read every round, and unfolded it was long enough to push the
- * Combat card's actual numbers off the screen. The count rides the summary so
- * a glance still tells you whether there's anything in there.
+ * It was a folding banner in the Overview strip, which put it in the wrong
+ * place twice over: it only existed on one tab, and folded-with-a-summary is
+ * the shape for something that changes (what you're dosed on), not for a
+ * standing property of the character. As a tile it's visible from every tab,
+ * costs a slot that was already there, and opens its detail on click.
+ *
+ * The tile shows the count and the capability names; the popover names what
+ * grants each one, which is the part you only want when you're checking whether
+ * a sense survives losing a piece of gear.
  *
  * Returns null for a character with ordinary eyes and ears. */
-function sensesBanner() {
+function sensesTile() {
   const senses = (CALC.combat && CALC.combat.senses) || [];
   if (!senses.length) return null;
-  const card = el("div", { class: "sh-callout info sh-senses" },
-    el("div", { class: "sh-senses-head" },
-      el("span", {}, "👁 Enhanced Senses ",
-        el("b", {}, String(senses.length))),
-      counterBtn(sensesCollapsed ? "Show ▾" : "Hide ▴", () => {
-        sensesCollapsed = !sensesCollapsed;
-        renderSheet();
-      })));
-  if (sensesCollapsed) {
-    // The capability names alone, comma-joined — enough to know whether to open
-    // it without giving up a line per sense.
-    card.append(el("div", { class: "sh-fold-sum" },
+  return el("div", {
+    class: "sh-pool senses",
+    role: "button", tabindex: "0",
+    title: `${senses.length} enhanced ${senses.length === 1 ? "sense" : "senses"}`
+      + " — click for what grants each",
+    "aria-label": `Enhanced senses: ${senses.map(s => s.capability).join(", ")}`,
+    onclick: e => openSensesPopover(e.currentTarget, senses),
+    onkeydown: e => { if (e.key === "Enter" || e.key === " ") e.currentTarget.click(); },
+  },
+    el("div", { class: "k" }, "Senses"),
+    el("div", { class: "v" }, String(senses.length)),
+    el("div", { class: "sh-senses-list" },
       senses.map(s => s.capability).join(" · ")));
-    return card;
-  }
-  card.classList.add("is-open");
-  for (const s of senses) {
-    card.append(el("div", { class: "sh-sense" },
+}
+
+/* The tile's detail box: one row per capability with its sources.
+ *
+ * Anchored to the tile rather than centred as a modal — it's a peek at a
+ * reference, and a full backdrop for "what gives me thermographic vision" would
+ * be heavier than the question. Closes on click-outside, Escape, scroll or
+ * resize, because a box pinned to fixed coordinates stops pointing at anything
+ * the moment the page moves under it. */
+function openSensesPopover(anchor, senses) {
+  document.querySelector(".sh-popover")?.remove();
+  const box = el("div", { class: "sh-popover", role: "dialog",
+    "aria-label": "Enhanced senses" },
+    el("div", { class: "sh-popover-head" }, "👁 Enhanced Senses"),
+    ...senses.map(s => el("div", { class: "sh-sense" },
       el("div", {}, s.capability),
       el("div", { class: "sub" },
-        s.sources.map(src => `${src.name} (${src.from})`).join(" · "))));
-  }
-  return card;
+        s.sources.map(src => `${src.name} (${src.from})`).join(" · ")))));
+  document.body.append(box);
+
+  const place = () => {
+    const r = anchor.getBoundingClientRect();
+    const w = box.offsetWidth, h = box.offsetHeight;
+    // Prefer below-left-aligned; flip above when the viewport bottom is closer
+    // than the box is tall, and clamp horizontally so it never leaves the page.
+    const top = (r.bottom + h + 8 <= window.innerHeight) ? r.bottom + 6
+              : Math.max(6, r.top - h - 6);
+    const left = Math.max(6, Math.min(r.left, window.innerWidth - w - 6));
+    box.style.top = `${top}px`;
+    box.style.left = `${left}px`;
+  };
+  place();
+
+  const close = () => {
+    box.remove();
+    document.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("pointerdown", onOutside, true);
+    window.removeEventListener("scroll", close, true);
+    window.removeEventListener("resize", close);
+  };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  const onOutside = e => { if (!box.contains(e.target) && !anchor.contains(e.target)) close(); };
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("pointerdown", onOutside, true);
+  window.addEventListener("scroll", close, true);
+  window.addEventListener("resize", close);
 }
 
 /* What the character is currently on, one row per dose.
@@ -2982,19 +3040,14 @@ function shOverview(body) {
   // Replicants have a fixed remaining lifespan, rolled once and ticked down.
   const lifespan = replicantLifespanTracker();
   if (lifespan) body.append(lifespan);
-  // Three folding banners, stacked: what you can switch on, what you can
-  // perceive, what you're currently on. All three start folded — together they
-  // used to cost most of a screen before the first card, and each one answers a
-  // question you ask occasionally rather than a number you read every round.
-  // Their folded summaries carry enough to tell you whether to open them.
+  // Two folding banners: what you can switch on, and what you're currently on.
+  // Both start folded, and their summaries carry enough to say whether to open
+  // them. (Enhanced Senses used to be a third; it's a header tile now — it was
+  // the one of the three that never changes during play, so it belonged with
+  // the standing figures rather than in a strip of event state.)
   const fx = poolEffectsPanel();
   if (fx) body.append(fx);
-  // What this character can perceive — folded away until asked for.
-  const senses = sensesBanner();
-  if (senses) body.append(senses);
-
-  // Above the pools it moves, and above Kismet, because "what am I on" is the
-  // first thing to check when a pool total looks wrong.
+  // "What am I on" is the first thing to check when a pool total looks wrong.
   const doses = dosesBanner();
   if (doses) body.append(doses);
 

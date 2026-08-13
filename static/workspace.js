@@ -46,7 +46,7 @@ function defaultView() {
  * them directly here. */
 function stashView(tab) {
   if (!tab) return;
-  tab.view = { activeTab, sheetTab, expandedPool, imagesCollapsed, sensesCollapsed,
+  tab.view = { activeTab, sheetTab, expandedPool, imagesCollapsed,
                dosesCollapsed, fxCollapsed };
 }
 
@@ -69,7 +69,8 @@ function restoreView(tab) {
   expandedPool = v.expandedPool || null;
   imagesCollapsed = !!v.imagesCollapsed;
   // Defaults CLOSED, so an unset value must read as collapsed rather than open.
-  sensesCollapsed = v.sensesCollapsed !== false;
+  // (An older tab.view may still carry sensesCollapsed; Enhanced Senses is a
+  // header tile with a popover now, so the key is simply ignored.)
   dosesCollapsed = v.dosesCollapsed !== false;
   fxCollapsed = v.fxCollapsed !== false;
   // One-shot upgrades that must run for chargen characters too, which never

@@ -4496,10 +4496,7 @@ function summonPicker(spellName, force) {
 
   const s = RULES.summonedAnimal(spellName, chosen, force, DATA.tables);
   if (s) {
-    // ″ not m: these are the inches the animal data is written in, unlike every
-    // other distance on the sheet. Marking them is the whole defence against
-    // reading a Gorilla's 3 as three metres.
-    const move = `${s.move}″` + (s.flight ? ` · Fly ${s.flight}″` : "");
+    const move = `${s.move}m` + (s.flight ? ` · Fly ${s.flight}m` : "");
     rows.push(el("div", { class: "sh-summon-stats" },
       el("div", { class: "sub" },
         `Move ${move} · Init ${s.initiative} · Condition ${s.condition} boxes`

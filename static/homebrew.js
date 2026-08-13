@@ -58,14 +58,13 @@ const HOMEBREW_CONFIG = {
      it never costs money, is never carried, and the character never owns one
      except while a spell is up.
 
-     Move and Flight are in INCHES, matching the source these came from, and
-     are the one place in the app a distance isn't metres. The hints say so on
-     every field, because an author copying a drone's "8m" into here would be
-     writing a number four times too small. */
+     Move and Flight are metres, like every other distance in the app. The
+     source list was written in tabletop inches at 1″ = 2m and converted on
+     import, so an author working from that book should double what it says. */
   animals: { label: "Animals", nameKey: "Animal", fields: [
     { key: "Animal" },
-    { key: "Move", hint: "ground movement in INCHES (tabletop scale), e.g. 3" },
-    { key: "Flight", hint: "flying movement in inches — blank for anything that can't fly" },
+    { key: "Move", hint: "ground movement in metres — double it if you're reading inches off the table" },
+    { key: "Flight", hint: "flying movement in metres — blank for anything that can't fly" },
     { key: "Initiative", hint: "flat initiative score, not dice" },
     { key: "Condition", hint: "condition track length in boxes" },
     { key: "Ballistic", hint: "natural ballistic armor — blank for none" },

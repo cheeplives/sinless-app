@@ -4478,7 +4478,7 @@ function activeSpells() { return (CHAR.play && CHAR.play.active_spells) || []; }
  * things at once: the spell's own Force-scaled effects, how much Drain it
  * deals, and — the part worth being loud about — whether that Drain is Stun or
  * LETHAL. The prompt states the consequence before the player commits. */
-async function castSpell(name, knownForce) {
+async function castSpell(name, knownForce, after) {
   const zp = CALC.zoetics.zp_remaining;
   const row = DATA.tables.spells.find(x => x.Name === name) || {};
   const raw = prompt(
@@ -4495,6 +4495,10 @@ async function castSpell(name, knownForce) {
     uid: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name, force, lethal, drain,
   });
+  // Whatever the cast is FOR — stepping into a shape, pointing a familiar at an
+  // animal — happens here, after the Force is known and before the state is
+  // saved, so one press does one whole thing.
+  if (after) after(force);
   await playChangedRecalc();
   // The Soak roll is the player's to make, so this reminds rather than rolls:
   // the roller opens loaded with Brawn and their soak dice, and what to beat.
@@ -4507,8 +4511,23 @@ async function castSpell(name, knownForce) {
 }
 
 function dismissSpell(uid) {
+  const going = activeSpells().find(s => s.uid === uid);
   CHAR.play.active_spells = activeSpells().filter(s => s.uid !== uid);
+  // Dismissing Shapeshift ends the shape with it. Leaving a form worn after the
+  // spell that granted it has gone would be a character stuck as a bear with
+  // nothing on the sheet explaining why.
+  if (going && RULES.isFormSpell(going.name)
+      && !activeSpells().some(s => s.name === going.name)
+      && CHAR.play.shapeshift) {
+    CHAR.play.shapeshift.active = "";
+  }
   playChangedRecalc();
+}
+
+/* Is this spell currently up? Shapeshift's forms are free to switch between
+ * while it is, and cost a fresh cast when it isn't. */
+function spellIsActive(name) {
+  return activeSpells().some(s => s.name === name);
 }
 
 /* The Active Spells banner. Magic tab only, per the issue — it's a caster's
@@ -4613,6 +4632,8 @@ function shapeshiftPicker(spellName, force) {
   const st = RULES.shapeshiftState(CHAR, force);
   const animals = DATA.tables.animals || [];
   const save = () => playChangedRecalc();
+  // Whether the spell is currently up decides what a Shift press means.
+  const up = spellIsActive(spellName);
 
   // The add control, or nothing when the allowance is full. Built here rather
   // than inline so the header below stays one readable expression.
@@ -4650,12 +4671,22 @@ function shapeshiftPicker(spellName, force) {
       ro ? null : el("span", { class: "sh-form-btns" },
         beyond ? null : el("button", {
           class: "btn small" + (isActive ? "" : " btn-add"),
-          title: isActive ? "Return to your own shape"
-                          : `Shift into ${name} — a Complex action`,
+          title: isActive
+            ? "Return to your own shape"
+            : up
+              ? `Shift into ${name} — a Complex action, no new casting`
+              : `Cast Shapeshift and step into ${name}`,
           onclick: () => {
-            play.shapeshift.active = isActive ? "" : name;
-            save();
-          } }, isActive ? "Revert" : "Shift"),
+            if (isActive) { play.shapeshift.active = ""; save(); return; }
+            // Already up: switching between chosen forms is a Complex action
+            // within the duration, so it costs no new cast and no new Drain —
+            // that's the spell's own wording. Not up: this IS the cast, which
+            // is why the spell has no separate Cast button.
+            if (up) { play.shapeshift.active = name; save(); return; }
+            castSpell(spellName, st.limit, () => {
+              play.shapeshift.active = name;
+            });
+          } }, isActive ? "Revert" : (up ? "Shift" : "Cast & Shift")),
         el("button", { class: "row-del", title: `Forget the ${name} form`,
           onclick: () => {
             play.shapeshift.picks = st.picks.filter((_, j) => j !== i);
@@ -6991,10 +7022,14 @@ function shMagic(body) {
           el("span", { class: "sub" }, ` ${r.School || ""}`),
           sp.inPlay ? el("span", { class: "sh-tag" }, "learned in play") : null,
           " ",
-          el("button", { class: "btn small roll sh-cast",
-            title: `Cast ${sp.name} — pick a Force up to ${force}`,
-            onclick: () => castSpell(sp.name, force) }, "✦ Cast"),
-          " ",
+          // No Cast button on Shapeshift: casting it means becoming something,
+          // so the cast lives on the form you're becoming. A separate Cast
+          // would put the spell up with nobody in a shape.
+          RULES.isFormSpell(sp.name) ? null
+            : el("button", { class: "btn small roll sh-cast",
+                title: `Cast ${sp.name} — pick a Force up to ${force}`,
+                onclick: () => castSpell(sp.name, force) }, "✦ Cast"),
+          RULES.isFormSpell(sp.name) ? null : " ",
           el("button", { class: "btn small",
             disabled: force >= SPELL_FORCE_MAX ? "1" : null,
             title: force >= SPELL_FORCE_MAX ? `Maximum Force is ${SPELL_FORCE_MAX}`

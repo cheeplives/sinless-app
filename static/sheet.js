@@ -3434,40 +3434,31 @@ function shOverview(body) {
       el("span", { class: "sub", style: "align-self:center" }, "Rolled:"), initInput));
 
   const c = CALC.combat;
-  const combatCard = el("div", { class: "card sh-card" },
-    el("h3", {}, "Combat"),
-    statLine("Move", `${c.move} m` + (moveSpecial() ? ` · ${moveSpecial()}` : "")),
-    (c.move_modes && c.move_modes.length)
-      ? statLine("Alt movement", c.move_modes.map(m => `${m.mode} ${m.meters}m`).join(" · ")) : null,
-    statLine("Armor B / I", `${c.ballistic_armor} / ${c.impact_armor}`),
-    statLine("Max B / Min I", `${c.max_ballistic} / ${c.min_impact}`),
-    statLine("Recoil capacity",
-      c.recoil_ignored ? `${c.recoil_capacity} · recoil ignored` : String(c.recoil_capacity)),
-    c.martial_notes && c.martial_notes.length
-      ? statLine("Martial art", c.martial_notes.join(" · ")) : null,
-    // Active infusions: what was folded into the numbers above, so the Move /
-    // Armor / pool figures don't look unexplained.
-    (CALC.infusion_mods && CALC.infusion_mods.applied.length)
-      ? statLine("Infusions applied",
-          CALC.infusion_mods.applied.map(a => `${a.text} (${a.source})`).join(" · ")) : null,
-    // Standing cover from martial arts and/or infusions — best tier wins. No
-    // cover stat in the engine, so it's reported here and played at the table.
-    c.cover ? statLine("Cover", c.cover.label, c.cover.sources.join(" · ")) : null,
-    // A Shield-Wall Drone's mobile cover is the same kind of standing rider,
-    // and belongs beside it rather than on the Rigging tab (issue #38).
-    ...(c.drone_cover_notes || []).map(n => statLine("Cover (drone)", n.text, n.source)),
-    // Bling: one line for the whole look, because a blinged gun and a blinged
-    // ride are the same show — best single source, never the sum.
-    ...(c.bling_etiquette || []).map(b => statLine(
-      "Bling", `+${b.bonus} ${b.etiquette} Etiquette`,
-      b.sources.length > 1
-        ? `Best single source — bling doesn't stack: ${b.sources.join(" · ")}`
-        : b.sources[0])),
-    statLine("Simple actions", String(c.simple_actions)),
-    ...exploitLines(c.exploit_actions),
-    c.dodge_bonus ? statLine("Dodge bonus", `+${c.dodge_bonus}`, (c.dodge_sources || []).join(" · ")) : null,
-    c.soak_bonus ? statLine("Soak bonus", `+${c.soak_bonus}`, (c.soak_sources || []).join(" · ")) : null,
-    statLine("Carried weight", String(c.carried_weight)));
+  /* The Combat card stood here and is gone. It had become a catch-all: fourteen
+   * lines with nothing in common except that each was a derived number nobody
+   * had found a better home for, several of them read-only copies of a live
+   * control elsewhere on the same screen.
+   *
+   * Every line went somewhere it belongs rather than being dropped:
+   *
+   *   Move, Alt movement       -> the Move header chip and its popover (#52)
+   *   Armor B/I, Max B/Min I   -> the Armor header chip and its popover (#51)
+   *   Recoil capacity          -> foot of the Finesse card + Dossier Notes (#50)
+   *   Martial art              -> "In your stats" on the Martial Arts card
+   *   Infusions applied        -> "Applied" on the Speaker Infusions card
+   *   Cover, Cover (drone)     -> the Dodge card, beside what they modify
+   *   Bling                    -> the Etiquettes card; it IS an etiquette bonus
+   *   Simple + exploit actions -> already live on "Actions This Round", with
+   *                               counters; the copies here were strictly worse
+   *   Dodge bonus              -> the Dodge card already states it and rolls it
+   *   Soak bonus               -> the Condition card's Soak button already
+   *                               states it and rolls it
+   *   Carried weight           -> the Gear tab's "Carried load", which also
+   *                               weighs it against Strength and warns
+   *
+   * The rule that decided each one: a number belongs next to the thing you do
+   * with it. Cover belongs by the Dodge roll, Bling by the Etiquettes it
+   * raises, recoil by the Finesse dice you throw with it. */
   // Enhanced Senses closes the card: everything the character can perceive that
   // an unaugmented person can't, gathered from heritage, chrome, carried gear
   // and any drone that's out. It sits at the bottom because it's a reference
@@ -3504,6 +3495,13 @@ function shOverview(body) {
     // to a pool, but it is a thing to remember at exactly this moment (#38).
     ...(c.drone_dodge_notes || []).map(n => el("div", { class: "sub", style: "color:var(--manon)" },
       `${n.text} (${n.source})`)),
+    // Standing cover: martial-art stances and full-cover infusions, best tier
+    // wins rather than stacking. There is no cover stat in the engine, so this
+    // is reported and played at the table — and it belongs beside Dodge because
+    // both answer the same question, "how hard am I to hit right now".
+    c.cover ? statLine("Cover", c.cover.label, c.cover.sources.join(" · ")) : null,
+    // A Shield-Wall Drone's mobile cover is the same kind of standing rider (#38).
+    ...(c.drone_cover_notes || []).map(n => statLine("Cover (drone)", n.text, n.source)),
     ro
       ? (dodgeFree ? el("div", { class: "sub" },
           `+${dodgeFree} dodge ${dodgeFree === 1 ? "die" : "dice"}`) : null)
@@ -3582,7 +3580,13 @@ function shOverview(body) {
           ...m.levels.map(lvl => el("div", { class: "stat-line" },
             el("span", { class: "sub", style: "white-space:nowrap" }, `L${lvl.Level}`),
             el("span", { style: "text-align:right" }, lvl.Effect || ""))),
-        ]))
+        ]),
+        // Which of those level effects the engine actually folded into a number.
+        // The levels above are the rules as written; this is what the sheet did
+        // with them, and the gap between the two is worth being able to see.
+        (c.martial_notes && c.martial_notes.length)
+          ? el("p", { class: "hint" }, "In your stats: " + c.martial_notes.join(" · "))
+          : null)
     : null;
 
   // --- active infusions: every placed spirit, marked by whether its effect was
@@ -3599,6 +3603,12 @@ function shOverview(body) {
           el("span", { style: "text-align:right" }, inf.effect || "—",
             el("span", { class: "sh-tag", style: "margin-left:6px" },
               infusionAppliedLabel(inf.spirit))))),
+        // The parsed list of what actually moved a number, which is the half of
+        // "in stats" a player can check against their own arithmetic.
+        (CALC.infusion_mods && CALC.infusion_mods.applied.length)
+          ? el("p", { class: "hint" }, "Applied: "
+              + CALC.infusion_mods.applied.map(a => `${a.text} (${a.source})`).join(" · "))
+          : null,
         el("p", { class: "hint" },
           "“In stats” effects are already counted in the numbers above. "
           + "“Situational” ones apply at the table — they can't be folded into a single figure."))
@@ -3608,12 +3618,14 @@ function shOverview(body) {
   // fill to equal height and reflow 3→2→1 by width, so no column is overloaded.
   body.append(el("div", { class: "sh-ov-grid" },
     ...[poolCard, cond, actionsCard(), infCard, initCard, dodgeCard,
-        stationCard, combatCard, maCard].filter(Boolean)));
+        stationCard, maCard].filter(Boolean)));
 
-  // Heritage / uplift special abilities (e.g. a Bat's Echolocation) — surfaced
-  // here on the Overview, not just buried on the Notes tab.
-  const heritageCard = heritageTraitsCard();
-  if (heritageCard) body.append(heritageCard);
+  /* The Heritage Traits card used to sit here, on the grounds that a Bat's
+   * Echolocation shouldn't be buried on the Notes tab. It isn't buried any
+   * more: the header's abilities band carries every trait with its effect and
+   * is visible from all ten tabs, which is strictly better than one card on
+   * one of them. The full table is still on Notes for anyone who wants it laid
+   * out in rows. Three copies of the same six words was two too many. */
 
   // --- equipped weapons (+ mods) and worn armor, mirrored from the Gear tab
   const weaponsAll = allWeapons(), armorAll = allArmor();
@@ -4143,30 +4155,10 @@ function statLine(label, value, title) {
   return el("div", title ? { class: "stat-line", title } : { class: "stat-line" },
     label, el("b", {}, value));
 }
-// Exploit actions (CALC.combat.exploit_actions), grouped by kind into one line
-// each — Melee / Move / Decking / Rigging / Control — with the granting sources
-// listed beneath the total (rules #1–7). Empty kinds are omitted.
+// Exploit-action kinds, in the order they're listed (rules #1–7). The grouping
+// and source attribution that used to live here as exploitLines() moved into
+// actionsCard(), which is where the actions are spent.
 const EXPLOIT_KIND_ORDER = ["Melee", "Move", "Decking", "Rigging", "Control"];
-function exploitLines(actions) {
-  const byKind = {};
-  for (const a of actions || []) {
-    const g = (byKind[a.kind] = byKind[a.kind] || { total: 0, items: [] });
-    g.total += a.count;
-    g.items.push(a);
-  }
-  return EXPLOIT_KIND_ORDER.filter(k => byKind[k]).map(k => {
-    const g = byKind[k];
-    // Show each source's own count only when several sources share a kind — a
-    // lone source's count already equals the line total, so "(+n)" is noise.
-    const sources = g.items.map(a =>
-      g.items.length > 1 && a.count > 1 ? `${a.source} (+${a.count})` : a.source);
-    return el("div", { class: "stat-line" },
-      el("span", {}, `${k} exploit`),
-      el("span", { style: "text-align:right" },
-        el("b", {}, `+${g.total}`),
-        el("div", { class: "sub", style: "font-weight:400" }, sources.join(" · "))));
-  });
-}
 /* What a round costs you, tracked as it's spent (issue #32).
  *
  * Actions come from the engine — `simple_actions` plus the exploit actions each
@@ -4182,11 +4174,24 @@ function actionsCard() {
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const used = (play.actions_used = play.actions_used || {});
   const rows = [{ key: "simple", label: "Simple", total: CALC.combat.simple_actions || 0 }];
+  // Grouped by kind, keeping each kind's granting sources. The Combat card used
+  // to list those separately (exploitLines); this card is where the actions are
+  // actually spent, so the attribution moved here rather than disappearing with
+  // the card. Per-source counts show only when several sources share a kind — a
+  // lone source's count already equals the line total, so "(+n)" would be noise.
   const byKind = {};
-  for (const a of CALC.combat.exploit_actions || [])
-    byKind[a.kind] = (byKind[a.kind] || 0) + a.count;
-  for (const kind of EXPLOIT_KIND_ORDER)
-    if (byKind[kind]) rows.push({ key: kind, label: `${kind} exploit`, total: byKind[kind] });
+  for (const a of CALC.combat.exploit_actions || []) {
+    const g = (byKind[a.kind] = byKind[a.kind] || { total: 0, items: [] });
+    g.total += a.count;
+    g.items.push(a);
+  }
+  for (const kind of EXPLOIT_KIND_ORDER) {
+    const g = byKind[kind];
+    if (!g) continue;
+    rows.push({ key: kind, label: `${kind} exploit`, total: g.total,
+      sources: g.items.map(a =>
+        g.items.length > 1 && a.count > 1 ? `${a.source} (+${a.count})` : a.source) });
+  }
 
   const card = el("div", { class: "card sh-card" },
     el("div", { class: "sh-card-head" }, el("h3", {}, "Actions This Round"),
@@ -4200,7 +4205,10 @@ function actionsCard() {
     const spent = Math.max(0, Math.min(used[r.key] || 0, r.total));
     const left = r.total - spent;
     card.append(el("div", { class: "stat-line" + (left ? "" : " dim") },
-      el("span", {}, r.label),
+      el("span", {}, r.label,
+        (r.sources && r.sources.length)
+          ? el("div", { class: "sub", style: "font-weight:400" }, r.sources.join(" · "))
+          : null),
       el("span", { style: "text-align:right;display:inline-flex;align-items:center;gap:8px" },
         el("b", { style: left ? "" : "color:var(--dim)" }, `${left} / ${r.total}`),
         ro ? null : miniCounter("", () => used[r.key] || 0,
@@ -4682,6 +4690,15 @@ function shSkills(body) {
       know.append(el("p", { class: "hint" },
         "Bonuses come from what you're wearing and carrying — they drop when the "
         + "gear does, and they sit outside the point cap."));
+    // Bling is an Etiquette bonus, so it belongs with the Etiquettes rather than
+    // on a combat card. One line for the whole look: a blinged gun and a blinged
+    // ride are the same show, so it's the best single source, never the sum.
+    for (const b of CALC.combat.bling_etiquette || []) {
+      know.append(statLine("Bling", `+${b.bonus} ${b.etiquette} Etiquette`,
+        b.sources.length > 1
+          ? `Best single source — bling doesn't stack: ${b.sources.join(" · ")}`
+          : b.sources[0]));
+    }
   } else {
     know.append(el("h4", { class: "sh-h4" }, "Etiquettes"),
       el("p", { class: "hint" }, "No etiquettes."));
@@ -5486,6 +5503,18 @@ function shGear(body) {
     el("div", { class: "sh-advrow" },
       el("span", {}, "Equipped/worn weight vs Strength"),
       el("b", { style: overburdened ? "color:var(--bad)" : "" }, `${load} / ${strength}`)));
+  // The engine's own total, which is a DIFFERENT figure and was the Combat
+  // card's "Carried weight" before that card was retired. It counts everything
+  // owned rather than only what's on you, and adds the burden of your chrome
+  // (cyberware ZR, which Synthetics don't pay). The line above is what presses
+  // on Strength; this one is what you're hauling in total. Shown only when they
+  // disagree — with nothing stashed and no chrome they're the same number, and
+  // two identical rows would just look like a bug.
+  if (Math.abs((CALC.combat.carried_weight || 0) - load) > 0.05) {
+    loadCard.append(el("div", { class: "sh-advrow" },
+      el("span", { class: "sub" }, "Total owned, including chrome"),
+      el("b", { class: "sub" }, String(CALC.combat.carried_weight))));
+  }
   if (overburdened)
     loadCard.append(el("div", { class: "sh-callout", style: "border-color:var(--bad);color:var(--bad)" },
       el("b", {}, "Overburdened — "),

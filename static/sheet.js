@@ -4223,20 +4223,10 @@ function shOverview(body) {
 
   // --- temporary effects + active modifiers
   body.append(el("div", { class: "sh-two" },
-    trackedList("Temporary Effects", play.effects, "Add Effect",
-      () => {
-        const name = (prompt("Effect name (e.g. Haste F4, 3 rounds):") || "").trim();
-        if (name) { play.effects.push({ name }); playChanged(); }
-      },
-      e2 => e2.name, "No temporary effects tracked."),
-    trackedList("Active Modifiers", play.modifiers, "Add Modifier",
-      () => {
-        const name = (prompt("Modifier name (e.g. Cover, Smartlink):") || "").trim();
-        if (!name) return;
-        const v = (prompt("Value (e.g. +2, −1d):", "+1") || "").trim();
-        play.modifiers.push({ name, value: v }); playChanged();
-      },
-      m => m.value ? `${m.name}  ${m.value}` : m.name, "No active modifiers tracked.")));
+    trackedEffectList("Temporary Effects", play.effects, "Add Effect",
+      "Haste F4, 3 rounds", "No temporary effects tracked."),
+    trackedEffectList("Active Modifiers", play.modifiers, "Add Modifier",
+      "Cover, Smartlink", "No active modifiers tracked.")));
 
   // --- notes
   body.append(notesCard(3));
@@ -4386,15 +4376,34 @@ function conditionTrack(label, max, get, set) {
     boxes);
 }
 
-function trackedList(title, items, addLabel, onAdd, describe, emptyText) {
+/* Temporary Effects / Active Modifiers, each row a small form (#46).
+ *
+ * The header chip counts how many are actually moving dice, not how many rows
+ * exist — a list of six reminders and a list of six live penalties are very
+ * different situations, and the pool tiles only reflect the second. */
+function trackedEffectList(title, items, addLabel, placeholder, emptyText) {
+  const live = items.filter(e => e && e.pool && toIntSafe(e.dice));
   const card = el("div", { class: "card sh-card" },
     el("div", { class: "sh-card-head" },
-      el("h3", {}, title, " ", el("span", { class: "chip" }, String(items.length))),
-      counterBtn(addLabel, onAdd, "accent")));
-  if (!items.length) card.append(el("p", { class: "hint", style: "margin:6px 0 0" }, emptyText));
-  items.forEach((it, i) => card.append(el("div", { class: "stat-line" },
-    describe(it),
-    el("button", { class: "row-del", onclick: () => { items.splice(i, 1); playChanged(); } }, "✕"))));
+      el("h3", {}, title, " ",
+        el("span", { class: "chip" + (live.length ? " ok" : "") }, String(items.length))),
+      counterBtn(addLabel, () => {
+        const name = (prompt(`Name (e.g. ${placeholder}):`) || "").trim();
+        if (!name) return;
+        items.push({ name, source: "", pool: "", dice: 0 });
+        playChanged();
+      }, "accent")));
+  if (!items.length) {
+    card.append(el("p", { class: "hint", style: "margin:6px 0 0" }, emptyText));
+  } else {
+    items.forEach((it, i) => card.append(trackedEffectRow(it, items, i)));
+    if (live.length) {
+      const sum = {};
+      for (const e of live) sum[e.pool] = (sum[e.pool] || 0) + toIntSafe(e.dice);
+      card.append(el("p", { class: "hint" }, "In your pools: "
+        + Object.entries(sum).map(([p, n]) => `${n > 0 ? "+" : ""}${n}d ${p}`).join(" · ")));
+    }
+  }
   return card;
 }
 
@@ -8157,7 +8166,74 @@ function poolEffectMod(pool) {
     const each = e.pools[pool] || 0;
     n += e.dose ? each * doseTally(e.label).counted : each;
   }
+  return n + trackedPoolMod(pool);
+}
+
+/* Dice from hand-tracked Temporary Effects and Active Modifiers (#46).
+ *
+ * These join the conditional-effect layer rather than the player's own
+ * pool_boost, for the same reason a drug does: they come and go several times a
+ * session, and they must not eat the temp dice the player set by hand. Removing
+ * the effect removes exactly its own dice and nothing else.
+ *
+ * An entry with no pool contributes nothing — it's the free-text case the issue
+ * asks to keep, a reminder like "Haste F4, 3 rounds" that the table applies. */
+function trackedPoolMod(pool) {
+  const play = CHAR.play;
+  let n = 0;
+  for (const list of [play.effects || [], play.modifiers || []]) {
+    for (const e of list) {
+      if (e && e.pool === pool) n += toIntSafe(e.dice);
+    }
+  }
   return n;
+}
+
+/* One tracked effect/modifier, as a row the player fills in.
+ *
+ * Prompt chains were the old way in, which made "Cover, Finesse, −2" three
+ * separate modal questions and gave the dice nowhere to go afterwards. This is
+ * a form: what it is, where it came from, which pool it touches, how many dice.
+ *
+ * `kind` only changes the wording; both lists store and apply the same shape. */
+function trackedEffectRow(entry, list, index) {
+  const commit = () => playChangedRecalc();
+  const field = (label, node) => el("label", { class: "sh-fx-field" },
+    el("span", { class: "sub" }, label), node);
+  const poolSel = el("select", {
+    title: "Which pool these dice come off or go onto",
+    onchange: e => { entry.pool = e.target.value; commit(); } },
+    el("option", { value: "" }, "No pool"),
+    ...POOL_ORDER.map(p => el("option", { value: p }, p)));
+  poolSel.value = entry.pool || "";
+  const diceInput = el("input", { type: "number", class: "sh-fx-dice", step: "1",
+    value: String(toIntSafe(entry.dice) || 0),
+    title: "Dice gained (positive) or lost (negative)",
+    oninput: e => { entry.dice = parseInt(e.target.value, 10) || 0; commit(); } });
+  return el("div", { class: "sh-fx-row" },
+    el("div", { class: "sh-fx-head" },
+      el("b", {}, entry.name || "(unnamed)"),
+      el("button", { class: "row-del",
+        onclick: () => { list.splice(index, 1); playChangedRecalc(); } }, "✕")),
+    el("div", { class: "sh-fx-fields" },
+      field("Source", el("input", { type: "text", value: entry.source || "",
+        placeholder: "spell, gear, GM call…",
+        oninput: e => { entry.source = e.target.value; playChanged(false); } })),
+      field("Pool", poolSel),
+      field("Dice", diceInput)),
+    // Say what it's actually doing, so a row that affects nothing looks
+    // deliberate rather than broken.
+    el("div", { class: "sub" }, entry.pool && toIntSafe(entry.dice)
+      ? `${toIntSafe(entry.dice) > 0 ? "+" : ""}${toIntSafe(entry.dice)}d ${entry.pool}, applied to the pool`
+      : "Reminder only — no pool dice applied"),
+    // Modifiers saved before this form existed carry a free-text "value"
+    // ("+2", "−1d") and nothing else. Dropping it would quietly lose what the
+    // player wrote, so it's shown until they fill in the pool and dice that
+    // replace it.
+    (entry.value && !(entry.pool && toIntSafe(entry.dice)))
+      ? el("div", { class: "sub", style: "color:var(--amber)" },
+          `Was noted as "${entry.value}" — set a pool and dice above to apply it`)
+      : null);
 }
 
 function setPoolEffect(id, on) {

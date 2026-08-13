@@ -885,6 +885,32 @@ path by which play could reach into the creation record.
   everything would fail here.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-036: A tracked effect moves its pool, and only its own dice come back
+- **Type:** correctness
+- **Steps:** Any finalized character, Overview tab. Works in deltas rather than
+  absolute pool sizes so it holds for any build. Restores what it found.
+- **Check:**
+
+      (async () => { const p = CHAR.play; const snap = JSON.stringify([p.effects, p.modifiers, p.pool_boost]); const read = () => Object.fromEntries(RULES.POOL_NAMES.map(n => [n, poolState(n).max])); p.effects = []; p.modifiers = []; p.pool_boost = {}; await recalc(); const before = read(); p.effects = [{ name: "Haste", source: "spell", pool: "Focus", dice: 3 }, { name: "Bleeding", source: "GM", pool: "", dice: 0 }]; p.modifiers = [{ name: "Cover", source: "terrain", pool: "Brawn", dice: -2 }]; await recalc(); const applied = read(); poolState("Focus").setBoost(2); await recalc(); const boostedFocus = poolState("Focus").max; p.effects = p.effects.filter(e => e.name !== "Haste"); await recalc(); const afterRemove = { focus: poolState("Focus").max, boostKept: poolState("Focus").boost }; const [e, m, b] = JSON.parse(snap); p.effects = e; p.modifiers = m; p.pool_boost = b; await recalc(); return { focusDelta: applied.Focus - before.Focus, brawnDelta: applied.Brawn - before.Brawn, resolveDelta: applied.Resolve - before.Resolve, boostedFocus: boostedFocus - before.Focus, afterRemove: { focusDelta: afterRemove.focus - before.Focus, boostKept: afterRemove.boostKept } }; })()
+
+- **Expected:** `{ "focusDelta": 3, "brawnDelta": -2, "resolveDelta": 0, "boostedFocus": 5, "afterRemove": { "focusDelta": 2, "boostKept": 2 } }`
+- **Note:** `brawnDelta: -2` is why these entries take a signed number rather
+  than a "bonus": a penalty is the same mechanism with the other sign, and
+  Cover is far more common than Haste. Brawn is used for it because the pools
+  clamp at zero — on a 1-die pool a −2 reads as −1, which is correct behaviour
+  and a confusing thing to assert.
+
+  `resolveDelta: 0` is the "No pool" case the issue asks to keep. A row with no
+  pool is a reminder — "Bleeding", "3 rounds left" — and must move nothing.
+
+  The last two keys are the important pair. These dice join the *conditional*
+  layer, alongside a drug and the Wildling shift, not the player's own
+  `pool_boost`. So a hand-set +2 and a Haste +3 stack to +5, and removing Haste
+  leaves the +2 exactly where it was. Folding them into pool_boost instead would
+  have made deleting an effect eat dice the player put there themselves — the
+  same trap issue #31 already fixed once for drugs.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

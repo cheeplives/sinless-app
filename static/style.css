@@ -1058,6 +1058,17 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-sense .sub{font-size:11px;margin-top:1px}
 /* A limit the character is currently on the wrong side of. */
 .sh-sense.bad > div:first-child{color:var(--bad)}
+/* Tracked effects/modifiers: one small form per row. The fields wrap so the
+   card survives a phone width, and Dice is narrow because it holds "-2". */
+.sh-fx-row{padding:6px 0}
+.sh-fx-row + .sh-fx-row{border-top:1px dashed var(--line-dash)}
+.sh-fx-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sh-fx-fields{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 2px}
+.sh-fx-field{display:flex;flex-direction:column;gap:2px;min-width:0}
+.sh-fx-field input,.sh-fx-field select{font:inherit;font-size:12px;padding:3px 5px;
+  background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px}
+.sh-fx-field input[type=text]{min-width:8em}
+.sh-fx-dice{width:4.5em;text-align:right}
 /* A sense you have to switch on. The button sits under its description rather
    than beside it — the popover is narrow, and a right-aligned button would
    squeeze the "+2d Reconnaissance while active" line into two of its own. */

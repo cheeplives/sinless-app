@@ -80,8 +80,15 @@ def main():
     ap.add_argument("--exclude", default="",
                     help="comma-separated table:Row pairs to skip entirely, e.g. "
                          "misc_gear:Lick,misc_gear:Rage")
+    ap.add_argument("--only", default="",
+                    help="comma-separated table:Row pairs -- process ONLY these, "
+                         "skipping every other row before it's even checked against "
+                         "the doc's Original. For applying a row held back by "
+                         "--exclude in an earlier run, now that already-applied rows "
+                         "no longer match their Original (expected, not a drift).")
     args = ap.parse_args()
     excluded = set(x.strip() for x in args.exclude.split(",") if x.strip())
+    only = set(x.strip() for x in args.only.split(",") if x.strip())
 
     doc_rows = V.read_rows(args.review)
     groups = {}
@@ -112,6 +119,8 @@ def main():
 
         for r, (i, row) in zip(doc_group, matched):
             key = "%s:%s" % (table, r["name"])
+            if only and key not in only:
+                continue
             current = str(row.get(column, "")).strip()
             if current != r["original"].strip():
                 mismatches.append((table, column, r["name"], current, r["original"]))

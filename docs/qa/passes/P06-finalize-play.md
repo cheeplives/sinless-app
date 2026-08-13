@@ -715,6 +715,44 @@ path by which play could reach into the creation record.
   immunity that no code could see.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-030: Lick and Rage grant pool dice while a dose is live, capped at 2
+- **Type:** correctness
+- **Steps:** No fixture. The check builds its own gear and doses.
+- **Check:**
+
+      (() => { const c = CHAR; c.priorities = { heritage:2, magic:0, attributes:1, skills:3, resources:4 }; c.heritage.type = "Human"; c.lifestyles = [{ name: "Squatter", months: 1 }]; for (const a of RULES.ATTRIBUTES) c.attributes[a] = 3; c.gear = [{ name: "Lick", qty: 2 }]; c.finalized = true; ensurePlay(); CHAR.play.doses = []; recalc(); const read = () => { recalc(); return CALC.pools.Finesse + poolEffectMod("Finesse"); }; const out = { carried: read() }; takeDose("Lick"); out.oneLick = read(); out.lickTally = doseTally("Lick"); takeDose("Lick"); out.twoLick = read(); takeDose("Lick"); out.threeLickTally = doseTally("Lick"); out.threeLick = read(); CHAR.play.doses = []; out.wornOff = read(); return out; })()
+
+- **Expected:**
+
+      { "carried": 5,
+        "oneLick": 9,
+        "lickTally": { "taken": 1, "counted": 1, "cap": 2 },
+        "twoLick": 13,
+        "threeLickTally": { "taken": 3, "counted": 2, "cap": 2 },
+        "threeLick": 13,
+        "wornOff": 5 }
+
+- **Note:** This is P06-028's pattern (a dose does nothing until taken, and
+  stops at its cap) applied to the row that motivated writing that case in the
+  first place. Lick and Rage shipped for a long time as "Increase Finesse by 4
+  for 10/min" — no signed number, so `POOL_DICE_RE` never matched, and the drug
+  did nothing even once the Use button and dose tracking existed. Having a dose
+  *system* doesn't grant a dose its effect; the Effect text still has to parse.
+
+  `carried: 5` with nothing taken is the same guarantee as P06-028: owning Lick
+  is not using it. `oneLick: 9` is 5 + 4, `twoLick: 13` is 5 + 4×2 — the cap at
+  `Max Doses: 2` matters here because the row's own text calls the second dose
+  "doubling" (and raises Dependence for it), so a third dose must count as taken
+  (`threeLickTally.taken: 3`, Dependence cares) while contributing no more dice
+  (`counted: 2`, `threeLick` unchanged from `twoLick`). `wornOff` returning to
+  `carried` is the lossless check.
+
+  Rage is the same shape on Brawn and isn't re-run here; P06-028 already
+  establishes that a second, independently-implemented path (there, the
+  medkits' `Skill Bonus` column) doesn't share a bug with the pool path, so one
+  case per path is the point, not one per row.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

@@ -12,12 +12,15 @@ git rm -r docs/effect-text-review
 Nothing else needs unpicking — no hook registration, no import from app code, no
 entry in `sw.js`. That's the point of keeping it together.
 
-**Status:** applied. `apply_review.py` has written 590 of 592 approved cells
-into `static/data.js` — see [REVIEW.md's Status section](REVIEW.md#status) for
-what that means for the other scripts here (`check_originals.py` in particular
-will now report the applied rows as "mismatches"; that's expected) and for the
-two rows (`Lick`, `Rage`) still awaiting a game-balance decision before this
-bundle can be deleted.
+**Status:** applied in full. `apply_review.py` has written all 592 approved
+cells into `static/data.js`, `Lick` and `Rage` included (a separate, later
+approval — see [REVIEW.md's Status section](REVIEW.md#status)). Nothing in this
+pass's scope is still open; `check_originals.py` will now report every applied
+row as a "mismatch" if run, and that's expected — it's comparing current
+`data.js` against this document's historical Original, which is exactly what
+changed. Two renames outside this pass's scope (`Name` column, needing a
+`RENAMED_*` map) are the only thing standing between this bundle and
+`git rm -r docs/effect-text-review`.
 
 ## What's here
 

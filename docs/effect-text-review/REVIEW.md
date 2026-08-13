@@ -4,14 +4,13 @@ A proposed rewrite of the mechanical text in `static/data.js`, with every
 original beside its replacement so each one can be accepted or rejected on its
 own.
 
-> **Status: applied.** `apply_review.py` wrote 590 of the 592 approved cells into
-> `static/data.js` (2 already matched — see [below](#status)). The **Original**
-> column below is now history, not current `data.js` content — that's what it's
-> for. `check_originals.py` will therefore report ~590 "mismatches" if run now;
-> that isn't corruption, it's this document doing its job. `Lick` and `Rage`
-> (misc_gear) are the two rows still holding their pre-review text — see
-> [Status](#status) for why, and for what's left before this bundle can be
-> deleted per the [README](README.md).
+> **Status: applied in full.** `apply_review.py` wrote all 592 approved cells
+> into `static/data.js`. The **Original** column below is now history, not
+> current `data.js` content — that's what it's for. `check_originals.py` will
+> therefore report the applied rows as "mismatches" if run now; that isn't
+> corruption, it's this document doing its job. See [Status](#status) for the
+> two-stage rollout (`Lick`/`Rage` went in on a separate, later approval) and
+> for what's left before this bundle can be deleted per the [README](README.md).
 
 - **684 cells** reviewed, across 26 table/column pairs in 22 tables
 - Plus [column migrations](#structured-columns--what-the-prose-should-stop-saying):
@@ -24,35 +23,36 @@ own.
 
 ## Status
 
-**Applied**, with two rows deliberately held back.
+**Applied in full.** All 592 rewritten cells are now in `static/data.js`; the
+92 byte-identical rows needed no write. `apply_review.py` walked every (table,
+column) group in the same file order `check_originals.py` already proved
+matches `data.js`, re-checked each cell's current text against this document's
+Original immediately before writing it, and replaced Original with Proposed on
+that row's own line — a targeted edit, not a re-serialize, so `git diff` on
+`data.js` shows exactly the cells that changed and nothing else.
 
-`apply_review.py` walked every (table, column) group in the same file order
-`check_originals.py` already proved matches `data.js`, re-checked each cell's
-current text against this document's Original immediately before writing it (so
-a stale review can't silently overwrite a row someone else had already changed),
-and replaced Original with Proposed on that row's own line — a targeted edit, not
-a re-serialize, so `git diff` on `data.js` shows exactly these 590 cells and
-nothing else.
+**`Lick` and `Rage`** went in a second pass, on purpose. Both are declared **NEW
+BEHAVIOUR**: their old text ("Increase Finesse by 4 for 10/min") had no signed
+number, so `POOL_DICE_RE` never matched it — the Use button and dose tracking
+existed and worked, but the drug itself did nothing, the same "no dice effect"
+state Glitter is in permanently. Held back from the first `--apply` pending a
+game-balance call this pass doesn't get to make unilaterally; approved and
+applied once asked. **P06-030** covers the result: a live dose now grants +4d
+to the right pool, capped at `Max Doses: 2`, and a carried-but-unused drug still
+grants nothing.
 
-**`Lick` and `Rage`** are not among them. Both are declared **NEW BEHAVIOUR**:
-their current text ("Increase Finesse by 4 for 10/min") has no signed number, so
-`POOL_DICE_RE` has never matched it and both drugs grant zero dice today. The
-rewrite ("+4d Finesse Pool for 10 minutes") makes that parser match for the first
-time — turning two inert drugs into real pool bonuses, a game-balance decision
-this pass doesn't get to make unilaterally. Held out at the repo owner's
-direction; apply them the same way once decided:
+Twenty cells needed a second pass after the *first* `--apply`, for an unrelated
+reason: the standardized wording had introduced `≥`, `≤` and `—`, none of which
+are in `data.js`'s sanctioned glyph set (`tools/check_data.py` catches this —
+run it after *any* edit to `data.js`, hand-written or scripted). Reworded to
+plain ASCII in both this document and `data.js`, and confirmed clean.
 
-    python apply_review.py --apply
-
-with no `--exclude`, once the doc's Original for those two rows is confirmed
-still current (`check_originals.py` will only complain about the 590 already
-applied, which is expected and fine).
-
-Twenty cells needed a second pass after the first `--apply`: the standardized
-wording had introduced `≥`, `≤` and `—`, none of which are in `data.js`'s
-sanctioned glyph set (`tools/check_data.py` catches this — run it after *any*
-edit to `data.js`, hand-written or scripted). Reworded to plain ASCII in both
-this document and `data.js`, and confirmed clean.
+Nothing in this document's scope remains unapplied. What's still open belongs to
+other tools, not this one: the two pending renames (Deluxe Trackmobi, "Seperation"
+→ "Separation") need a `RENAMED_*` map before they touch `data.js`'s `Name`
+column, which this pass never wrote to. This bundle is ready to come out — see
+the [README](README.md) — whenever the repo owner wants it gone; nothing here
+still needs to be read to understand the shipped data, only `git log` does.
 
 ---
 

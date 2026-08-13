@@ -454,7 +454,7 @@ established stat abbreviation.
 | | |
 |---|---|
 | Cells reviewed | 684 |
-| Wording changed | 585 |
+| Wording changed | 589 |
 | Behaviour changed | 2 |
 | Flagged for a decision | 83 |
 
@@ -694,9 +694,9 @@ Everything needing a decision beyond accept/reject on the wording.
 | 111 | Hyper Adrenal Pump | When active: +4 to Resolve, Brawn, and Finesse Pools for 10 minutes. At end, 9 stun damage. Recharge: 30/min, +1 stun to all dmg | When active: +4d Brawn/Finesse/Resolve Pool for 10 minutes. At end, 9 stun damage. Recharge: 30 minutes. +1 stun to all damage. | `pool Resolve+4, Brawn+4, Finesse+4` | **UNCLEAR** — same "30/min" ambiguity as Adrenal Pump (row 110) |
 | 112 | Augmented Eyesight | Ignore penalties for low light, treat darkness as low light, and shift your range categories on firearms by one. | Ignore penalties for low light. Treat darkness as low light. Shift your range categories on firearms by one. | `sense: Sees in darkness / low light` | |
 | 113 | Bone Density | +2 Body and 2 Impact Armor | Grants a bonus to Body. Grants Impact Armor. | — | |
-| 114 | Boosted Reflexes 1 | Grants a bonus to Reaction. | Grants a bonus to Reaction. | — | |
-| 115 | Boosted Reflexes 2 | Grants a bonus to Reaction. | Grants a bonus to Reaction. | — | |
-| 116 | Boosted Reflexes 3 | Grants a bonus to Reaction. | Grants a bonus to Reaction. | — | |
+| 114 | Boosted Reflexes 1 | +2 Reaction | Grants a bonus to Reaction. | — | |
+| 115 | Boosted Reflexes 2 | +4 Reaction | Grants a bonus to Reaction. | — | |
+| 116 | Boosted Reflexes 3 | +6 Reaction | Grants a bonus to Reaction. | — | |
 | 117 | Gills | Can breathe underwater | Can breathe underwater | — | |
 | 118 | Hyperthyroid | Increase lifestyle cost 10%, +2 to Body, Reaction, and Strength. Does not increase max | Increase lifestyle cost 10%. +2 Body, Reaction, and Strength. | — | |
 | 119 | Metabolic Stasis | Go into stasis instead of dying | Go into stasis instead of dying | — | |
@@ -802,7 +802,7 @@ rather than a guess.
 | 17 | Nature's Blessing | Choose one stat +3 and second stat +1 | Choose one attribute for +3. Choose a second attribute for +1. | — | |
 | 18 | Redcap | +2 on all soak tests. Must drink blood/eat flesh monthly | +2d Soak. Must drink blood or eat flesh monthly. | — | |
 | 19 | Shapechanging | May slip into animal form. Gain its physical traits. | Can shift into an animal's form, gaining its physical traits. | — | |
-| 20 | Resmedis | Hide up to weight 2 objects in extra-dimensional space for 1 hour | Can hide objects of up to weight 2 in extra-dimensional space for 1 hour. | — | |
+| 20 | Resmedis | Hide up to weight 2 objects in extra-dimensional space for 1 hour | Can hide objects of up to 2 weight in extra-dimensional space for 1 hour. | — | |
 | 21 | Otherworldly | Unaging. Treat spirits as if -1 to Force | Unaging. Treats spirits as though their Force is 1 lower. | — | |
 | 22 | Astral Flame | Illuminate target as Simple Action. | Illuminate a target as a Simple Action. | — | |
 | 23 | Wildling | Transform into man-beast (Complex Action). +6 to Brawn/Finesse Pool, -3 Focus/Resolve. +6 "Beast" dice that refresh each round. Heal 1d6 wounds | Transform into a man-beast as a Complex Action. +6d Brawn/Finesse Pool. -3d Focus/Resolve Pool. Grants 6 Beast dice that refresh each round. Heal 1d6 wounds. | `pool Brawn+6, Finesse+6, Focus-3, Resolve-3` | |
@@ -1161,17 +1161,17 @@ This column is not engine-read (`engine_reads_this_column: false` for every row)
 
 | # | Name | Original | Proposed | Engine | Notes |
 |---|---|---|---|---|---|
-| 1 | Neon Fang LS | Heat 1 / max 3. Wt 1+1 - reduce Wt by 1 if no Power pack. | Heat 1/max 3. Wt 1+1: reduce Wt by 1 if no Power pack. | — | |
-| 2 | Photon Reaver | Heat 2 / max 3. Wt 2+1 - reduce Wt by 1 if no Power pack. | Heat 2/max 3. Wt 2+1: reduce Wt by 1 if no Power pack. | — | |
-| 3 | Thunderbolt Vanguard | Ignores armor. Heat 3 / max 15, Bar 5. Wt 3+1 - reduce Wt by 1 if no Power pack. | Ignores armor. Heat 3/max 15, Bar 5. Wt 3+1: reduce Wt by 1 if no Power pack. | — | |
-| 4 | Great Wave | Fires as a complex action, affects one target as per Heavy Swell. Heat 5 / max 5. Wt 1+1 - reduce Wt by 1 if no Power pack. | Fires as a complex action, affects one target as per Heavy Swell. Heat 5/max 5. Wt 1+1: reduce Wt by 1 if no Power pack. | — | |
-| 5 | Militech X-1 | Heat 2 / max 10, Bar 3. Wt 3+1 - reduce Wt by 1 if no Power pack. | Heat 2/max 10, Bar 3. Wt 3+1: reduce Wt by 1 if no Power pack. | — | |
-| 6 | Ares Long Arm rail cannon | Ignores armor. Heat 4 / max 10, Bar 5. Wt 3+1 - reduce Wt by 1 if no Power pack. | Ignores armor. Heat 4/max 10, Bar 5. Wt 3+1: reduce Wt by 1 if no Power pack. | — | |
-| 7 | Militech X-2 Less Lethal target management device | Heat 3 / max 15. Wt 2+1 - reduce Wt by 1 if no Power pack. | Heat 3/max 15. Wt 2+1: reduce Wt by 1 if no Power pack. | — | |
-| 8 | Militech X-3 "Stun Cannon" crowd dispersal system | Requires a complex action to spin up, then FA only (+20 dice, each success counts as 2, walk fire as normal). Heat 9 / max 27. Wt 3+1 - reduce Wt by 1 if no Power pack. | Requires a complex action to spin up, then FA only (+20 dice, each success counts as 2, walk fire as normal). Heat 9/max 27. Wt 3+1: reduce Wt by 1 if no Power pack. | — | |
-| 9 | Militech U-B Cap Laser | Underbarrel mounted laser, counts as a laser sight (+1 accuracy to main gun). Heat 1 / max 2. Wt 1+1 - reduce Wt by 1 if no Power pack. | Underbarrel mounted laser, counts as a laser sight (+1 Accuracy to main gun). Heat 1/max 2. Wt 1+1: reduce Wt by 1 if no Power pack. | — | |
-| 10 | Militech U-B Microwaver "EZ-Bake" | Underbarrel mounted microwaver (Fires as a complex action, affects 1 target, as Heavy Swell). Heat 6 / max 6. Wt 1+1 - reduce Wt by 1 if no Power pack. | Underbarrel mounted microwaver (fires as a complex action, affects 1 target, as Heavy Swell). Heat 6/max 6. Wt 1+1: reduce Wt by 1 if no Power pack. | — | |
-| 11 | Aztechnologies Dazzleray | Underbarrel mounted Dazzleray. Reduce Wt by 1 if no Power pack. | Underbarrel mounted Dazzleray. Reduce Wt by 1 if no Power pack. | — | |
+| 1 | Neon Fang LS | Heat 1 / max 3. Wt 1+1 - reduce Wt by 1 if no Power pack. | Heat 1/max 3. 1+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 2 | Photon Reaver | Heat 2 / max 3. Wt 2+1 - reduce Wt by 1 if no Power pack. | Heat 2/max 3. 2+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 3 | Thunderbolt Vanguard | Ignores armor. Heat 3 / max 15, Bar 5. Wt 3+1 - reduce Wt by 1 if no Power pack. | Ignores armor. Heat 3/max 15, Bar 5. 3+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 4 | Great Wave | Fires as a complex action, affects one target as per Heavy Swell. Heat 5 / max 5. Wt 1+1 - reduce Wt by 1 if no Power pack. | Fires as a complex action, affects one target as per Heavy Swell. Heat 5/max 5. 1+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 5 | Militech X-1 | Heat 2 / max 10, Bar 3. Wt 3+1 - reduce Wt by 1 if no Power pack. | Heat 2/max 10, Bar 3. 3+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 6 | Ares Long Arm rail cannon | Ignores armor. Heat 4 / max 10, Bar 5. Wt 3+1 - reduce Wt by 1 if no Power pack. | Ignores armor. Heat 4/max 10, Bar 5. 3+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 7 | Militech X-2 Less Lethal target management device | Heat 3 / max 15. Wt 2+1 - reduce Wt by 1 if no Power pack. | Heat 3/max 15. 2+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 8 | Militech X-3 "Stun Cannon" crowd dispersal system | Requires a complex action to spin up, then FA only (+20 dice, each success counts as 2, walk fire as normal). Heat 9 / max 27. Wt 3+1 - reduce Wt by 1 if no Power pack. | Requires a complex action to spin up, then FA only (+20 dice, each success counts as 2, walk fire as normal). Heat 9/max 27. 3+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 9 | Militech U-B Cap Laser | Underbarrel mounted laser, counts as a laser sight (+1 accuracy to main gun). Heat 1 / max 2. Wt 1+1 - reduce Wt by 1 if no Power pack. | Underbarrel mounted laser, counts as a laser sight (+1 Accuracy to main gun). Heat 1/max 2. 1+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 10 | Militech U-B Microwaver "EZ-Bake" | Underbarrel mounted microwaver (Fires as a complex action, affects 1 target, as Heavy Swell). Heat 6 / max 6. Wt 1+1 - reduce Wt by 1 if no Power pack. | Underbarrel mounted microwaver (fires as a complex action, affects 1 target, as Heavy Swell). Heat 6/max 6. 1+1 weight: reduce weight by 1 if no Power pack. | — | |
+| 11 | Aztechnologies Dazzleray | Underbarrel mounted Dazzleray. Reduce Wt by 1 if no Power pack. | Underbarrel mounted Dazzleray. Reduce weight by 1 if no Power pack. | — | |
 | 12 | Monofilament Whip* | Cybercombat skill required | Requires Cybercombat skill. | — | Applied the Requirements canonical form ("Requires X.", leading, full sentence). |
 | 13 | Power Fist | Can destroy barriers (under 5) and make Brawn Pool (3) to avoid knockdown | Can destroy barriers (under 5) and make Brawn Pool (3) to avoid knockdown. | — | |
 | 14 | Sickstick | Brawn Pool test (4 success). If failed lose next turn and one simple on subsequent turn. | Brawn Pool test (4 successes). If failed, lose next turn and one simple on the subsequent turn. | — | |
@@ -1606,10 +1606,10 @@ Nothing in this packet is parsed today (`engine_reads_this_column: false`, `curr
 
 | # | Name | Original | Proposed | Engine | Notes |
 |---|---|---|---|---|---|
-| 1 | Pulse Cannon/ | Pain causes penalty to next round equal to damage taken | Pain causes a penalty on the next round equal to damage taken. | — | |
-| 2 | Tactical Tsunami/ | Single target -3d to all tests with flare | Single target takes -3 dice to all tests while flared. | — | |
-| 3 | Plasma Cannon/ | 6m circumference burst. 20 dmg vs digital cohesion. Disables cyberware for 2 rounds | 6m-circumference burst dealing 20 damage to digital Cohesion. Disables cyberware for 2 rounds. | — | |
-| 4 | Railgun/ | Ignore armor | Ignores Armor. | — | |
+| 1 | Pulse Cannon | Pain causes penalty to next round equal to damage taken | Pain causes a penalty on the next round equal to damage taken. | — | |
+| 2 | Tactical Tsunami | Single target -3d to all tests with flare | Single target takes -3 dice to all tests while flared. | — | |
+| 3 | Plasma Cannon | 6m circumference burst. 20 dmg vs digital cohesion. Disables cyberware for 2 rounds | 6m-circumference burst dealing 20 damage to digital Cohesion. Disables cyberware for 2 rounds. | — | |
+| 4 | Railgun | Ignore armor | Ignores Armor. | — | |
 
 ---
 

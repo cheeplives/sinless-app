@@ -20,6 +20,7 @@ entry in `sw.js`. That's the point of keeping it together.
 | `style-guide.md` | the canonical vocabulary the rewrites apply |
 | `probe.py` | which `rules.js` parsers fire on which cell of `data.js` |
 | `verify.py` | re-runs the probe over every *proposed* rewrite and diffs |
+| `check_originals.py` | every Original still matches `static/data.js` |
 | `column_drift.py` | where prose and the structured column disagree |
 | `near_miss.py` | text describing a mechanic the engine can't quite read |
 
@@ -52,6 +53,24 @@ No undeclared parser changes (2 declared).
 
 That output is the whole claim of this pass: 682 of 684 rewrites are formatting,
 demonstrated rather than asserted.
+
+## The other one to run
+
+```bash
+python docs/effect-text-review/check_originals.py
+```
+
+The Original column is the review's factual record of what the data says today,
+and everything rests on it — the Proposed text is judged against it, and
+`verify.py` diffs parser hits between the two. An Original that drifts means the
+document is reviewing something that doesn't exist, and a real behaviour change
+can hide inside the mismatch.
+
+It is easy to break by accident. A row whose Original and Proposed are identical
+has the same text twice on one line, so a search-and-replace aimed at the
+Proposed cell can land on the Original instead. That is exactly how the
+Aztechnologies Dazzleray and Boosted Reflexes rows were corrupted, and how they
+were found again. Run it after any bulk edit to the tables.
 
 ## Why a probe rather than reading the code
 

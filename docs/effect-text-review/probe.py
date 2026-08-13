@@ -180,7 +180,8 @@ NAME_COLS = ["Name", "Augment", "Program", "Spell", "Weapon", "Modification",
              "Martial Art", "Style", "Item", "Drone", "Vehicle", "Power",
              "Ritual", "Deck Mod", "Rig Mod", "Material", "Extra", "Action",
              "Drone Ballistic Weapon", "Vehicle Ballistic Weapon",
-             "Drone Energy Weapon", "Drone Mod", "Vehicle Mod", "Spirit"]
+             "Drone Energy Weapon", "Vehicle Energy Weapon",
+             "Drone Mod", "Vehicle Mod", "Spirit"]
 
 
 def row_name(row):

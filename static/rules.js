@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "230";
+const APP_VERSION = "231";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -3380,7 +3380,26 @@ function priceArmor(character, data, gearCostMultiplier, warnings) {
  * thing. A limit derived from a formula or describing degraded performance
  * (cargo left over, Body ÷ 3 weapons, drone loaded weight) stays advisory and
  * pushes a warning for the GM to adjudicate. */
-function priceDecking(character, data, gearCostMultiplier, warnings, errors) {
+/* `playErrors` / `playWarnings`, when given, collect the checks that stay true
+ * after Finalize. Every complaint this function makes is one of them, which is
+ * why there is no filtering here: none of them are budget rules. They describe
+ * a deck that does not work — nothing slotted, a program you don't own, more
+ * mods than the chassis holds, two mods fighting over the same stat, hardware
+ * left at home. A creation budget stops applying at Finalize; "this deck will
+ * not run" does not, and play is exactly when you'd try to run it.
+ *
+ * The slotted program in particular is a live dropdown on the Decking tab, so
+ * this state is reachable DURING play and not only inherited from chargen. */
+function priceDecking(character, data, gearCostMultiplier, warnings, errors,
+                      playWarnings, playErrors) {
+  const bothErr = message => {
+    errors.push(message);
+    if (playErrors) playErrors.push(message);
+  };
+  const bothWarn = message => {
+    warnings.push(message);
+    if (playWarnings) playWarnings.push(message);
+  };
   // A deck runs on a Hacking program slotted into it — its operating system,
   // not a tool loaded on top, so it costs no thread and no I/O. The program is
   // owned like any other and named by `deck.hacking`, which lets a character
@@ -3409,30 +3428,30 @@ function priceDecking(character, data, gearCostMultiplier, warnings, errors) {
       const requiredHacking = deckHackingRequired(row);
       const slotted = entry.hacking || "";
       if (!slotted) {
-        errors.push(`${entry.name}: no Hacking program slotted — the deck will not `
-                    + `run. It needs one rated ${requiredHacking} or better.`);
+        bothErr(`${entry.name}: no Hacking program slotted — the deck will not `
+                + `run. It needs one rated ${requiredHacking} or better.`);
       } else if (!owned.has(slotted)) {
-        errors.push(`${entry.name}: the slotted ${slotted} isn't owned — `
-                    + "buy it or slot a Hacking program you have.");
+        bothErr(`${entry.name}: the slotted ${slotted} isn't owned — `
+                + "buy it or slot a Hacking program you have.");
       } else if (hackingProgramRating(slotted) < requiredHacking) {
-        warnings.push(`${entry.name}: ${slotted} is under ½ MCP — needs rating `
-                      + `${requiredHacking} for MCP ${row.MCP}.`);
+        bothWarn(`${entry.name}: ${slotted} is under ½ MCP — needs rating `
+                 + `${requiredHacking} for MCP ${row.MCP}.`);
       }
       if (entry.carried === false) {
-        warnings.push(`${entry.name} is the equipped deck but isn't carried — `
-                      + "you can't run a deck you left at home.");
+        bothWarn(`${entry.name} is the equipped deck but isn't carried — `
+                 + "you can't run a deck you left at home.");
       }
     }
     if (slotsUsed > slotCapacity) {
-      errors.push(`${entry.name}: deck mod slots exceeded `
-                  + `(${slotsUsed}/${slotCapacity}).`);
+      bothErr(`${entry.name}: deck mod slots exceeded `
+              + `(${slotsUsed}/${slotCapacity}).`);
     }
     // Range mods set the range rather than adding to it, so a second one has
     // nothing to do but overwrite the first — the slots it costs are wasted.
     const clash = deckRangeConflict(entry, data);
     if (clash) {
-      errors.push(`${entry.name}: ${clash.join(" and ")} both set the hacking `
-                  + "range — fit only one.");
+      bothErr(`${entry.name}: ${clash.join(" and ")} both set the hacking `
+              + "range — fit only one.");
     }
     deckCost += round2(cost * gearCostMultiplier);
   }
@@ -3469,7 +3488,11 @@ function rigStats(rigEntry, data) {
            modSlots, modSlotsUsed };
 }
 
-function priceRig(character, data, gearCostMultiplier, warnings, errors) {
+/* Same reasoning as priceDecking: a rig carrying more mods than it has slots is
+ * a physically impossible piece of hardware, not an overspend, so it stays wrong
+ * after Finalize. */
+function priceRig(character, data, gearCostMultiplier, warnings, errors,
+                  playWarnings, playErrors) {
   let totalCost = 0.0;
   for (const entry of character.rigs) {
     const row = findRow(data.rigs, "Rig Type", entry.name);
@@ -3481,8 +3504,10 @@ function priceRig(character, data, gearCostMultiplier, warnings, errors) {
     }
     const stats = rigStats(entry, data);
     if (errors && stats.modSlotsUsed > stats.modSlots) {
-      errors.push(`${entry.name}: ${stats.modSlotsUsed} mod slot(s) used but only `
-                  + `${stats.modSlots} available.`);
+      const message = `${entry.name}: ${stats.modSlotsUsed} mod slot(s) used but only `
+                    + `${stats.modSlots} available.`;
+      errors.push(message);
+      if (playErrors) playErrors.push(message);
     }
     totalCost += round2(cost * gearCostMultiplier);
   }
@@ -4823,7 +4848,12 @@ function calculate(character) {
    *
    * Deliberately NOT mirrored: anything the sheet already surfaces better on
    * its own — overloaded mounts and the magic/Amp OFFLINE state both have
-   * dedicated read-outs and would only read as a second copy here. */
+   * dedicated read-outs and would only read as a second copy here.
+   *
+   * Decks and rigs mirror everything they check (see priceDecking): none of it
+   * is a budget rule, all of it is "this hardware does not work", and the
+   * slotted-program dropdown means the state is reachable during play rather
+   * than merely inherited from chargen. */
   const playErrors = [], playWarnings = [];
 
   const priorities = resolvePriorities(character, data, warnings, errors);
@@ -4993,8 +5023,10 @@ function calculate(character) {
   warnDuplicates("Program", character.programs);
   warnDuplicates("Gear", (character.gear || []).map(g => g.name));
 
-  const decking = priceDecking(character, data, 1, warnings, errors);
-  const rig = priceRig(character, data, 1, warnings, errors);
+  const decking = priceDecking(character, data, 1, warnings, errors,
+                               playWarnings, playErrors);
+  const rig = priceRig(character, data, 1, warnings, errors,
+                       playWarnings, playErrors);
   // priceDronesAndVehicles applies the surcharge to vehicles only (drones pay
   // face value) — it splits internally, so it takes the raw multiplier.
   const vehicles = priceDronesAndVehicles(character, data, gearCostMultiplier, warnings, errors);

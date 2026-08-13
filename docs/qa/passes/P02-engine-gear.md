@@ -575,6 +575,34 @@ actually testing.
   SMG changes here, and the rifles hold at 1 and 3.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-024: A broken deck stays broken after Finalize
+- **Type:** correctness
+- **Steps:** Any character. Builds a deliberately broken deck — nothing slotted,
+  two range mods, over its slot budget, not carried — and asks for the same
+  report in chargen and in play. Restores what it found.
+- **Check:**
+
+      (async () => { const c = CHAR; const snap = JSON.stringify([c.finalized, c.decks, c.programs, (c.play && c.play.kit) ? c.play.kit.decks : null, (c.play && c.play.kit) ? c.play.kit.programs : null]); const decks = [{ name: "Mars Claymore", mods: ["Range Extension", "Wide Area Protocols"], hacking: "", carried: false }]; const put = async fin => { c.finalized = fin; c.decks = JSON.parse(JSON.stringify(decks)); c.programs = []; if (c.play && c.play.kit) { c.play.kit.decks = JSON.parse(JSON.stringify(decks)); c.play.kit.programs = []; } await recalc(); return { errors: CALC.errors.filter(e => /Claymore/.test(e)).length, warnings: (CALC.warnings || []).filter(w => /Claymore/.test(w)).length }; }; const chargen = await put(false); const play = await put(true); const [f, d, p, kd, kp] = JSON.parse(snap); c.finalized = f; c.decks = d; c.programs = p; if (c.play && c.play.kit) { c.play.kit.decks = kd; c.play.kit.programs = kp; } await recalc(); return { chargen, play, same: JSON.stringify(chargen) === JSON.stringify(play) }; })()
+
+- **Expected:** `{ "chargen": { "errors": 3, "warnings": 1 }, "play": { "errors": 3, "warnings": 1 }, "same": true }`
+- **Note:** `calculate` keeps two report lists and returns `finalized ?
+  playErrors : errors`. That split is right — creation budgets stop applying at
+  Finalize — but `priceDecking` and `priceRig` only ever filled the chargen
+  side, so every complaint they made was computed and thrown away the moment a
+  character was finalized. Play reported zero of the four.
+
+  None of these are budget rules. "No Hacking program slotted" means the deck
+  does not run; the others mean the hardware could not be assembled or was left
+  at home. Those stay true at the table, which is what the play list is for.
+
+  The slotted program matters most: it's a live dropdown on the Decking tab, so
+  a decker can create this state *during* play and, before this, hear nothing
+  back.
+
+  `same: true` is the assertion. Counting rather than comparing text keeps the
+  case from breaking every time one of these messages is reworded.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

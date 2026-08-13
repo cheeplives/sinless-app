@@ -7770,7 +7770,14 @@ function rigHardeningFor(key) {
   if (!CHAR.finalized) return 0;          // links are play state
   const rg = rigFlags();
   if (!rg.linked || !rg.linked[key]) return 0;
-  return RULES.rigUnitHardening(CHAR, DATA.tables);
+  // allRigs(), NOT CHAR.rigs. Past Finalize the character's own `rigs` array is
+  // the frozen chargen record; what the character is actually carrying lives in
+  // play.kit (plus play purchases), which is what allRigs() joins. A mod fitted
+  // to a rig during play only ever exists on the kit copy, so reading CHAR here
+  // saw the rig as it was BUILT and missed the hardening entirely — the exact
+  // trap play.kit exists to make visible. Only the rigs are swapped; the play
+  // state that names the equipped one is read from CHAR.play as before.
+  return RULES.rigUnitHardening({ rigs: allRigs(), play: CHAR.play }, DATA.tables);
 }
 
 /* Effective Body after any weapon/mod deltas — the box count for both condition

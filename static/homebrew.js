@@ -58,12 +58,10 @@ const HOMEBREW_CONFIG = {
      it never costs money, is never carried, and the character never owns one
      except while a spell is up.
 
-     Move and Flight are metres, like every other distance in the app. The
-     source list was written in tabletop inches at 1″ = 2m and converted on
-     import, so an author working from that book should double what it says. */
+     Move and Flight are metres, like every distance in the app. */
   animals: { label: "Animals", nameKey: "Animal", fields: [
     { key: "Animal" },
-    { key: "Move", hint: "ground movement in metres — double it if you're reading inches off the table" },
+    { key: "Move", hint: "ground movement in metres" },
     { key: "Flight", hint: "flying movement in metres — blank for anything that can't fly" },
     { key: "Initiative", hint: "flat initiative score, not dice" },
     { key: "Condition", hint: "condition track length in boxes" },

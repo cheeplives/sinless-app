@@ -85,8 +85,8 @@ See also “Editing game data” in `README.md`.
   (only in the `skills` map's `"group":null`). Columns like `ZR`/`BI` are `""` on
   most rows.
 - **Non-ASCII is limited to exactly four glyphs.** `check_data.py` errors on any
-  other: `°` (degrees), `½` (ranges/inches), `×` (one cost-multiplier string in
-  `heritage_features`), `ㄓ` (currency).
+  other: `°` (degrees), `½` (half-Strength melee damage), `×` (one
+  cost-multiplier string in `heritage_features`), `ㄓ` (currency).
 - **Key-column naming is inconsistent by design** — three styles, all live:
   `Name` (8 tables); the singular of the table (`Weapon`, `Armor`, `Vehicle`,
   `Drone`, `Item`, `Lifestyle`, `Spirit`, `Element`, `Material`, `Style`,
@@ -178,7 +178,7 @@ call graphs.
 | Table | Rows | Key | What it holds | Mainly used by |
 |---|---|---|---|---|
 | `amp_powers` | 26 | `Name` | Amp powers with `ZP Cost` | rules, app, sheet |
-| `animals` | 9 | `Animal` | Summonable creatures for Create Darkenbeast / Bound Servant. `Move`/`Flight` in metres (source list was tabletop inches at 1″ = 2m, converted on import). `Attacks` is pipe-separated | rules, sheet, homebrew |
+| `animals` | 9 | `Animal` | Summonable creatures for Create Darkenbeast / Bound Servant. `Move`/`Flight` in metres. `Attacks` is pipe-separated | rules, sheet, homebrew |
 | `armor` | 16 | `Armor` | Worn armor, `Ballistic`/`Impact` | rules, app, sheet |
 | `armor_extras` | 3 | `Extra` | Armor add-ons, cost `Multiplier` | rules, app |
 | `armor_materials` | 6 | `Material` | Material cost `Multiplier` | rules, app |

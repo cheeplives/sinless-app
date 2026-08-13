@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "240";
+const APP_VERSION = "241";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -2873,11 +2873,7 @@ function drainIsLethal(force, zp) {
  * change its numbers. The animals table holds the plain creature; everything
  * here is about what a spell does to one.
  *
- * Move and Flight are metres, like every other distance in the app and like the
- * spirit statblocks these sit beside. The source list was written in tabletop
- * inches at 1″ = 2m; the conversion was applied once when the table was
- * imported rather than being carried around as a second unit, so nothing
- * downstream has to know the difference.
+ * Move and Flight are metres, like every distance in the app.
  */
 const SUMMON_SPELLS = {
   "Create Darkenbeast": {

@@ -151,7 +151,12 @@ WIRING = {
     ("heritage_features", "Effects"): ["pool", "sense", "initiative", "wound"],
     ("augments", "Effect"): ["pool", "sense", "initiative", "etiquette", "wound"],
     ("augments", "Description"): ["wound"],
-    ("misc_gear", "Effect"): ["pool", "sense", "etiquette"],
+    # "wound" added when Dorf's wound-penalty text became reachable: doses now
+    # feed removesWoundPenalty/doublesWoundPenalty via liveDoseRows (rules.js),
+    # gated on the dose being LIVE rather than merely carried -- a distinction
+    # this transcription can't express, so treat "wired" here as "reachable at
+    # all", the same way carrying-vs-using is already collapsed for pool/skill.
+    ("misc_gear", "Effect"): ["pool", "sense", "etiquette", "wound"],
     ("misc_gear", "Notes"): ["etiquette"],
     ("amp_powers", "Effect"): ["pool", "initiative"],
     ("spells", "Effect"): ["pool"],

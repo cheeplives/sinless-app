@@ -12,6 +12,13 @@ git rm -r docs/effect-text-review
 Nothing else needs unpicking — no hook registration, no import from app code, no
 entry in `sw.js`. That's the point of keeping it together.
 
+**Status:** applied. `apply_review.py` has written 590 of 592 approved cells
+into `static/data.js` — see [REVIEW.md's Status section](REVIEW.md#status) for
+what that means for the other scripts here (`check_originals.py` in particular
+will now report the applied rows as "mismatches"; that's expected) and for the
+two rows (`Lick`, `Rage`) still awaiting a game-balance decision before this
+bundle can be deleted.
+
 ## What's here
 
 | File | |
@@ -21,6 +28,7 @@ entry in `sw.js`. That's the point of keeping it together.
 | `probe.py` | which `rules.js` parsers fire on which cell of `data.js` |
 | `verify.py` | re-runs the probe over every *proposed* rewrite and diffs |
 | `check_originals.py` | every Original still matches `static/data.js` |
+| `apply_review.py` | writes Proposed cells into `static/data.js`, one row per line |
 | `column_drift.py` | where prose and the structured column disagree |
 | `column_echo.py` | where prose and the structured column agree — a number said twice |
 | `near_miss.py` | text describing a mechanic the engine can't quite read |
@@ -39,20 +47,22 @@ Original and the Proposed text, and reports any row where the two differ in what
 the engine would extract. A row is allowed to change engine behaviour only if its
 Notes column says **NEW BEHAVIOUR**; anything else exits 1.
 
-Today that's two rows — `Lick` and `Rage`, which gain the pool toggle they've
-never had — and nothing else:
+Today that's three rows — `Lick` and `Rage` gain the pool toggle they've never
+had, and `Create Darkenbeast` loses one it should never have granted (it was
+landing on the caster instead of the summoned animal) — and nothing else:
 
 ```
-684 rows across 22 tables, 585 reworded
+684 rows across 22 tables, 591 reworded
 
-change  decl  table       row     parser hit
-GAINED  yes   misc_gear   Lick    pool Finesse+4
-GAINED  yes   misc_gear   Rage    pool Brawn+4
+change  decl  table       row                  parser hit
+GAINED  yes   misc_gear   Lick                 pool Finesse+4
+GAINED  yes   misc_gear   Rage                 pool Brawn+4
+LOST    yes   spells      Create Darkenbeast   pool Brawn+3, Finesse+3, Resolve+3
 
-No undeclared parser changes (2 declared).
+No undeclared parser changes (3 declared).
 ```
 
-That output is the whole claim of this pass: 682 of 684 rewrites are formatting,
+That output is the whole claim of this pass: 681 of 684 rewrites are formatting,
 demonstrated rather than asserted.
 
 ## The other one to run
@@ -141,15 +151,37 @@ takes the column names from the data, so it can't fall behind the schema.
   mechanic, but the phrasing misses by a hair. `Lick`'s `Increase Finesse by 4`
   needs a signed number. These are bugs a rewrite fixes for free.
 - **not wired** — the phrasing is fine but nothing hands that column to that
-  parser. `Dorf`'s wound immunity is unreachable no matter how it's spelled,
-  because `misc_gear` is never passed to `removesWoundPenalty`
-  (`rules.js:4987`). Only a `rules.js` change fixes those.
+  parser. Only a `rules.js` change fixes those. `Dorf` used to be the standing
+  example: `misc_gear` was never passed to `removesWoundPenalty`
+  (`rules.js:4987`), so no amount of rewording could turn on its wound
+  immunity. That got a `rules.js` change (`liveDoseRows`, gated on the dose
+  being *live* rather than merely carried) rather than staying a rewrite, and
+  `WIRING` in `probe.py` was updated to match — a reminder that this
+  transcription drifts the moment the code it describes changes, in either
+  direction.
 
 ## Applying a row
 
-`data.js` is one JSON object per line and must stay that way. When copying an
-accepted `Proposed` string in, keep the row on its own line, re-parse the file
-before committing, and run `verify.py` first.
+```bash
+python docs/effect-text-review/apply_review.py            # dry run — report only
+python docs/effect-text-review/apply_review.py --apply    # write static/data.js
+```
+
+`data.js` is one JSON object per line and must stay that way, so `apply_review.py`
+edits each row's own line with a targeted regex rather than re-serializing the
+table — `git diff` shows exactly the cells that changed. It re-checks each
+row's current text against the doc's Original immediately before writing (so a
+stale review can't silently clobber a row someone else already changed), and
+`--exclude table:Row,table:Row` holds specific rows back — used once already,
+for `Lick` and `Rage`, whose rewrite is a declared **NEW BEHAVIOUR** and needed
+a decision from the repo owner rather than a mechanical apply.
+
+Run `verify.py` first regardless — `apply_review.py` trusts the doc's Notes
+column exactly as much as `verify.py` already validated it, no more. After
+applying, run `tools/check_data.py`: it catches things this bundle's own
+scripts don't, such as a rewrite introducing a Unicode glyph (`—`, `≥`, `≤`)
+outside `data.js`'s four sanctioned ones — which happened, in 20 cells, the
+first time this ran.
 
 If you accept a rewrite that adds a *column* rather than changing text, the
 homebrew editor needs the matching field — see the `homebrew-column-sync` skill,

@@ -2,7 +2,16 @@
 
 A proposed rewrite of the mechanical text in `static/data.js`, with every
 original beside its replacement so each one can be accepted or rejected on its
-own. **Nothing in `data.js` has been changed.** This document is the proposal.
+own.
+
+> **Status: applied.** `apply_review.py` wrote 590 of the 592 approved cells into
+> `static/data.js` (2 already matched — see [below](#status)). The **Original**
+> column below is now history, not current `data.js` content — that's what it's
+> for. `check_originals.py` will therefore report ~590 "mismatches" if run now;
+> that isn't corruption, it's this document doing its job. `Lick` and `Rage`
+> (misc_gear) are the two rows still holding their pre-review text — see
+> [Status](#status) for why, and for what's left before this bundle can be
+> deleted per the [README](README.md).
 
 - **684 cells** reviewed, across 26 table/column pairs in 22 tables
 - Plus [column migrations](#structured-columns--what-the-prose-should-stop-saying):
@@ -10,6 +19,40 @@ own. **Nothing in `data.js` has been changed.** This document is the proposal.
 - **49 of them are read by `rules.js` today** — those are the ones where wording
   is behaviour, and they are marked in the Engine column of every table below
 - Long-form `Description` prose is **not** rewritten (see [Scope](#scope))
+
+---
+
+## Status
+
+**Applied**, with two rows deliberately held back.
+
+`apply_review.py` walked every (table, column) group in the same file order
+`check_originals.py` already proved matches `data.js`, re-checked each cell's
+current text against this document's Original immediately before writing it (so
+a stale review can't silently overwrite a row someone else had already changed),
+and replaced Original with Proposed on that row's own line — a targeted edit, not
+a re-serialize, so `git diff` on `data.js` shows exactly these 590 cells and
+nothing else.
+
+**`Lick` and `Rage`** are not among them. Both are declared **NEW BEHAVIOUR**:
+their current text ("Increase Finesse by 4 for 10/min") has no signed number, so
+`POOL_DICE_RE` has never matched it and both drugs grant zero dice today. The
+rewrite ("+4d Finesse Pool for 10 minutes") makes that parser match for the first
+time — turning two inert drugs into real pool bonuses, a game-balance decision
+this pass doesn't get to make unilaterally. Held out at the repo owner's
+direction; apply them the same way once decided:
+
+    python apply_review.py --apply
+
+with no `--exclude`, once the doc's Original for those two rows is confirmed
+still current (`check_originals.py` will only complain about the 590 already
+applied, which is expected and fine).
+
+Twenty cells needed a second pass after the first `--apply`: the standardized
+wording had introduced `≥`, `≤` and `—`, none of which are in `data.js`'s
+sanctioned glyph set (`tools/check_data.py` catches this — run it after *any*
+edit to `data.js`, hand-written or scripted). Reworded to plain ASCII in both
+this document and `data.js`, and confirmed clean.
 
 ---
 
@@ -847,7 +890,7 @@ rather than a guess.
 | 4 | Octopus | Gain Camouflage (+2 to Recon. Only seen with Observation vs Shadow test) | Camouflage: +2d Reconnaissance. Detectable only by an Observation test versus Shadow. | — | |
 | 5 | Shark | Bite Attack: Reach(0) 6+STR | Bite attack: Reach 0. Damage 6+STR. | — | |
 | 6 | Dolphin | Hold breath for Body in minutes | Can hold your breath for a number of minutes equal to Body. | — | |
-| 7 | Snake | 2 Impact Armor. Choose attack: Bite: Reach(0) 1/2Str+1+3d6 poison or Spit: Range(12m) Acc4 2d6DMG+Blind | +2 Impact Armor. Choose an attack: Bite — Reach 0, damage 1/2 STR+1+3d6 (poison); or Spit — Range 12m, Accuracy 4, damage 2d6 plus Blind. | — | |
+| 7 | Snake | 2 Impact Armor. Choose attack: Bite: Reach(0) 1/2Str+1+3d6 poison or Spit: Range(12m) Acc4 2d6DMG+Blind | +2 Impact Armor. Choose an attack: Bite: Reach 0, damage 1/2 STR+1+3d6 (poison); or Spit: Range 12m, Accuracy 4, damage 2d6 plus Blind. | — | |
 | 8 | Rabbit | If hands free, 12m Move. Gain 2 simple actions before initiative is rolled | Movement 12m while hands are free. Gain 2 simple actions before initiative is rolled. | `initiative note` | |
 | 9 | Cat | If hands free, 10m Move. +2d bonus on Shadow tests | Movement 10m while hands are free. +2d Shadow. | — | |
 | 10 | Racoon | Can mount medium or large for cover (-2). +2 on all dodge tests | Can ride atop a medium or large creature for cover (-2). +2d Dodge. | — | **UNCLEAR**: "mount ... for cover (-2)" doesn't say what the -2 applies to (attacker's roll? the mount's?) or what "mount" means mechanically here. Ambiguity kept from the original. |
@@ -871,7 +914,7 @@ rather than a guess.
 | 28 | Green Skin | Skin is green with hair that changes color with the seasons | Skin is green. Hair changes colour with the seasons. | — | |
 | 29 | Nature Bound | Cannot cross running water. Skin blisters/burns in UV light. -1d on actions in bright light | Cannot cross running water. Skin blisters and burns in UV light. -1d to actions in bright light. | — | **CHECK**: kept "UV" instead of spelling it to "ultraviolet" — the sense parser matches literal `ultraviolet` and would misread this vulnerability as granting Ultraviolet vision. Do not expand the abbreviation here. — **RESOLVED (approved)**: keep `UV`. Confirmed — expanding it would make `deriveSenseNotes` read a *vulnerability* as a grant of Ultraviolet vision. Needs a QA case before this document is deleted; it is the only place the reason is written down. |
 | 30 | Smol | Between 2 and 4 feet in height. Gear & augment costs ×1.4. | Between 2 and 4 feet tall. Gear and augment costs ×1.4. | — | |
-| 31 | Analgesia | Immune to pain (no penalties). You do not know how injured you are. | Immune to pain — no penalties from injury. You do not know how badly you are hurt. | — | |
+| 31 | Analgesia | Immune to pain (no penalties). You do not know how injured you are. | Immune to pain. No penalties from injury. You do not know how badly you are hurt. | — | |
 | 32 | Camouflage | +2 to Recon. Only seen with Observation vs Shadow test | +2d Reconnaissance. Detectable only by an Observation test versus Shadow. | — | |
 | 33 | Extra Arm | Extra Arm. +50% to Armor costs (custom fitting) | Grants an extra arm. +50% to Armor costs (custom fitting). | — | |
 | 34 | Extra Leg | Extra Leg. +2m to base Move. +50% to Armor costs (custom fitting) | Grants an extra leg. +2m Movement. +50% to Armor costs (custom fitting). | — | |
@@ -1522,18 +1565,18 @@ Nothing in this packet is parsed today (`engine_reads_this_column: false`, `curr
 | 89 | Corrupt IFF 4 | Targets=# of Successes. They are removed from any IFF for auto defenses | Selects a number of targets equal to Net Successes. Those targets are removed from IFF for automated defenses. | — | |
 | 90 | Corrupt IFF 5 | Targets=# of Successes. They are removed from any IFF for auto defenses | Selects a number of targets equal to Net Successes. Those targets are removed from IFF for automated defenses. | — | |
 | 91 | Corrupt IFF 6 | Targets=# of Successes. They are removed from any IFF for auto defenses | Selects a number of targets equal to Net Successes. Those targets are removed from IFF for automated defenses. | — | |
-| 92 | Crack Encryption 1 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes ≥ 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
-| 93 | Crack Encryption 2 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes ≥ 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
-| 94 | Crack Encryption 3 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes ≥ 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
-| 95 | Crack Encryption 4 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes ≥ 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
-| 96 | Crack Encryption 5 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes ≥ 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
-| 97 | Crack Encryption 6 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes ≥ 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
-| 98 | Device Control 1 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes ≥ 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
-| 99 | Device Control 2 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes ≥ 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
-| 100 | Device Control 3 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes ≥ 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
-| 101 | Device Control 4 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes ≥ 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
-| 102 | Device Control 5 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes ≥ 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
-| 103 | Device Control 6 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes ≥ 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
+| 92 | Crack Encryption 1 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes of at least 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
+| 93 | Crack Encryption 2 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes of at least 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
+| 94 | Crack Encryption 3 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes of at least 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
+| 95 | Crack Encryption 4 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes of at least 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
+| 96 | Crack Encryption 5 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes of at least 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
+| 97 | Crack Encryption 6 | Diff=6xFile Security Rating. Loads into I/O | Requires Net Successes of at least 6 × the target's File Security Rating. Loads into the I/O stream. | — | |
+| 98 | Device Control 1 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes of at least 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
+| 99 | Device Control 2 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes of at least 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
+| 100 | Device Control 3 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes of at least 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
+| 101 | Device Control 4 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes of at least 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
+| 102 | Device Control 5 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes of at least 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
+| 103 | Device Control 6 | Diff=2xHardening. Gains complete control (admin) of device w/ area of influence | Requires Net Successes of at least 2 × the target's Hardening. Grants complete (admin) control of the device, within range of influence. | — | |
 | 104 | Encrypt File 1 | Successes up to 3 increase Encryption 2 per. Extra successes are penalties to Decrypt | The first 3 Net Successes each raise the file's Security Rating by 2, to a maximum of +6. Each additional Net Success becomes a penalty die against attempts to crack the encryption. | — | |
 | 105 | Encrypt File 2 | Successes up to 3 increase Encryption 2 per. Extra successes are penalties to Decrypt | The first 3 Net Successes each raise the file's Security Rating by 2, to a maximum of +6. Each additional Net Success becomes a penalty die against attempts to crack the encryption. | — | |
 | 106 | Encrypt File 3 | Successes up to 3 increase Encryption 2 per. Extra successes are penalties to Decrypt | The first 3 Net Successes each raise the file's Security Rating by 2, to a maximum of +6. Each additional Net Success becomes a penalty die against attempts to crack the encryption. | — | |
@@ -1552,12 +1595,12 @@ Nothing in this packet is parsed today (`engine_reads_this_column: false`, `curr
 | 119 | Shadow Protocols 4 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 4. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
 | 120 | Shadow Protocols 5 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 5. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
 | 121 | Shadow Protocols 6 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 6. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
-| 122 | Hacking 1 | Runs a deck of MCP 3 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |
-| 123 | Hacking 2 | Runs a deck of MCP 5 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |
-| 124 | Hacking 3 | Runs a deck of MCP 7 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |
-| 125 | Hacking 4 | Runs a deck of MCP 9 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |
-| 126 | Hacking 5 | Runs a deck of MCP 11 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |
-| 127 | Hacking 6 | Runs a deck of MCP 13 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | Every one of the six original thresholds (3,5,7,9,11,13) checks out against `MCP ≤ 2×Rating+1` and against the Description's "at least half the deck's MCP, round down" rule — no break found, formula collapse is safe. — **RESOLVED (approved)**: as written. |
+| 122 | Hacking 1 | Runs a deck of MCP 3 or less | Runs a deck with MCP of 2 × Rating + 1 or less. | — | |
+| 123 | Hacking 2 | Runs a deck of MCP 5 or less | Runs a deck with MCP of 2 × Rating + 1 or less. | — | |
+| 124 | Hacking 3 | Runs a deck of MCP 7 or less | Runs a deck with MCP of 2 × Rating + 1 or less. | — | |
+| 125 | Hacking 4 | Runs a deck of MCP 9 or less | Runs a deck with MCP of 2 × Rating + 1 or less. | — | |
+| 126 | Hacking 5 | Runs a deck of MCP 11 or less | Runs a deck with MCP of 2 × Rating + 1 or less. | — | |
+| 127 | Hacking 6 | Runs a deck of MCP 13 or less | Runs a deck with MCP of 2 × Rating + 1 or less. | — | Every one of the six original thresholds (3,5,7,9,11,13) checks out against `MCP ≤ 2×Rating+1` and against the Description's "at least half the deck's MCP, round down" rule — no break found, formula collapse is safe. — **RESOLVED (approved)**: as written. |
 
 ---
 

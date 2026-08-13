@@ -1058,6 +1058,12 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-sense .sub{font-size:11px;margin-top:1px}
 /* A limit the character is currently on the wrong side of. */
 .sh-sense.bad > div:first-child{color:var(--bad)}
+/* A sense you have to switch on. The button sits under its description rather
+   than beside it — the popover is narrow, and a right-aligned button would
+   squeeze the "+2d Reconnaissance while active" line into two of its own. */
+.sh-sense-toggle{border-top:1px solid var(--line)!important;margin-top:4px;padding-top:6px}
+.sh-sense-toggle .btn{margin-top:5px}
+.sh-sense-toggle.on > div:first-child{color:var(--ok)}
 /* "Under the Effects Of": one row per drug currently in the character, its
    swing beside it, and a ✕ per dose — doses wear off one at a time, so two
    Crams get two dismiss buttons rather than one that drops both. Reuses the

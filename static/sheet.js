@@ -2354,8 +2354,41 @@ function openSensesPopover(senses) {
         el("div", {}, s.capability),
         el("div", { class: "sub" },
           s.sources.map(src => `${src.name} (${src.from})`).join(" · ")))),
+      ...senseToggleRows(refresh),
     ],
   });
+}
+
+/* Senses that cost an action to engage get a switch here rather than being
+ * silently on. Far Sight is the one in the core data: its +2d Reconnaissance
+ * only exists once the character has entered a Trance, so handing the dice out
+ * for free would be paying nobody's complex action (#42).
+ *
+ * Toggling re-renders the sheet (the dice have to reach the skill), and the
+ * popover survives that because it lives on document.body — but the row still
+ * needs redrawing to flip its own label, hence the refresh. */
+function senseToggleRows(refresh) {
+  const toggles = (CALC.combat || {}).sense_toggles || [];
+  if (!toggles.length) return [];
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  return toggles.map(t => el("div", { class: "sh-sense sh-sense-toggle" + (t.active ? " on" : "") },
+    el("div", {}, t.name,
+      t.active ? el("span", { class: "chip ok", style: "margin-left:6px" }, "active") : null),
+    el("div", { class: "sub" },
+      t.skill && t.dice
+        ? `${t.dice > 0 ? "+" : ""}${t.dice}d ${t.skill} while active`
+        : "No dice bonus listed",
+      ` · needs ${t.requires}`),
+    ro ? null : el("button", {
+      class: "btn small" + (t.active ? "" : " btn-add"),
+      onclick: () => {
+        const play = CHAR.play;
+        play.active_senses = play.active_senses || {};
+        if (t.active) delete play.active_senses[t.name];
+        else play.active_senses[t.name] = true;
+        playChangedRecalc().then(refresh);
+      },
+    }, t.active ? "Deactivate" : "Activate")));
 }
 
 /* What the character is currently on, one row per dose.

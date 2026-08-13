@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "232";
+const APP_VERSION = "233";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -721,6 +721,10 @@ function defaultCharacter() {
       // keyed by the mount's label. They're derived from the heritage picks on
       // every recalc, so unlike an owned weapon there's no entry to keep it on.
       trait_mounts: {},
+      // Senses that have to be switched on, keyed by the power's name. Far Sight
+      // needs a Trance before its dice are real, so being "on" is play state
+      // like a spent pool die rather than a fact about the build.
+      active_senses: {},
       // Legacy, read-only — replaced by `kit`, migrated once by ensureKit().
       disposed: {},
       fitted_mods: [],
@@ -2777,7 +2781,52 @@ const SENSE_CAPABILITIES = [
     "ignore[^.]*\\b(?:low.?light|darkness|dark)\\b|treat darkness"
     + "|\\bsee better\\b[^.]*\\bdark|\\bcan see\\b[^.]*\\bdark"
     + "|\\bdetect[^.]*\\b(?:darkness|dark)\\b"],
+  // Perceiving somewhere you aren't. Far Sight is the amp power that does this;
+  // the phrasing rather than the name is matched so a homebrew power describing
+  // the same trick lands in the same row.
+  ["Remote viewing",
+    "\\bfar ?sight\\b|observe within a city block|see and hear nearby"],
 ].map(([label, source]) => ({ label, re: new RegExp(source, "i") }));
+
+/* A sense that has to be switched on.
+ *
+ * Most enhanced senses are simply true of the character — thermographic eyes see
+ * heat whether you think about it or not. A few cost an action to engage, and
+ * their bonus is only real once you've paid it: Far Sight needs a Trance
+ * (Complex Action) before its +2d Reconnaissance means anything, so granting
+ * that bonus unconditionally would be handing out dice for an action nobody
+ * spent.
+ *
+ * The gate is read out of the Effect text — "Requires entering a Trance" —
+ * rather than from a list of power names here, so a homebrew power written the
+ * same way behaves the same way. The dice it grants are read from the same text
+ * ("+2d Reconnaissance") for the same reason.
+ *
+ * Whether it's currently on lives in play state, so it survives a reload and
+ * clears the way every other play toggle does. */
+const TRANCE_GATED_RE = /requires entering a trance/i;
+const SENSE_SKILL_DICE_RE = /([+-]\s*\d+)\s*d\s+([A-Za-z][A-Za-z /:'’-]*)/;
+function activatableSenses(character, data) {
+  const active = ((character.play || {}).active_senses) || {};
+  const out = [];
+  for (const name of (character.magic || {}).amp_powers || []) {
+    const row = findRow(data.amp_powers, "Name", name);
+    const effect = String((row || {}).Effect || "");
+    if (!row || !TRANCE_GATED_RE.test(effect)) continue;
+    const m = SENSE_SKILL_DICE_RE.exec(effect);
+    // Resolve the skill through the same alias table the rest of the engine
+    // uses, so "Recon" and "Reconnaissance" are one skill.
+    const skill = m ? canonicalSkillName(m[2].trim()) : null;
+    out.push({
+      name,
+      skill: skill || null,
+      dice: (m && skill) ? toInt(m[1].replace(/\s+/g, "")) : 0,
+      requires: "Trance (Complex Action)",
+      active: Boolean(active[name]),
+    });
+  }
+  return out;
+}
 
 function senseCapability(source, clause) {
   const probe = source + " " + clause;
@@ -2813,6 +2862,12 @@ function deriveSenseNotes(character, data, heritage, augments, droneVision) {
   };
   for (const row of (heritage && heritage.traits) || []) add("Heritage", row.Name, row.Effects);
   for (const [row] of (augments && augments.rows) || []) add("Augment", row.Name, row.Effect);
+  // Amp powers were never scanned, which is why Far Sight — a sense in every
+  // sense of the word — appeared nowhere near the other senses (#42).
+  for (const name of (character.magic || {}).amp_powers || []) {
+    const row = findRow(data.amp_powers, "Name", name);
+    if (row) add("Amp power", name, row.Effect);
+  }
   for (const item of character.gear || []) {
     if (item.carried === false) continue;
     const row = findRow(data.misc_gear, "Item", item.name);
@@ -4925,6 +4980,16 @@ function calculate(character) {
         skillDice[name] = (skillDice[name] || 0) + 1;
     }
   }
+  // A switched-on sense belongs in this layer rather than in amp.skill_bonus:
+  // it's a bonus die you have right now because you spent an action, exactly
+  // like a deployed drone's, not a permanent part of the skill's rating. Off
+  // again and the dice go with it (#42).
+  const senseToggles = activatableSenses(character, data);
+  for (const sense of senseToggles) {
+    if (sense.active && sense.skill && sense.dice) {
+      skillDice[sense.skill] = (skillDice[sense.skill] || 0) + sense.dice;
+    }
+  }
   for (const [name, dice] of Object.entries(skillDice)) {
     if (skillScoring.skills[name]) skillScoring.skills[name].dice_bonus = dice;
   }
@@ -5162,6 +5227,9 @@ function calculate(character) {
   // question from what this one answers.
   combat.senses = deriveSenseNotes(character, data, heritage, augments,
                                    droneBonus.vision_notes);
+  // Senses that need an action before they do anything, with whether they're on
+  // — the sheet renders the Activate control from this.
+  combat.sense_toggles = senseToggles;
   const poolEffects = derivePoolEffects(character, data, heritage, augments, amp);
   const poolNotes = derivePoolNotes(heritage, augments, amp, martialArt, poolEffects);
   // Name the spirit behind each pool bonus that was folded in above, so the

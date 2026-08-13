@@ -1139,7 +1139,43 @@ function wrapScrollableTables(root) {
   }
 }
 
+/* Where the page was and what the player was typing into, so a re-render can
+ * put both back.
+ *
+ * renderSheet() rebuilds everything, which is fine for a click and jarring for
+ * a keystroke: editing a tracked effect's dice re-rendered the sheet and threw
+ * the reader back to the top of the page mid-word (#57). Fields are identified
+ * by a stable data-keep-id rather than by node, because the node they were is
+ * gone by the time this runs.
+ *
+ * Only fields that ask for it are restored. A blanket "refocus whatever was
+ * focused" would fight the roller, which does its own more specific version of
+ * this, and would resurrect focus on controls a re-render deliberately drops. */
+function captureSheetFocus() {
+  const a = document.activeElement;
+  const id = a && a.dataset ? a.dataset.keepId : null;
+  return {
+    y: window.scrollY,
+    id: id || null,
+    start: (id && a.selectionStart != null) ? a.selectionStart : null,
+    end: (id && a.selectionEnd != null) ? a.selectionEnd : null,
+  };
+}
+
+function restoreSheetFocus(snap) {
+  if (!snap) return;
+  if (snap.y) window.scrollTo({ top: snap.y, behavior: "instant" });
+  if (!snap.id) return;
+  const next = document.querySelector(`[data-keep-id="${CSS.escape(snap.id)}"]`);
+  if (!next) return;
+  next.focus({ preventScroll: true });
+  // A number input refuses setSelectionRange in some browsers; the caret is a
+  // nicety and must not take the focus down with it.
+  try { if (snap.start != null) next.setSelectionRange(snap.start, snap.end); } catch { /* not selectable */ }
+}
+
 function renderSheet() {
+  const keep = captureSheetFocus();
   const root = $("#sheet");
   root.innerHTML = "";
   const ro = !!(typeof activeTabObj === "function" && activeTabObj() && activeTabObj().readonly);
@@ -1179,6 +1215,7 @@ function renderSheet() {
     publishBarHeight();
   }, { rootMargin: `-${48 + wsH}px 0px 0px 0px` });
   sheetHeadObserver.observe(head);
+  restoreSheetFocus(keep);
 }
 
 /* Smoothly scroll the sheet back to the top. Shared by the back-to-top FAB and
@@ -3531,6 +3568,9 @@ function shOverview(body) {
         counterBtn("Full Heal", () => {
           play.physical_damage = 0; play.stun_damage = 0; playChanged();
         }, "good"))),
+    // What shape you're in, in the literal sense: a worn Shapeshift form leads
+    // the Condition card because it changes what the rest of the card is about.
+    shiftedFormBanner(),
     conditionTrack("Physical", CALC.condition.physical,
       () => play.physical_damage, v => { play.physical_damage = v; }),
     conditionTrack("Stun", CALC.condition.stun,
@@ -4268,11 +4308,15 @@ function shOverview(body) {
   }
 
   // --- temporary effects + active modifiers
-  body.append(el("div", { class: "sh-two" },
-    trackedEffectList("Temporary Effects", play.effects, "Add Effect",
-      "Haste F4, 3 rounds", "No temporary effects tracked."),
-    trackedEffectList("Active Modifiers", play.modifiers, "Add Modifier",
-      "Cover, Smartlink", "No active modifiers tracked.")));
+  // One list, not two. "Temporary Effects" and "Active Modifiers" were the same
+  // thing wearing different names — both a label, a source, a pool and a dice
+  // delta — and having two of them made every entry start with a question that
+  // had no answer (#57). Splitting them into bonuses and penalties instead was
+  // the other option and would have been the same mistake in a new shape: the
+  // dice are signed, so the sign already says which it is.
+  mergeTrackedEffects(play);
+  body.append(trackedEffectList("Effects & Modifiers", play.effects, "Add",
+    "Haste F4 · Cover · Smartlink", "Nothing active."));
 
   // --- notes
   body.append(notesCard(3));
@@ -4507,6 +4551,147 @@ function activeSpellsBanner() {
   return card;
 }
 
+/* The form a shapeshifted caster is currently wearing, for the Condition card.
+ *
+ * Returns null in your own skin, so it can be dropped into the card
+ * unconditionally.
+ *
+ * The animal's own numbers are shown but NOT applied to the character. The
+ * spell heals "1d6 boxes from both their physical and stun condition track" —
+ * the CASTER's tracks, which means the caster keeps their own and the animal's
+ * are reference. Swapping the tracks out would also silently rewrite recorded
+ * damage every time someone shifted, which is a much worse failure than making
+ * the player read two numbers. */
+function shiftedFormBanner() {
+  const st = RULES.shapeshiftState(CHAR, shapeshiftForce());
+  if (!st.active) return null;
+  const s = RULES.summonedAnimal("Shapeshift", st.active, shapeshiftForce(), DATA.tables);
+  if (!s) return null;
+  return el("div", { class: "sh-callout sh-shifted" },
+    el("div", { class: "sh-fx-head" },
+      el("span", {}, "🐾 Shifted — ", el("b", {}, s.name)),
+      (activeTabObj() && activeTabObj().readonly) ? null
+        : el("button", { class: "btn small", title: "Return to your own shape",
+            onclick: () => { CHAR.play.shapeshift.active = ""; playChangedRecalc(); } }, "Revert")),
+    animalStatBlock(s),
+    el("div", { class: "sub" },
+      "The tracks below are still yours — the form's own Condition is what it "
+      + "would have as a creature."));
+}
+
+/* The Force the character knows Shapeshift at, or 0 if they don't know it.
+ * Chargen force plus any play advance, matching how the Magic tab reads it. */
+function shapeshiftForce() {
+  const play = CHAR.play || {};
+  const all = [...((CHAR.magic || {}).spells || []),
+               ...(((play.purchases || {}).spells) || [])];
+  const sp = all.find(s => s && s.name === "Shapeshift");
+  if (!sp) return 0;
+  return toIntSafe(sp.force) + toIntSafe((play.spell_force_advances || {})["Shapeshift"]);
+}
+
+/* Shapeshift: the forms a caster knows, and the one they're wearing.
+ *
+ * Unlike the two summoning spells this picks SEVERAL animals — "a number equal
+ * to the Force of the spell" — and then wears one at a time. So it's a list you
+ * add to and remove from, plus a Shift control per row, rather than a dropdown.
+ *
+ * Two states worth being careful with. Picks beyond the current allowance are
+ * shown greyed rather than deleted: Force can go down (a re-import, an undone
+ * advance) and quietly dropping forms a player chose would be the worst reading
+ * of "the limit is Force". And the active form is cleared whenever it falls
+ * outside the allowance, so a character can never be wearing a form they no
+ * longer know. */
+function shapeshiftPicker(spellName, force) {
+  const play = CHAR.play;
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  play.shapeshift = play.shapeshift || { picks: [], active: "" };
+  const st = RULES.shapeshiftState(CHAR, force);
+  const animals = DATA.tables.animals || [];
+  const save = () => playChangedRecalc();
+
+  // The add control, or nothing when the allowance is full. Built here rather
+  // than inline so the header below stays one readable expression.
+  const taken = new Set(st.picks);
+  const addSel = (ro || !st.remaining) ? null : el("select", {
+    title: `Add a form — Force ${st.limit} allows ${st.limit}`,
+    onchange: e => {
+      if (!e.target.value) return;
+      play.shapeshift.picks = [...st.picks, e.target.value];
+      save();
+    } },
+    el("option", { value: "" }, "Add a form…"),
+    ...animals.filter(a => !taken.has(a.Animal))
+              .map(a => el("option", { value: a.Animal }, a.Animal)));
+
+  const rows = [el("div", { class: "sh-summon-pick" },
+    el("span", { class: "sub" },
+      `Forms known ${st.allowed.length}/${st.limit}`
+      + (st.remaining ? ` — ${st.remaining} still to choose` : "")),
+    addSel)];
+
+  if (!st.picks.length) {
+    rows.push(el("div", { class: "sub" },
+      "No forms chosen yet. Casting this at Force "
+      + `${st.limit} lets you carry ${st.limit}.`));
+  }
+
+  st.picks.forEach((name, i) => {
+    const beyond = i >= st.limit;
+    const isActive = !beyond && name === st.active;
+    rows.push(el("div", { class: "sh-form-row" + (isActive ? " on" : "") + (beyond ? " over" : "") },
+      el("span", {}, name,
+        isActive ? el("span", { class: "chip ok", style: "margin-left:6px" }, "shifted") : null,
+        beyond ? el("span", { class: "chip neg", style: "margin-left:6px" }, "over Force") : null),
+      ro ? null : el("span", { class: "sh-form-btns" },
+        beyond ? null : el("button", {
+          class: "btn small" + (isActive ? "" : " btn-add"),
+          title: isActive ? "Return to your own shape"
+                          : `Shift into ${name} — a Complex action`,
+          onclick: () => {
+            play.shapeshift.active = isActive ? "" : name;
+            save();
+          } }, isActive ? "Revert" : "Shift"),
+        el("button", { class: "row-del", title: `Forget the ${name} form`,
+          onclick: () => {
+            play.shapeshift.picks = st.picks.filter((_, j) => j !== i);
+            if (play.shapeshift.active === name) play.shapeshift.active = "";
+            save();
+          } }, "✕"))));
+  });
+
+  if (st.over.length) {
+    rows.push(el("div", { class: "sub", style: "color:var(--amber)" },
+      `${st.over.length} form${st.over.length === 1 ? "" : "s"} beyond what Force `
+      + `${st.limit} allows — raise the Force or drop ${st.over.length === 1 ? "it" : "some"}.`));
+  }
+
+  // The worn form's full statblock, resolved the same way a summon's is.
+  const s = st.active
+    ? RULES.summonedAnimal(spellName, st.active, force, DATA.tables) : null;
+  if (s) rows.push(animalStatBlock(s));
+  return el("div", { class: "sh-summon" }, ...rows);
+}
+
+/* One resolved animal's numbers, shared by the summon picker, the Shapeshift
+ * picker and the Condition card, so a form reads identically wherever it's
+ * shown. */
+function animalStatBlock(s) {
+  const move = [s.move ? `${s.move}m` : null, s.flight ? `Fly ${s.flight}m` : null]
+    .filter(Boolean).join(" · ") || "—";
+  return el("div", { class: "sh-summon-stats" },
+    el("div", { class: "sub" },
+      `Move ${move} · Init ${s.initiative} · Condition ${s.condition} boxes`
+      + ` · Armor ${s.ballistic}B/${s.impact}I`
+      + (s.hardening ? ` · Hardening ${s.hardening}` : "")
+      + ` · Dodge ${s.dodge} · Soak ${s.soak}`),
+    ...s.attacks.map(a => el("div", { class: "sub" }, "⚔ " + a)),
+    s.attacks.length ? null : el("div", { class: "sub" }, "No attacks"),
+    s.pool_bonus
+      ? el("div", { class: "sub" }, `+${s.pool_bonus} Brawn / Finesse / Resolve pool dice`) : null,
+    ...s.notes.map(n => el("div", { class: "sub", style: "color:var(--manon)" }, n)));
+}
+
 /* The animal a summoning spell is pointed at, and what it becomes (#47).
  *
  * Renders nothing at all for an ordinary spell, so it can be dropped into the
@@ -4519,6 +4704,7 @@ function activeSpellsBanner() {
  * showing instead of leaving the player to do the arithmetic. */
 function summonPicker(spellName, force) {
   if (!RULES.isSummonSpell(spellName)) return null;
+  if (RULES.isFormSpell(spellName)) return shapeshiftPicker(spellName, force);
   const play = CHAR.play;
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   play.summons = play.summons || {};
@@ -4542,17 +4728,7 @@ function summonPicker(spellName, force) {
 
   const s = RULES.summonedAnimal(spellName, chosen, force, DATA.tables);
   if (s) {
-    const move = `${s.move}m` + (s.flight ? ` · Fly ${s.flight}m` : "");
-    rows.push(el("div", { class: "sh-summon-stats" },
-      el("div", { class: "sub" },
-        `Move ${move} · Init ${s.initiative} · Condition ${s.condition} boxes`
-        + ` · Armor ${s.ballistic}B/${s.impact}I`
-        + (s.hardening ? ` · Hardening ${s.hardening}` : "")
-        + ` · Dodge ${s.dodge} · Soak ${s.soak}`),
-      ...s.attacks.map(a => el("div", { class: "sub" }, "⚔ " + a)),
-      s.pool_bonus
-        ? el("div", { class: "sub" }, `+${s.pool_bonus} Brawn / Finesse / Resolve pool dice`) : null,
-      ...s.notes.map(n => el("div", { class: "sub", style: "color:var(--manon)" }, n))));
+    rows.push(animalStatBlock(s));
   } else if (chosen) {
     rows.push(el("div", { class: "sub", style: "color:var(--amber)" },
       `Nothing in the animals table answers to “${chosen}” — it may be homebrew this browser doesn't have.`));
@@ -4560,7 +4736,22 @@ function summonPicker(spellName, force) {
   return el("div", { class: "sh-summon" }, ...rows);
 }
 
-/* Temporary Effects / Active Modifiers, each row a small form (#46).
+/* Fold any legacy Active Modifiers into the single list (#57).
+ *
+ * play.modifiers is left in place but emptied rather than deleted: a character
+ * saved by this build can still be opened by an older one, and an older build
+ * reading a missing key is a different failure from reading an empty list.
+ * Runs on render, so it costs nothing once done. */
+function mergeTrackedEffects(play) {
+  if (!Array.isArray(play.modifiers) || !play.modifiers.length) return;
+  play.effects = play.effects || [];
+  play.effects.push(...play.modifiers);
+  play.modifiers = [];
+  schedulePlaySave();
+}
+
+/* The one list of things currently changing your dice, each row a small form
+ * (#46, merged in #57).
  *
  * The header chip counts how many are actually moving dice, not how many rows
  * exist — a list of six reminders and a list of six live penalties are very
@@ -8376,6 +8567,9 @@ function poolEffectMod(pool) {
 function trackedPoolMod(pool) {
   const play = CHAR.play;
   let n = 0;
+  // Both lists, still: the two were merged in #57 but mergeTrackedEffects only
+  // runs when the Overview renders, and a character sitting on another tab must
+  // not lose the dice a legacy modifier is giving them in the meantime.
   for (const list of [play.effects || [], play.modifiers || []]) {
     for (const e of list) {
       if (e && e.pool === pool) n += toIntSafe(e.dice);
@@ -8395,13 +8589,20 @@ function trackedEffectRow(entry, list, index) {
   const commit = () => playChangedRecalc();
   const field = (label, node) => el("label", { class: "sh-fx-field" },
     el("span", { class: "sub" }, label), node);
+  // Stable per-row field ids so a re-render can hand focus and caret back —
+  // changing the pool or the dice recalculates, which rebuilds the sheet under
+  // the control being used (#57). Keyed by name rather than index so deleting
+  // an earlier row doesn't move everyone else's identity.
+  const kid = what => `fx:${entry.name || index}:${what}`;
   const poolSel = el("select", {
+    "data-keep-id": kid("pool"),
     title: "Which pool these dice come off or go onto",
     onchange: e => { entry.pool = e.target.value; commit(); } },
     el("option", { value: "" }, "No pool"),
     ...POOL_ORDER.map(p => el("option", { value: p }, p)));
   poolSel.value = entry.pool || "";
   const diceInput = el("input", { type: "number", class: "sh-fx-dice", step: "1",
+    "data-keep-id": kid("dice"),
     value: String(toIntSafe(entry.dice) || 0),
     title: "Dice gained (positive) or lost (negative)",
     oninput: e => { entry.dice = parseInt(e.target.value, 10) || 0; commit(); } });
@@ -8412,7 +8613,10 @@ function trackedEffectRow(entry, list, index) {
         onclick: () => { list.splice(index, 1); playChangedRecalc(); } }, "✕")),
     el("div", { class: "sh-fx-fields" },
       field("Source", el("input", { type: "text", value: entry.source || "",
+        "data-keep-id": kid("source"),
         placeholder: "spell, gear, GM call…",
+        // Text doesn't move a pool, so it saves without a recalc and never
+        // rebuilds the sheet mid-word.
         oninput: e => { entry.source = e.target.value; playChanged(false); } })),
       field("Pool", poolSel),
       field("Dice", diceInput)),

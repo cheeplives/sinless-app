@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "243";
+const APP_VERSION = "244";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -815,6 +815,10 @@ function defaultCharacter() {
       // Which animal each summoning spell is pointed at, keyed by spell name.
       // A caster keeps one Bound Servant at a time, so re-picking replaces it.
       summons: {},
+      // Shapeshift: { picks: [animal names], active: name }. The picks are
+      // chosen when the spell is learned and persist; `active` is the form
+      // currently worn, and is empty whenever the caster is in their own skin.
+      shapeshift: { picks: [], active: "" },
       // Spells currently up: [{ uid, name, force, lethal, drain, note }].
       // Nothing here expires on a timer — durations in this game are
       // fiction-paced, the same reason doses are dismissed by hand.
@@ -2901,14 +2905,30 @@ function drainIsLethal(force, zp) {
   return toInt(force) > toInt(zp);
 }
 
-/* ---- summoned animals ------------------------------------------------------
- * Create Darkenbeast and Bound Servant both hand the caster an animal, and both
- * change its numbers. The animals table holds the plain creature; everything
- * here is about what a spell does to one.
+/* ---- animal spells ---------------------------------------------------------
+ * Three spells reach into the animals table. Create Darkenbeast and Bound
+ * Servant hand the caster ONE animal and change its numbers. Shapeshift is
+ * different in two ways that the `forms` flag marks: the caster picks several
+ * (Force of them), and the animal is the caster rather than a companion, so
+ * nothing is added to it — you become the creature as written.
  *
  * Move and Flight are metres, like every distance in the app.
  */
 const SUMMON_SPELLS = {
+  "Shapeshift": {
+    label: "Form",
+    // Several picks, one of them worn at a time.
+    forms: true,
+    apply: animal => ({
+      ballistic: toInt(asNumber(animal.Ballistic)),
+      impact: toInt(asNumber(animal.Impact)),
+      damage_bonus: 0,
+      pool_bonus: 0,
+      test_bonus: 0,
+      notes: ["Shifting is a Complex action, and heals 1d6 boxes of BOTH tracks",
+              "No speaking and no spellcasting while shifted"],
+    }),
+  },
   "Create Darkenbeast": {
     label: "Darkenbeast",
     // Force/2 armor (rounded down), +2 melee damage, +3 to each pool.
@@ -2948,6 +2968,34 @@ const SUMMON_SPELLS = {
 
 function isSummonSpell(name) {
   return Object.prototype.hasOwnProperty.call(SUMMON_SPELLS, name);
+}
+
+/* Does this spell pick several animals rather than one? */
+function isFormSpell(name) {
+  return Boolean((SUMMON_SPELLS[name] || {}).forms);
+}
+
+/* The caster's chosen forms, and which one they are wearing.
+ *
+ * "A number of animals equal to the Force of the spell", chosen when learned —
+ * so the allowance moves with Force, and raising it grants another form rather
+ * than re-picking the set. Picks beyond the current allowance are kept rather
+ * than discarded: Force can move down as well as up (a re-import, an undone
+ * advance), and silently deleting a player's chosen forms because a number
+ * changed would be the worst possible reading of "the limit is Force". They're
+ * returned as `over` so the sheet can show them greyed and let the player
+ * choose which to drop.
+ *
+ * `active` is the form currently worn — at most one, and only ever one that is
+ * actually within the allowance. */
+function shapeshiftState(character, force) {
+  const store = ((character.play || {}).shapeshift) || {};
+  const limit = Math.max(0, toInt(force));
+  const picks = (store.picks || []).filter(Boolean);
+  const allowed = picks.slice(0, limit);
+  const over = picks.slice(limit);
+  const active = allowed.includes(store.active) ? store.active : "";
+  return { limit, picks, allowed, over, active, remaining: Math.max(0, limit - allowed.length) };
 }
 
 /* One summoned animal, resolved: the creature's own line plus what the spell
@@ -3771,7 +3819,7 @@ function priceDecking(character, data, gearCostMultiplier, warnings, errors,
 function rigStats(rigEntry, data) {
   const row = findRow(data.rigs, "Rig Type", rigEntry.name) || {};
   let links = toInt(asNumber(row.Links));
-  const hardening = toInt(asNumber(row.Hardening));   // stored like "+0"/"+1"; asNumber parses the sign
+  let hardening = toInt(asNumber(row.Hardening));   // stored like "+0"/"+1"; asNumber parses the sign
   let bonusDice = toInt(asNumber(row["Bonus Dice"]));
   const modSlots = toInt(asNumber(row.Mods));
   let modSlotsUsed = 0;
@@ -3782,13 +3830,18 @@ function rigStats(rigEntry, data) {
     modSlotsUsed += Math.max(1, toInt(asNumber(modRow.Slots, 1)));
     links += toInt(asNumber(modRow.Link));
     bonusDice += toInt(asNumber(modRow["Bonus Dice"]));
-    // A rig mod's Hardening is NOT the rig's. "+1 Vehicle/Drone Hardening" says
-    // where it goes, and it used to land on the rig — which is in your skull and
-    // never the thing being shot at. It's reported separately and applied to the
-    // units the rig is flying (#44).
-    unitHardening += String(modRow.Hardening || "").trim() !== ""
+    // A rig mod's Hardening protects BOTH ends of the link: the rig itself and
+    // every drone or vehicle flying on it. An earlier pass moved it off the rig
+    // entirely on the reasoning that "+1 Vehicle/Drone Hardening" named the
+    // units — but the rig is a networked device that gets attacked too, and the
+    // mod hardens the whole rig-and-units system (#44). Counted in both places
+    // on purpose; these are two different things being shot at, not one number
+    // double-counted.
+    const modHard = String(modRow.Hardening || "").trim() !== ""
       ? toInt(asNumber(modRow.Hardening))
       : hardeningBonusFromText(modRow.Effect);
+    hardening += modHard;
+    unitHardening += modHard;
   }
   return { row, links, hardening, unit_hardening: unitHardening, bonusDice,
            cores: row.Cores || "", modSlots, modSlotsUsed };
@@ -5740,7 +5793,7 @@ return {
   HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
   BASE_HACK_RANGE_METERS, deckHackRange, deckRangeConflict,
   deckHardening, rigUnitHardening, hardeningBonusFromText,
-  SUMMON_SPELLS, isSummonSpell, summonedAnimal,
+  SUMMON_SPELLS, isSummonSpell, isFormSpell, shapeshiftState, summonedAnimal,
   spellDrain, drainIsLethal, DRAIN_SPECIAL,
   equippedDeckName,
   SPEAKER_BOND_MAX, speakerBondCount,

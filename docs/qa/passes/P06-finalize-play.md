@@ -911,6 +911,33 @@ path by which play could reach into the creation record.
   same trap issue #31 already fixed once for drugs.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-037: Shapeshift's form allowance follows Force, and never strands a worn form
+- **Type:** correctness
+- **Steps:** Any finalized character. Sets three chosen forms directly and reads
+  the state back at three different Forces without touching the picks.
+  Restores what it found.
+- **Check:**
+
+      (() => { const c = CHAR; const snap = JSON.stringify(c.play.shapeshift || null); c.play.shapeshift = { picks: ["Wolf", "Hawk", "Bear"], active: "Bear" }; const at3 = RULES.shapeshiftState(c, 3); const at2 = RULES.shapeshiftState(c, 2); const at0 = RULES.shapeshiftState(c, 0); c.play.shapeshift = snap ? JSON.parse(snap) : { picks: [], active: "" }; return { at3: { allowed: at3.allowed, over: at3.over, active: at3.active, remaining: at3.remaining }, at2: { allowed: at2.allowed, over: at2.over, active: at2.active }, at0: { allowed: at0.allowed, over: at0.over.length, active: at0.active } }; })()
+
+- **Expected:** `{ "at3": { "allowed": ["Wolf", "Hawk", "Bear"], "over": [], "active": "Bear", "remaining": 0 }, "at2": { "allowed": ["Wolf", "Hawk"], "over": ["Bear"], "active": "" }, "at0": { "allowed": [], "over": 3, "active": "" } }`
+- **Note:** "Choose a number of animals equal to the Force of the spell", and
+  Force moves — a play advance raises it, a re-import or an undone advance can
+  lower it. The picks are stored, the allowance is derived, and the two are
+  reconciled on read rather than on write.
+
+  `at2.over: ["Bear"]` is the important half: dropping to Force 2 does **not**
+  delete the third form. Picks are a player's choices and survive a number
+  changing; the sheet greys the excess and lets them decide which to drop.
+  Silently discarding one would be unrecoverable.
+
+  `at2.active: ""` is the other half, and the reason `active` is validated
+  rather than trusted. The character was wearing the Bear, and at Force 2 the
+  Bear is no longer within the allowance — so the form is taken off. Without
+  that check a caster could be walking around as a creature they no longer know,
+  with a statblock on their Condition card they have no claim to.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

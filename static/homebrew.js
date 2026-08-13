@@ -312,6 +312,9 @@ const HOMEBREW_CONFIG = {
     { key: "BI", hint: "number" },
     { key: "Cost", hint: "number, or 25% for a share of the weapon's cost" },
     { key: "Effect", ta: true },
+    { key: "GrantsWeapon", datalist: () => hbDistinct("weapons", "Weapon"),
+      hint: "an underbarrel weapon this mod IS — name a row from the weapons table and "
+        + "fitting the mod adds that gun, free (the mod already charged for it) and marked Underbarrel" },
     { key: "RecoilMod", hint: "+/-N — added to the shooter's recoil capacity, but only for the gun this is fitted to" },
     { key: "AccMod", hint: "+/-N" },
     { key: "MagMod", hint: "e.g. x1.5" },

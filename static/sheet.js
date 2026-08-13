@@ -3084,6 +3084,40 @@ function arraySwap(arr, i, j, after = playChanged) {
 
 // Cyberguns are augments with a chosen gun; surface them as read-only weapons
 // on the Overview loadout and the Gear weapons list.
+/* Guns that ARE a mod on another gun.
+ *
+ * Three underbarrel mods aren't accessories at all — a Cap Laser, an EZ-Bake
+ * microwaver and an under-slung grenade launcher are weapons bolted beneath the
+ * host, each with its own row in the weapons table. Fitting the mod should put
+ * that gun on your list, and it did not: the mod sat in the host's mod strip
+ * with its effect text and the weapon it represents was never reachable.
+ *
+ * Derived, never owned. The player buys the MOD, and the mod's price already
+ * equals the weapon's, so the granted gun is free — charging for both would
+ * bill the same purchase twice. It follows its host: it can't be sold on its
+ * own (remove the mod), and it stops existing if the host is unequipped.
+ *
+ * Which weapon a mod grants is a data column (GrantsWeapon), not a list of
+ * names here, so a homebrew underbarrel weapon works the moment it's written. */
+function underbarrelWeapons() {
+  const out = [];
+  for (const en of ownedWeapons()) {
+    const host = en.ref;
+    if (host.equipped === false) continue;
+    for (const m of host.mods || []) {
+      const modName = (m && typeof m === "object") ? m.name : m;
+      const modRow = (DATA.tables.weapon_mods || []).find(x => x.Modification === modName);
+      const grants = modRow && String(modRow.GrantsWeapon || "").trim();
+      if (!grants) continue;
+      const row = (DATA.tables.weapons || []).find(x => x.Weapon === grants);
+      // A GrantsWeapon naming a row this browser doesn't have (homebrew the
+      // player hasn't installed) is skipped rather than rendered as a blank gun.
+      if (row) out.push({ name: grants, row, host: host.name, mod: modName });
+    }
+  }
+  return out;
+}
+
 function equippedCyberguns() {
   // Keep the source augment entry + its array so the Overview can drag-reorder
   // cyberguns (they're derived, so reordering acts on the underlying augments).
@@ -4162,6 +4196,32 @@ function shOverview(body) {
                   weaponRollSpec(cg.name, "Cybergun", shot.acc, cgBonuses), cg.name)
               : "—"),
             ammo: el("td", { class: "sub" }, munitionPicker(cg.src, cgRow)),
+          };
+        },
+      }));
+      // Underbarrel weapons granted by a mod. They sort after the cyberguns and
+      // carry no reorder identity of their own — they belong to their host, so
+      // moving the host moves them.
+      underbarrelWeapons().forEach((ub, idx) => items.push({
+        ins: 2000 + idx, getOrder: () => undefined, setOrder: () => {},
+        cells: () => {
+          const r = ub.row;
+          const ubModes = RULES.weaponFiringModes(r);
+          const rs = weaponRollSpec(ub.name, r.Type, r.Accuracy || 0, [], r.Reach);
+          const ro2 = !!(activeTabObj() && activeTabObj().readonly);
+          return {
+            name: el("b", {}, ub.name, " ", el("span", { class: "sh-tag" }, "Underbarrel")),
+            stats: el("td", { class: "sub" },
+              `${r.Type || ""}`,
+              weaponSkillDice(ub.name, r.Type, r.Accuracy || 0, [], r.Reach),
+              ` · Acc ${r.Accuracy || 0} · DMG ${r.Damage || "—"} · Pen ${r.Pen || 0}`
+              + barrierBit(r, r.Bar)
+              + (r.Ammo ? ` · Mag ${r.Ammo}` : "")
+              + ` · Hardening ${RULES.hardeningOf(r)}`,
+              el("div", { class: "sub wpn-mods" }, `Under ${ub.host} — via the ${ub.mod} mod`)),
+            fire: el("td", { class: "sub" },
+              ro2 ? "—" : (ubModes.length ? attackButton(ub.name, rs) : attackButton(ub.name, rs))),
+            ammo: el("td", { class: "sub" }, "—"),
           };
         },
       }));
@@ -6170,6 +6230,22 @@ function shGear(body) {
           `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · ${g.Modes} · Pen ${g.Pen}${barrierBit(g, g.Bar)} · Ammo ${g.Ammo}`
           + ` · Hardening ${RULES.hardeningOf(g)}`
           + recoilBit(RULES.cybergunRecoil(g, CALC.combat))),
+        el("td", { class: "sub" }, "—"),
+        el("td", {}, "")));
+    });
+    // Underbarrel weapons: granted by a mod on the gun above them, so they sit
+    // in the list but carry no sell control — you remove the mod instead.
+    underbarrelWeapons().forEach(ub => {
+      const r = ub.row;
+      t.append(el("tr", {},
+        el("td", {}, el("b", {}, ub.name), " ",
+          el("span", { class: "sh-tag" }, "Underbarrel"),
+          el("div", { class: "sub" }, `Fitted to ${ub.host} — remove the ${ub.mod} mod to lose it`)),
+        el("td", { class: "sub" },
+          `${r.Type || ""} · Acc ${r.Accuracy || 0} · DMG ${r.Damage || "—"}`
+          + ` · ${r["Firing modes"] || "—"} · Pen ${r.Pen || 0}${barrierBit(r, r.Bar)}`
+          + (r.Ammo ? ` · Ammo ${r.Ammo}` : "")
+          + ` · Hardening ${RULES.hardeningOf(r)}`),
         el("td", { class: "sub" }, "—"),
         el("td", {}, "")));
     });

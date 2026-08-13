@@ -2226,7 +2226,10 @@ function recoilBit(calcRow) {
   const c = calcRow || {};
   if (c.recoil_ignored) return " · Recoil ignored";
   if (c.Recoil == null) return "";
-  return ` · Recoil ${c.Recoil}${c.recoil_mod ? ` (+${c.recoil_mod} mods)` : ""}`;
+  // A cybergun labels its own contribution "implanted" rather than "mods" —
+  // it isn't bolted on, it's the arm the gun is built into.
+  const label = c.recoil_mod_label || "mods";
+  return ` · Recoil ${c.Recoil}${c.recoil_mod ? ` (+${c.recoil_mod} ${label})` : ""}`;
 }
 /* Everything a weapon carries that isn't a number: the mods built into it at
    the factory and, for a sealed weapon, the fact that it can't be reloaded.

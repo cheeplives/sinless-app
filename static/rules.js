@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "242";
+const APP_VERSION = "243";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -259,20 +259,35 @@ function recoilIgnoredForType(type) {
   return RECOIL_IGNORED_WEAPON_TYPES.some(t => String(type || "").startsWith(t));
 }
 
-/* A cybergun's recoil. Implanted guns live in their own table and take no weapon
- * mods, so there is nothing per-gun to add — it's the character's own capacity.
+/* A cybergun's recoil: DOUBLE the character's own capacity.
+ *
+ * The gun is braced against the frame of a cybertechtronic arm rather than
+ * against a shoulder, and the Cybergun Installation row has always said so.
+ * Its wording is "your Strength is doubled for calculating recoil capacity",
+ * which was the same thing as doubling the capacity back when capacity simply
+ * WAS Strength. It isn't any more (#50 made Strength buy capacity in two flat
+ * steps), and doubling the input now barely moves the output — at Strength 24
+ * it does nothing at all, because the top tier is already reached. Doubling the
+ * result is what preserves the intent, and is the ruling applied here.
+ *
+ * Implanted guns take no weapon mods, so there is nothing per-gun to add on top.
  *
  * Their Type is prose ("Palm Pistol", "Forearm SMG"), which is why this tests
  * the words rather than reusing recoilIgnoredForType's prefix match: a Forearm
  * SMG starts with "Forearm", not "SMG". Shotgun and Heavy Pistol cyberguns exist
  * too, and a Shotgun correctly gets no relief from Gun-Kata. */
+const CYBERGUN_RECOIL_MULTIPLIER = 2;
 function cybergunRecoil(gunRow, combat) {
   const type = String((gunRow || {}).Type || "");
   const isPistolOrSmg = RECOIL_IGNORED_WEAPON_TYPES.some(
     t => new RegExp(`\\b${t}\\b`, "i").test(type));
+  const base = toInt((combat || {}).recoil_capacity);
   return {
-    Recoil: toInt((combat || {}).recoil_capacity),
-    recoil_mod: 0,
+    Recoil: base * CYBERGUN_RECOIL_MULTIPLIER,
+    // Reported as a mod so the stat line can show where the extra came from,
+    // the same way a bipod's +1 is shown on an ordinary gun.
+    recoil_mod: base * (CYBERGUN_RECOIL_MULTIPLIER - 1),
+    recoil_mod_label: "implanted",
     recoil_ignored: Boolean((combat || {}).recoil_ignored) && isPistolOrSmg,
   };
 }

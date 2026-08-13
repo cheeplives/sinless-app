@@ -1387,6 +1387,16 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
      lifted; .sh-ls-effect still sits inside the identity column. */
   .sh-ls-effect{max-width:none}
 }
+/* Phones go back to 2x2. Four tiles across a 375px screen leaves each one 72px
+   wide and 48px of that usable, which is not enough for Kismet's three −/+/↺
+   buttons: the touch-target floor makes each 32px, and 32x3 will not fit 48
+   however the gaps are tuned. Shrinking the buttons was the wrong answer —
+   that floor is measured accessibility work, not decoration — so the tiles get
+   the room instead. At two across they are ~150px and everything fits with
+   space to spare, including the Armor chip's three figures. */
+@media(max-width:560px){
+  .sh-meters{grid-template-columns:1fr 1fr}
+}
 /* Chargen keeps its summary rail as a sidebar down to ~11" tablets (portrait
  * ≈ 820px) — just progressively narrower — rather than burying it below the
  * whole editor. Only genuine phones (≤680px, out of our target) stack it. */

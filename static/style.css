@@ -26,6 +26,12 @@
  * (teal, pink) set --on-accent to a dark value in the dark variant.
  * ============================================================================ */
 :root{
+  /* Tells the browser which palette to paint controls it renders itself —
+     select popups, scrollbars, checkboxes — that our own CSS can't reach.
+     Left unset, a select's closed box wears our dark styling but its native
+     dropdown list falls back to the OS light popup: dark text on white,
+     unreadable against everything else on the page. */
+  color-scheme: dark;
   --ink:#12151d;
   --panel:#181c26;
   --panel-2:#1e2330;
@@ -63,6 +69,7 @@
  * deepened from their dark-theme values (rather than reused as-is) because
  * the dark-theme pastels don't have enough contrast against white panels. */
 :root[data-theme="light"]{
+  color-scheme: light;
   --ink:#f2f3f8;
   --panel:#ffffff;
   --panel-2:#eceef5;
@@ -1108,8 +1115,6 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-fx-field{display:flex;flex-direction:column;gap:2px;min-width:0}
 .sh-fx-field input,.sh-fx-field select{font:inherit;font-size:12px;padding:3px 5px;
   background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px}
-.sh-fx-field input[type=text]{min-width:8em}
-.sh-fx-dice{width:4.5em;text-align:right}
 /* A sense you have to switch on. The button sits under its description rather
    than beside it — the popover is narrow, and a right-aligned button would
    squeeze the "+2d Reconnaissance while active" line into two of its own. */

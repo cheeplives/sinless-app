@@ -4900,7 +4900,7 @@ function trackedEffectList(title, items, addLabel, placeholder, emptyText) {
       counterBtn(addLabel, () => {
         const name = (prompt(`Name (e.g. ${placeholder}):`) || "").trim();
         if (!name) return;
-        items.push({ name, source: "", pool: "", dice: 0 });
+        items.push({ name, pool: "", dice: 0 });
         playChanged();
       }, "accent")));
   if (!items.length) {
@@ -8760,10 +8760,11 @@ function trackedEffectRow(entry, list, index) {
   const commit = () => playChangedRecalc();
   const field = (label, node) => el("label", { class: "sh-fx-field" },
     el("span", { class: "sub" }, label), node);
-  // Stable per-row field ids so a re-render can hand focus and caret back —
-  // changing the pool or the dice recalculates, which rebuilds the sheet under
-  // the control being used (#57). Keyed by name rather than index so deleting
-  // an earlier row doesn't move everyone else's identity.
+  // Stable per-row field id so a re-render can hand focus back to the pool
+  // selector — changing it recalculates, which rebuilds the sheet under the
+  // control being used (#57). Keyed by name rather than index so deleting an
+  // earlier row doesn't move everyone else's identity. The Dice stepper below
+  // doesn't need one: it only re-renders after a commit, never mid-edit.
   const kid = what => `fx:${entry.name || index}:${what}`;
   const poolSel = el("select", {
     "data-keep-id": kid("pool"),
@@ -8772,25 +8773,22 @@ function trackedEffectRow(entry, list, index) {
     el("option", { value: "" }, "No pool"),
     ...POOL_ORDER.map(p => el("option", { value: p }, p)));
   poolSel.value = entry.pool || "";
-  const diceInput = el("input", { type: "number", class: "sh-fx-dice", step: "1",
-    "data-keep-id": kid("dice"),
-    value: String(toIntSafe(entry.dice) || 0),
-    title: "Dice gained (positive) or lost (negative)",
-    oninput: e => { entry.dice = parseInt(e.target.value, 10) || 0; commit(); } });
   return el("div", { class: "sh-fx-row" },
     el("div", { class: "sh-fx-head" },
       el("b", {}, entry.name || "(unnamed)"),
       el("button", { class: "row-del",
         onclick: () => { list.splice(index, 1); playChangedRecalc(); } }, "✕")),
     el("div", { class: "sh-fx-fields" },
-      field("Source", el("input", { type: "text", value: entry.source || "",
-        "data-keep-id": kid("source"),
-        placeholder: "spell, gear, GM call…",
-        // Text doesn't move a pool, so it saves without a recalc and never
-        // rebuilds the sheet mid-word.
-        oninput: e => { entry.source = e.target.value; playChanged(false); } })),
       field("Pool", poolSel),
-      field("Dice", diceInput)),
+      // A number input that re-renders on every keystroke fights a typed
+      // minus sign: the interim "-" parses as NaN, gets coerced to 0, and the
+      // rebuilt field shows "0" out from under the player mid-type — which is
+      // exactly how a real penalty could silently end up not applied. The
+      // stepper only commits on blur/Enter (or the −/+ buttons), the same
+      // click-to-type pattern every other spend-a-die control on this sheet
+      // already uses, so there's no keystroke for a rebuild to race.
+      field("Dice", miniCounter("", () => toIntSafe(entry.dice) || 0,
+        v => { entry.dice = v; }, -99, 99))),
     // Say what it's actually doing, so a row that affects nothing looks
     // deliberate rather than broken.
     el("div", { class: "sub" }, entry.pool && toIntSafe(entry.dice)

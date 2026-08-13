@@ -853,6 +853,38 @@ path by which play could reach into the creation record.
   scarce band and lost nothing.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-035: A knowledge added in play survives a trip through chargen exactly once
+- **Type:** correctness
+- **Steps:** Any character. Builds its own fixture — one knowledge in chargen,
+  a second added in play — then walks the round trip and re-types the second one
+  in chargen the way a player would who hadn't noticed it was already there.
+  Restores what it found.
+- **Check:**
+
+      (async () => { const c = CHAR; const snap = JSON.stringify([c.finalized, c.knowledge_skills, c.play]); const read = () => ({ build: (c.knowledge_skills || []).map(k => `${k.name}:${k.points}`), kit: ((c.play && c.play.kit) ? c.play.kit.knowledge_skills || [] : []).map(k => `${k.name}:${k.points}`) }); const setup = async () => { c.finalized = false; c.knowledge_skills = [{ name: "Street Rumors", points: 2 }]; c.play = null; await recalc(); ensurePlay(); c.finalized = true; c.play.kit = null; ensureKit(); c.play.kit_baseline = kitFromChargen(); await recalc(); kitOf("knowledge_skills").push({ name: "Corp Ladders", points: 1 }); await recalc(); }; const out = {}; await setup(); c.finalized = false; syncKnowledgeToBuild(); await recalc(); out.visibleInChargen = read().build; c.knowledge_skills.push({ name: "corp ladders ", points: 1 }); c.finalized = true; reconcileKit(); await recalc(); out.afterSloppyReadd = read(); await setup(); kitOf("knowledge_skills").push({ name: "Corp Law", points: 1 }); c.finalized = false; syncKnowledgeToBuild(); await recalc(); c.finalized = true; reconcileKit(); await recalc(); out.distinctKept = read().kit.length; const [f, k, p] = JSON.parse(snap); c.finalized = f; c.knowledge_skills = k; c.play = p; await recalc(); return out; })()
+
+- **Expected:** `{ "visibleInChargen": ["Street Rumors:2", "Corp Ladders:1"], "afterSloppyReadd": { "build": ["Street Rumors:2", "Corp Ladders:1"], "kit": ["Street Rumors:2", "Corp Ladders:1"] }, "distinctKept": 3 }`
+- **Note:** Knowledge skills are the one kit category the play sheet writes to
+  directly — every other category has a `play.purchases` list, but a knowledge
+  costs no cash and is budgeted off Intelligence in both modes. That makes it
+  the one category whose names are *typed* rather than picked from a data table,
+  and free text is where "same thing, different spelling" becomes possible.
+
+  `visibleInChargen` is the first half of issue #35: a knowledge added in play
+  used to be invisible on the chargen tab, so players re-added it there.
+
+  `afterSloppyReadd` is the second half, and the part that survived the first
+  fix. `syncKnowledgeToBuild` compared names case-insensitively; `reconcileKit`
+  compared them exactly. So "corp ladders " looked like a brand new entry to the
+  tally and was faithfully copied into the kit — the duplicate the issue
+  reports. Both now use the same normalised key, and the build is de-duplicated
+  before it's compared to the baseline.
+
+  `distinctKept: 3` is the guard on the other side: loose matching must not
+  merge Corp Ladders with Corp Law. Anything that made this pass by collapsing
+  everything would fail here.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

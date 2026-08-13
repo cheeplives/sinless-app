@@ -613,6 +613,44 @@ function ensureCreationBudget() {
  * answer here. */
 const entryLabel = e => (e && typeof e === "object") ? (e.name || "") : String(e);
 
+/* Knowledge skills are the one kit category whose names are TYPED rather than
+ * chosen from a data table. "Corp Ladders" and "corp ladders " are the same
+ * skill to a person and were two different skills to reconcileKit, which is the
+ * last way issue #35 could still double a knowledge up: a player who added one
+ * in play and then re-typed it in chargen got both copies. Everything else in
+ * the kit is named by a row in DATA, where an exact match is the right test. */
+const knowledgeKey = name => String(name || "").trim().replace(/\s+/g, " ").toLowerCase();
+const entryKeyFor = category => category === "knowledge_skills"
+  ? (e => knowledgeKey(entryLabel(e)))
+  : entryLabel;
+
+/* Collapse knowledge rows that differ only in case or spacing, keeping the
+ * first spelling and the highest points. Runs when a character comes back to
+ * chargen, so a sheet that already carries duplicates from before this fix
+ * heals itself instead of needing the player to spot them. Returns how many
+ * rows it removed. */
+function dedupeKnowledge(list) {
+  if (!Array.isArray(list)) return 0;
+  const byKey = new Map();
+  const kept = [];
+  let removed = 0;
+  for (const row of list) {
+    const key = knowledgeKey(entryLabel(row));
+    // A half-typed row has no name yet and is nobody's duplicate; leave it.
+    if (!key) { kept.push(row); continue; }
+    const first = byKey.get(key);
+    if (!first) { byKey.set(key, row); kept.push(row); continue; }
+    // First spelling wins — it's the one the character has had longest, and the
+    // later row is the accidental re-entry. The better rating of the two wins,
+    // because whichever the player raised is the one they meant.
+    first.points = Math.max(toIntSafe(first.points), toIntSafe(row.points));
+    removed++;
+  }
+  if (removed) list.splice(0, list.length, ...kept);
+  return removed;
+}
+const toIntSafe = v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; };
+
 /* Carry a chargen edit to an item the character ALREADY owned onto play's copy
  * of it. `from` is the chargen entry now, `base` what chargen said at the last
  * sync, `into` play's copy. Only fields the owner actually changed move, so
@@ -673,13 +711,19 @@ function mergeChargenEdits(from, base, into, note) {
 function reconcileKit() {
   const play = CHAR.play;
   if (!play.kit) { ensureKit(); return; }
+  // Collapse any knowledge the player re-typed while in chargen before the
+  // build is compared to the baseline. Without this the duplicate is a genuine
+  // new entry as far as the tally below is concerned, and it gets faithfully
+  // copied into the kit — which is exactly how issue #35 doubled things up.
+  dedupeKnowledge(CHAR.knowledge_skills);
   const baseline = play.kit_baseline || {};
   const notes = [];
   for (const category of RULES.KIT_CATEGORIES) {
     const now = CHAR[category] || [];
     const was = baseline[category] || [];
     const kit = play.kit[category] = play.kit[category] || [];
-    const label = entryLabel;
+    // Typed names (knowledge skills) match loosely; table names match exactly.
+    const label = entryKeyFor(category);
     const tally = list => list.reduce((m, e) => m.set(label(e), (m.get(label(e)) || 0) + 1), new Map());
     const nowCount = tally(now), wasCount = tally(was);
     for (const [name, n] of nowCount) {                 // added in chargen
@@ -2844,8 +2888,10 @@ function syncKnowledgeToBuild() {
   const play = CHAR.play;
   if (!play || !play.kit) return 0;
   const build = CHAR.knowledge_skills = CHAR.knowledge_skills || [];
-  const key = k => String((k || {}).name || "").trim().toLowerCase();
-  let moved = 0;
+  const key = k => knowledgeKey(entryLabel(k));
+  // Heal anything already doubled up before folding today's play additions in,
+  // so a character carrying old duplicates comes back to a clean list.
+  let moved = dedupeKnowledge(build) + dedupeKnowledge(play.kit.knowledge_skills);
   for (const k of play.kit.knowledge_skills || []) {
     if (!key(k)) continue;                       // an unnamed row is a half-typed one
     const found = build.find(b => key(b) === key(k));

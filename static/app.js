@@ -2478,7 +2478,7 @@ function tabDecks(p) {
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" },
-            `MCP ${r.MCP} \u00b7 Hardening ${r.Hardening} \u00b7 Threads ${r.Threads} \u00b7 Core ${r.Core} \u00b7 IO ${r.IO} \u00b7 ${r.Mods} mod slot(s)`
+            `MCP ${r.MCP} \u00b7 Hardening ${RULES.deckHardening(it, DATA.tables)} \u00b7 Threads ${r.Threads} \u00b7 Core ${r.Core} \u00b7 IO ${r.IO} \u00b7 ${r.Mods} mod slot(s)`
             + ` \u00b7 Range ${RULES.deckHackRange(it, DATA.tables)} m`),
           fittedCategoryEditor({
             id: `dmods-${i}-${it.name}`,
@@ -2703,7 +2703,8 @@ function tabDrones(p) {
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" },
-            `Bonus ${st.bonusDice}d \u00b7 Hardening ${st.hardening >= 0 ? "+" : ""}${st.hardening} \u00b7 Links ${st.links} \u00b7 Cores ${st.cores} \u00b7 ${st.modSlotsUsed}/${st.modSlots} mod slot(s)${slotWarn}`),
+            `Bonus ${st.bonusDice}d \u00b7 Hardening ${st.hardening >= 0 ? "+" : ""}${st.hardening} \u00b7 Links ${st.links} \u00b7 Cores ${st.cores} \u00b7 ${st.modSlotsUsed}/${st.modSlots} mod slot(s)${slotWarn}`
+            + (st.unit_hardening ? ` \u00b7 +${st.unit_hardening} Hardening to linked units` : "")),
           fittedCategoryEditor({
             id: `rmods-${i}-${it.name}`,
             items: it.mods || [],

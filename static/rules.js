@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "233";
+const APP_VERSION = "234";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -488,6 +488,60 @@ function deckHackRange(entry, data) {
 function deckRangeConflict(entry, data) {
   const rows = deckRangeMods(entry, data);
   return rows.length > 1 ? rows.map(r => r["Deck Mod"]) : null;
+}
+
+/* Hardening written into an effect line — "+1 Hardening", "+2 Vehicle/Drone
+ * Hardening". The unit-mod scanner on the sheet has read hardening this way for
+ * a while; this is the same test, shared so decks, rigs and units can't drift
+ * apart on what counts. */
+const HARDENING_TEXT_RE = /([+-]?\d+)\s*(?:Base\s+)?(?:[A-Za-z/]+\s+)?Hardening/i;
+function hardeningBonusFromText(text) {
+  const m = HARDENING_TEXT_RE.exec(String(text || ""));
+  return m ? toInt(m[1]) : 0;
+}
+
+/* A deck's Hardening: its own, plus every fitted mod that raises it.
+ *
+ * deck_mods has no Hardening column — Input Validation states its "+1 Hardening"
+ * in prose and nothing read it, so fitting it did nothing at all (#44). Parsing
+ * the text rather than adding a column keeps homebrew deck mods working the
+ * moment they're written, the same choice deckHackRange makes. */
+function deckHardening(entry, data) {
+  const row = findRow(data.decks, "Name", (entry || {}).name) || {};
+  let total = hardeningOf(row);
+  for (const modName of ((entry || {}).mods) || []) {
+    const modRow = findRow(data.deck_mods, "Deck Mod", modName);
+    if (modRow) total += hardeningBonusFromText(modRow.Effect);
+  }
+  return total;
+}
+
+/* Hardening a rig's mods confer on the units it's flying.
+ *
+ * Read the effect text and it's clear these were never meant for the rig
+ * itself: "+1 Vehicle/Drone Hardening". rigStats has been adding them to the
+ * rig's own Hardening, where they protect nothing that gets shot at — the rig
+ * is in your skull, the drone is downrange. Only the equipped rig counts, since
+ * only one is jacked in, and only linked units benefit: the bonus travels down
+ * the VCR link, so a drone running loose on its own autopilot is on its own. */
+function rigUnitHardening(character, data) {
+  const rigs = character.rigs || [];
+  // Same "chosen, else the first owned" fallback the ZR tally and the Rigging
+  // tab both use, so all three agree on which rig is jacked in.
+  const chosen = ((character.play || {}).rigging || {}).active_rig;
+  const equipped = rigs.find(r => r.name === chosen) || rigs[0];
+  if (!equipped) return 0;
+  let total = 0;
+  for (const modName of equipped.mods || []) {
+    const modRow = findRow(data.rig_mods, "Rig Mod", modName);
+    if (!modRow) continue;
+    // The column is authoritative where it exists; the text covers homebrew
+    // that only says it in prose.
+    total += String(modRow.Hardening || "").trim() !== ""
+      ? toInt(asNumber(modRow.Hardening))
+      : hardeningBonusFromText(modRow.Effect);
+  }
+  return total;
 }
 
 /* Exactly one deck and one rig are equipped — jacked in — at a time. A
@@ -3527,20 +3581,27 @@ function priceDecking(character, data, gearCostMultiplier, warnings, errors,
 function rigStats(rigEntry, data) {
   const row = findRow(data.rigs, "Rig Type", rigEntry.name) || {};
   let links = toInt(asNumber(row.Links));
-  let hardening = toInt(asNumber(row.Hardening));   // stored like "+0"/"+1"; asNumber parses the sign
+  const hardening = toInt(asNumber(row.Hardening));   // stored like "+0"/"+1"; asNumber parses the sign
   let bonusDice = toInt(asNumber(row["Bonus Dice"]));
   const modSlots = toInt(asNumber(row.Mods));
   let modSlotsUsed = 0;
+  let unitHardening = 0;
   for (const modName of rigEntry.mods || []) {
     const modRow = findRow(data.rig_mods, "Rig Mod", modName);
     if (!modRow) continue;
     modSlotsUsed += Math.max(1, toInt(asNumber(modRow.Slots, 1)));
     links += toInt(asNumber(modRow.Link));
-    hardening += toInt(asNumber(modRow.Hardening));
     bonusDice += toInt(asNumber(modRow["Bonus Dice"]));
+    // A rig mod's Hardening is NOT the rig's. "+1 Vehicle/Drone Hardening" says
+    // where it goes, and it used to land on the rig — which is in your skull and
+    // never the thing being shot at. It's reported separately and applied to the
+    // units the rig is flying (#44).
+    unitHardening += String(modRow.Hardening || "").trim() !== ""
+      ? toInt(asNumber(modRow.Hardening))
+      : hardeningBonusFromText(modRow.Effect);
   }
-  return { row, links, hardening, bonusDice, cores: row.Cores || "",
-           modSlots, modSlotsUsed };
+  return { row, links, hardening, unit_hardening: unitHardening, bonusDice,
+           cores: row.Cores || "", modSlots, modSlotsUsed };
 }
 
 /* Same reasoning as priceDecking: a rig carrying more mods than it has slots is
@@ -5446,6 +5507,7 @@ return {
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
   HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
   BASE_HACK_RANGE_METERS, deckHackRange, deckRangeConflict,
+  deckHardening, rigUnitHardening, hardeningBonusFromText,
   equippedDeckName,
   SPEAKER_BOND_MAX, speakerBondCount,
   KIT_CATEGORIES, applyPlayAdvances,

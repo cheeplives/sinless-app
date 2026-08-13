@@ -3662,7 +3662,7 @@ function shOverview(body) {
             statLine("Handling", String(r.Handling ?? "—")),
             statLine("Body", String(bodyMax) + (statMods.body ? ` (base ${r.Body})` : "")),
             (ball || imp) ? statLine("Armor B / I", `${ball} / ${imp}`) : null,
-            statLine("Hardening", String(unitHardening(r, statMods))),
+            statLine("Hardening", String(unitHardening(r, statMods, seat.key))),
             bodyMax ? statLine("Damage",
               `${Math.min(toInt(st.physical), bodyMax)} phys · `
               + `${Math.min(toInt(st.integrity), bodyMax)} integrity`) : null,
@@ -6914,7 +6914,7 @@ function shDecking(body) {
         el("div", { class: "sh-advrow" + (isActive ? " active-row" : ""), style: "border:0;padding:0" },
           el("span", {}, el("b", {}, d.name),
             el("span", { class: "sub" },
-              ` MCP ${r.MCP} · Hardening ${r.Hardening} · Threads ${r.Threads} · Core ${r.Core} · I/O ${r.IO}`
+              ` MCP ${r.MCP} · Hardening ${deckHardeningBit(d, r)} · Threads ${r.Threads} · Core ${r.Core} · I/O ${r.IO}`
               // Range is per-deck because the mods that change it are per-deck.
               + ` · Range ${RULES.deckHackRange(d, DATA.tables)} m`)),
           isActive ? el("span", { class: "chip ok" }, "Active")
@@ -7292,12 +7292,39 @@ function unitStateKey(table, unit) {
   return `${table}:${allUnits(table).indexOf(unit)}`;
 }
 
+/* A deck's Hardening with its mods folded in, saying so when they moved it.
+ * Shared by both UIs through RULES.deckHardening so chargen and play agree. */
+function deckHardeningBit(entry, row) {
+  const total = RULES.deckHardening(entry, DATA.tables);
+  const base = RULES.hardeningOf(row);
+  return total === base ? String(total) : `${total} (${base} +${total - base} mods)`;
+}
+
 /* A unit's Hardening: whatever its data row states (drones and vehicles carry
  * no such column today, so 0) plus anything a fitted mod or a Drone-slot spirit
  * infusion adds. Reported everywhere a unit's stats are, including at 0 — a
- * blank read as "this stat doesn't exist here" (issue #33). */
-function unitHardening(row, statMods) {
-  return RULES.hardeningOf(row) + toInt((statMods || {}).hardening);
+ * blank read as "this stat doesn't exist here" (issue #33).
+ *
+ * `key` identifies the unit ("drones:2") so the rig's own hardening mods can be
+ * included for the units it's actually flying. Callers that don't know or care
+ * which unit this is simply leave it out and get the unit's own figure. */
+function unitHardening(row, statMods, key) {
+  return RULES.hardeningOf(row) + toInt((statMods || {}).hardening)
+    + (key ? rigHardeningFor(key) : 0);
+}
+
+/* What the equipped rig's mods add to one unit's Hardening.
+ *
+ * Only linked units: the bonus rides the VCR link ("+1 Vehicle/Drone
+ * Hardening"), so a drone running loose on its own autopilot doesn't get it,
+ * and neither does one sitting in the garage. Before this the number was added
+ * to the RIG's hardening, which protects the thing in your skull rather than
+ * the thing downrange (#44). */
+function rigHardeningFor(key) {
+  if (!CHAR.finalized) return 0;          // links are play state
+  const rg = rigFlags();
+  if (!rg.linked || !rg.linked[key]) return 0;
+  return RULES.rigUnitHardening(CHAR, DATA.tables);
 }
 
 /* Effective Body after any weapon/mod deltas — the box count for both condition
@@ -7427,6 +7454,9 @@ function unitLoadoutTable(entries, mode = "inventory") {
     const cfg = RIG_UNIT_CFG[table];
     const r = DATA.tables[table].find(x => x[cfg.nameKey] === u.name) || {};
     const { items, statMods } = unitAttachments(cfg, u);
+    // Hoisted from further down: the stats line below needs it to ask whether
+    // this unit is on the rig's link.
+    const key = unitStateKey(table, u);
     // Mods can raise armor/hardening — reflect the boosted values here.
     const ball = toInt(r.Ballistic) + statMods.ballistic;
     const imp = toInt(r.Impact) + statMods.impact;
@@ -7440,7 +7470,7 @@ function unitLoadoutTable(entries, mode = "inventory") {
       // Hardening in the data — it only arrives from a fitted mod or a drone
       // infusion — and hiding the zero made the stat look missing rather than
       // absent (issue #33).
-      + ` · Hardening ${unitHardening(r, statMods)}`
+      + ` · Hardening ${unitHardening(r, statMods, key)}`
       + ` · ${cfg.capLabel} ${cfg.capOf(r)}`
       // A condition carrying a gameplay rider (Blinged) reports it here; it is
       // never applied to a stat.
@@ -7465,7 +7495,6 @@ function unitLoadoutTable(entries, mode = "inventory") {
             : []))))
       : "—";
     const station = mode === "station";
-    const key = unitStateKey(table, u);
     const rg = station ? rigFlags() : null;
     t.append(el("tr", {},
       el("td", {}, el("b", {}, u.label || u.name),
@@ -7537,7 +7566,12 @@ function shRigging(body) {
         el("div", { class: "sh-advrow" + (isActive ? " active-row" : ""), style: "border:0;padding:0" },
           el("span", {}, el("b", {}, r.name),
             el("span", { class: "sub" },
-              ` +${st.bonusDice}d · Hardening ${st.hardening >= 0 ? "+" : ""}${st.hardening} · Links ${st.links} · Cores ${st.cores}`)),
+              ` +${st.bonusDice}d · Hardening ${st.hardening >= 0 ? "+" : ""}${st.hardening} · Links ${st.links} · Cores ${st.cores}`
+              // What the rig's mods hand its linked units, stated on the rig
+              // because that's where you fitted them — but it lands on the
+              // drones, not here (#44).
+              + (st.unit_hardening
+                  ? ` · +${st.unit_hardening} Hardening to linked units` : ""))),
           isActive ? el("span", { class: "chip ok" }, "Active VCR")
             : counterBtn("Set Active", () => { rg.active_rig = r.name; playChanged(); })),
         el("div", { class: "sh-unit-add" }, el("b", {}, "Mods"), modEditor)),

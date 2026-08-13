@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "235";
+const APP_VERSION = "236";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -1744,9 +1744,15 @@ function augmentEffectSums(owned) {
     sense_notes: senseNotes,
     move_modes: moveModes,
     physical_damage_reduction: names.has("Platelet Production Enhancement") ? PLATELET_DAMAGE_REDUCTION : 0,
+    // Movement Enhancement states its metres through its rating; anything else
+    // states them in a "Move" column, signed, so a homebrew augment can slow you
+    // down as easily as speed you up (#41). Read here rather than in the generic
+    // gear sweep so augments keep a single path for movement — the sweep already
+    // skips them to avoid counting their AltMove twice.
     move_bonus: toInt(sumBy(owned, ([row, count]) =>
-      row.Name.startsWith("Movement Enhancement")
-        ? augmentLevel(row.Name) * MOVEMENT_ENHANCEMENT_METERS_PER_RATING * count : 0)),
+      (row.Name.startsWith("Movement Enhancement")
+        ? augmentLevel(row.Name) * MOVEMENT_ENHANCEMENT_METERS_PER_RATING : 0) * count
+      + toInt(asNumber(row.Move)) * count)),
     // Recoil-capacity bonus: each Gyromount adds +2.
     recoil_capacity_bonus: toInt(sumBy(owned, ([row, count]) =>
       row.Name === "Gyromount" ? GYROMOUNT_RECOIL_BONUS * count : 0)),
@@ -4130,13 +4136,30 @@ function canonicalSkillName(name) {
  * Returns { bonus: {skill: n}, notes: {skill: [text]}, sources: [...] }. */
 function gearSkillEffects(character, data, warnings) {
   const bonus = {}, notes = {}, sources = [];
+  // Movement rides along with the skill sweep rather than getting a second one.
+  // The hard part of both jobs is identical — deciding what the character is
+  // currently wearing, carrying, has installed or has out — and two sweeps would
+  // be two chances for those rules to drift apart (#41).
+  const movement = { move_bonus: 0, move_modes: [] };
   const nameOf = x => (x && typeof x === "object") ? x.name : x;
   /* `times` is how many copies are contributing — 1 for anything you simply
    * own, and the number of counting doses for a consumable. 0 means the thing is
    * present but doing nothing (an unused kit in your bag), so it contributes no
    * dice and no note, but its text is still validated: a typo should be reported
    * whether or not the item happens to be in use right now. */
-  const apply = (row, label, times = 1) => {
+  /* `skipMove` turns off the movement half for a row.
+   *
+   * Two unrelated reasons, both real:
+   *
+   *   Augments already have their AltMove/MoveMode read by augmentEffectSums —
+   *   reading them again here would fly every Repulsors character twice.
+   *
+   *   Drones and vehicles have a "Move" column that means the UNIT's own speed
+   *   ("8m"), not a change to its owner's. Owning a fast car must not make you
+   *   fast. Today those values carry an "m" that wouldn't parse anyway, which is
+   *   luck rather than a design, and a homebrew drone written "8" would quietly
+   *   turn into a +8m sprint for its rigger. */
+  const apply = (row, label, times = 1, skipMove = false) => {
     if (!row) return;
     const warn = msg => warnings && warnings.push(`${label}: Skill Bonus — ${msg}.`);
     for (const b of parseSkillBonuses(row["Skill Bonus"], warn)) {
@@ -4150,17 +4173,28 @@ function gearSkillEffects(character, data, warnings) {
       if (times < 1) continue;
       (notes[n.skill] = notes[n.skill] || []).push(`${n.note} (${label})`);
     }
+    if (times < 1 || skipMove) return;
+    // "Move": metres added to or taken off ground movement. Signed, so a
+    // penalty is just a negative — Polypedal Legs are −1m, and nothing about
+    // the column assumes a bonus.
+    movement.move_bonus += toInt(asNumber(row.Move)) * times;
+    // "AltMove" + "MoveMode": a whole extra way of getting around (Fly 14m,
+    // Swim 10m) rather than a change to the one you have.
+    const alt = toInt(asNumber(row.AltMove));
+    if (alt) {
+      movement.move_modes.push({ name: label, mode: row.MoveMode || "Alt", meters: alt });
+    }
   };
-  const rowsOf = (entries, table, column, active) => {
+  const rowsOf = (entries, table, column, active, skipMove = false) => {
     for (const e of entries || []) {
       if (active && !active(e)) continue;
       const name = nameOf(e);
       if (!name) continue;
-      apply(findRow(data[table], column, name), name);
+      apply(findRow(data[table], column, name), name, 1, skipMove);
     }
   };
 
-  rowsOf(character.augments, "augments", "Name");
+  rowsOf(character.augments, "augments", "Name", null, true);
   rowsOf(character.armor, "armor", "Armor", e => e.active !== false);
   // Gear, with consumables gated on actually having been used. A First Aid Kit
   // in your bag is not a First Aid Kit you have opened, so its Biotech dice only
@@ -4182,8 +4216,9 @@ function gearSkillEffects(character, data, warnings) {
   rowsOf(character.decks, "decks", "Name");
   rowsOf(character.programs, "programs", "Name");
   rowsOf(character.rigs, "rigs", "Rig Type");
-  rowsOf(character.vehicles, "vehicles", "Vehicle");
-  rowsOf(character.drones, "drones", "Drone");
+  // skipMove: their "Move" is the unit's own speed, not their owner's.
+  rowsOf(character.vehicles, "vehicles", "Vehicle", null, true);
+  rowsOf(character.drones, "drones", "Drone", null, true);
   rowsOf((character.magic || {}).spells, "spells", "Name");
   rowsOf(character.rituals, "rituals", "Name");
   // Amp powers. Play-bought powers are already merged into magic.amp_powers by
@@ -4202,7 +4237,8 @@ function gearSkillEffects(character, data, warnings) {
     for (const host of entries || []) {
       if (!test(host)) continue;
       for (const m of host.mounted || [])
-        apply(findRow(data.augments, "Name", nameOf(m)), `${nameOf(m)} on ${host.name}`);
+        apply(findRow(data.augments, "Name", nameOf(m)), `${nameOf(m)} on ${host.name}`,
+              1, true);   // mounted augments' alt-modes come via mergeMountedAugments
     }
   }
   // Spirits, on the same terms etiquette uses: the infusion slot picks the
@@ -4216,7 +4252,7 @@ function gearSkillEffects(character, data, warnings) {
   for (const spirit of engaged)
     apply(findRow(data.speaker_spirits, "Spirit", spirit), spirit);
 
-  return { bonus, notes, sources };
+  return { bonus, notes, sources, movement };
 }
 
 /* Fold gear skill effects into the augment tally, which is already the place
@@ -4226,6 +4262,12 @@ function mergeSkillEffects(augments, gear) {
     augments.skill_bonus[skill] = (augments.skill_bonus[skill] || 0) + n;
   for (const [skill, list] of Object.entries(gear.notes))
     (augments.skill_notes[skill] = augments.skill_notes[skill] || []).push(...list);
+  // Movement lands in the same tally for the same reason: `combat` already adds
+  // augments.move_bonus and reads augments.move_modes, so anything folded in
+  // here reaches the Move chip without a second wiring path.
+  const mv = gear.movement || { move_bonus: 0, move_modes: [] };
+  augments.move_bonus += mv.move_bonus;
+  augments.move_modes.push(...mv.move_modes);
 }
 
 /* ---- etiquette modifiers ---------------------------------------------------

@@ -178,6 +178,7 @@ call graphs.
 | Table | Rows | Key | What it holds | Mainly used by |
 |---|---|---|---|---|
 | `amp_powers` | 26 | `Name` | Amp powers with `ZP Cost` | rules, app, sheet |
+| `animals` | 9 | `Animal` | Summonable creatures for Create Darkenbeast / Bound Servant. **`Move` and `Flight` are in inches**, not metres — the only distances in the bundle that aren't. `Attacks` is pipe-separated | rules, sheet, homebrew |
 | `armor` | 16 | `Armor` | Worn armor, `Ballistic`/`Impact` | rules, app, sheet |
 | `armor_extras` | 3 | `Extra` | Armor add-ons, cost `Multiplier` | rules, app |
 | `armor_materials` | 6 | `Material` | Material cost `Multiplier` | rules, app |

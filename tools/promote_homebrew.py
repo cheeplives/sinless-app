@@ -36,6 +36,7 @@ SW_JS = REPO_ROOT / "sw.js"
 # The full table catalogue lives in docs/DATA.md. Only these tables are
 # considered during promotion.
 NAME_KEYS = {
+    "animals": "Animal",
     "rituals": "Name",
     "spells": "Name",
     "speaker_spirits": "Spirit",

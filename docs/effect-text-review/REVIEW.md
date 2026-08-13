@@ -963,8 +963,8 @@ cover engine martial arts uses.
 
 | # | Name | Original | Proposed | Engine | Notes |
 |---|---|---|---|---|---|
-| 1 | Range Extension | Extends hacking range to 15 meters | Extends Hacking range to 15m. | — | |
-| 2 | Wide Area Protocols | Extends hacking range to 20 meters | Extends Hacking range to 20m. | — | |
+| 1 | Range Extension | Extends hacking range to 15 meters (7.5") | Extends Hacking range to 15m. | — | Tabletop-inch conversion dropped from the Effect: no other row in the data carries one, and the app has no table scale to convert against. |
+| 2 | Wide Area Protocols | Extends hacking range to 20 meters (10") | Extends Hacking range to 20m. | — | Same — inch conversion dropped. |
 | 3 | Input Validation | Increases hardening by +1 | +1 Hardening. | — | |
 | 4 | Data Streamer | Gives the deck the effect of Stealth 1 software constantly | Constantly grants the deck's Stealth 1 software effect. | — | |
 
@@ -1134,7 +1134,7 @@ Note: this column only reaches the etiquette parser (`parseEtiquetteBonuses`). E
 | # | Name | Original | Proposed | Engine | Notes |
 |---|---|---|---|---|---|
 | 1 | Gyro-mount | +1 Recoil Capacity | +1 Recoil Capacity. | — | |
-| 2 | Extended Magazine | +20% ammunition + 2 | +20% ammunition. | — | |
+| 2 | Extended Magazine | +20% ammunition | Adds 2 rounds to the base ammunition, then a further 20%. | — | **RULES CHANGE** (repo owner's clarification, not a rewrite) — the mod was always meant to add a flat 2 before the percentage; the Effect only ever stated the percentage. Note the `MagMod` column holds `0.2` and can only express a single multiplier, so it cannot carry the flat +2 — though nothing in `rules.js` reads `MagMod` today, so neither number is applied anywhere yet. |
 | 3 | Link Infrastructure | Smart upgrade | Smart upgrade. | — | |
 | 4 | Hardening | +2 to hardening | +2 Hardening. | — | Dropped "to" and capitalized, matching "Basic RF shielding" (next row, already "+1 Hardening") — the two rows previously read inconsistently for the same stat. |
 | 5 | Basic RF shielding | +1 Hardening | +1 Hardening. | — | |
@@ -1489,9 +1489,9 @@ Nothing in this packet is parsed today (`engine_reads_this_column: false`, `curr
 | 114 | Ghost Protocol 5 | Can create false creds duiring Recon/Prep. Can also increase Ghost Rating (page 136). | Can create false credentials during Reconnaissance and Preparation. Can also increase Ghost Rating (see page 136). | — | TYPO: "duiring" → "during". |
 | 115 | Ghost Protocol 6 | Can create false creds duiring Recon/Prep. Can also increase Ghost Rating (page 136). | Can create false credentials during Reconnaissance and Preparation. Can also increase Ghost Rating (see page 136). | — | TYPO: "duiring" → "during". |
 | 116 | Shadow Protocols 1 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 1. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| 117 | Shadow Protocols 2 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. CIf loaded into I/O, reduce Alert level by 2. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
+| 117 | Shadow Protocols 2 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 2. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
 | 118 | Shadow Protocols 3 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 3. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| 119 | Shadow Protocols 4 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. CIf loaded into I/O, reduce Alert level by 4. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
+| 119 | Shadow Protocols 4 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 4. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
 | 120 | Shadow Protocols 5 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 5. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
 | 121 | Shadow Protocols 6 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 6. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
 | 122 | Hacking 1 | Runs a deck of MCP 3 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |

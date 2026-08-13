@@ -22,6 +22,17 @@ const DATA_BUNDLE ={
 {"Type":"Heavy Pistol","Acc":"2","Dmg":"6","Ammo":"15","Modes":"SS, DT","Rarity":"4","Pen":"4","Bar":"0","Cost":"500"},
 {"Type":"Shotgun","Acc":"2","Dmg":"10","Ammo":"5","Modes":"DT","Rarity":"3","Pen":"3","Bar":"2","Cost":"2500"}
 ],
+"animals":[
+{"Animal":"Gorilla","Move":"3","Flight":"","Initiative":"10","Condition":"10","Ballistic":"","Impact":"2","Hardening":"","Dodge":"2","Soak":"8","Attacks":"Bite, Attack 0, Damage 15 | Slam, Reach 1, Attack 10, Damage 12","Notes":""},
+{"Animal":"Wolf","Move":"5","Flight":"","Initiative":"15","Condition":"6","Ballistic":"","Impact":"","Hardening":"","Dodge":"2","Soak":"2","Attacks":"Bite, Attack 3, Damage 9","Notes":""},
+{"Animal":"Hawk","Move":"1","Flight":"8","Initiative":"20","Condition":"3","Ballistic":"","Impact":"","Hardening":"","Dodge":"3","Soak":"0","Attacks":"Swipe, Attack 6, Damage 3","Notes":""},
+{"Animal":"Dog","Move":"4","Flight":"","Initiative":"10","Condition":"6","Ballistic":"","Impact":"","Hardening":"","Dodge":"2","Soak":"2","Attacks":"Bite, Attack 3, Damage 6","Notes":""},
+{"Animal":"Cat","Move":"5","Flight":"","Initiative":"25","Condition":"3","Ballistic":"","Impact":"","Hardening":"","Dodge":"8","Soak":"0","Attacks":"Bite, Attack 2, Damage 1","Notes":""},
+{"Animal":"Bear","Move":"3","Flight":"","Initiative":"10","Condition":"15","Ballistic":"1","Impact":"4","Hardening":"","Dodge":"2","Soak":"8","Attacks":"Claw, Attack 8, Damage 6 | Bite, Attack 3, Damage 9","Notes":"A bear gets an additional claw attack for free the first time they use the claw attack each round."},
+{"Animal":"Horse","Move":"8","Flight":"","Initiative":"10","Condition":"8","Ballistic":"","Impact":"","Hardening":"","Dodge":"2","Soak":"0","Attacks":"Buck (kick), Attack 4, Damage 6 | Trample, Attack 2, Damage 6","Notes":"Bucked targets are knocked prone and moved 1m (.5\") per success. This can be resisted with a Body test. Trample attacks are automatic when the horse moves over a prone target."},
+{"Animal":"Wildcat/Panther","Move":"6","Flight":"","Initiative":"30","Condition":"9","Ballistic":"","Impact":"1","Hardening":"","Dodge":"8","Soak":"2","Attacks":"Bite, Attack 5, Damage 9 | Claw, Attack 9, Damage 3","Notes":""},
+{"Animal":"Elephant","Move":"4","Flight":"","Initiative":"5","Condition":"15","Ballistic":"5","Impact":"5","Hardening":"5","Dodge":"0","Soak":"0","Attacks":"Slam, Attack 1, Damage 15 | Trample, Attack 3, Damage 20","Notes":"Trample is a complex action allows the elephant to move double its movement, using its attack roll against all targets it crosses. In a confined space it may cross the same targets multiple times. Treat each attack separately."}
+],
 "amp_powers":[
 {"Name":"Adrenaline Boost","ZP Cost":"4","Effect":"+1 Simple Action per round. Can only be taken once.","Description":"This grants the amp an additional simple action each round, three total, usable for any type of action. This can only be taken once.","Skill Bonus":"","Skill Note":""},
 {"Name":"Aspect of the Chelonian","ZP Cost":"4","Effect":"+2 Ballistic Armor. +3 Impact Armor. Occupies the Internal armor slot.","Description":"This grants two points of ballistic and three points of impact armor. This defensive field fills the internal armor slot.","Skill Bonus":"","Skill Note":""},

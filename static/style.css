@@ -1058,6 +1058,13 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-sense .sub{font-size:11px;margin-top:1px}
 /* A limit the character is currently on the wrong side of. */
 .sh-sense.bad > div:first-child{color:var(--bad)}
+/* A summoning spell's animal and the statblock it becomes. Indented under the
+   spell it belongs to, so it reads as part of that spell rather than a new one. */
+.sh-summon{margin:4px 0 2px;padding-left:8px;border-left:2px solid var(--line)}
+.sh-summon-pick{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sh-summon-pick select{font:inherit;font-size:12px;padding:2px 5px;background:var(--bg);
+  color:var(--text);border:1px solid var(--line);border-radius:5px}
+.sh-summon-stats{margin-top:3px}
 /* Tracked effects/modifiers: one small form per row. The fields wrap so the
    card survives a phone width, and Dice is narrow because it holds "-2". */
 .sh-fx-row{padding:6px 0}

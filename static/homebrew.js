@@ -53,6 +53,31 @@ function hbOnline() {
  * omits can't be authored AND is stripped from imported packs, which is how a
  * custom row ends up quietly behaving unlike the core row it was modelled on. */
 const HOMEBREW_CONFIG = {
+  /* Animals a summoning spell can turn into something else — Create Darkenbeast
+     and Bound Servant both pick from this list. A statblock rather than gear:
+     it never costs money, is never carried, and the character never owns one
+     except while a spell is up.
+
+     Move and Flight are in INCHES, matching the source these came from, and
+     are the one place in the app a distance isn't metres. The hints say so on
+     every field, because an author copying a drone's "8m" into here would be
+     writing a number four times too small. */
+  animals: { label: "Animals", nameKey: "Animal", fields: [
+    { key: "Animal" },
+    { key: "Move", hint: "ground movement in INCHES (tabletop scale), e.g. 3" },
+    { key: "Flight", hint: "flying movement in inches — blank for anything that can't fly" },
+    { key: "Initiative", hint: "flat initiative score, not dice" },
+    { key: "Condition", hint: "condition track length in boxes" },
+    { key: "Ballistic", hint: "natural ballistic armor — blank for none" },
+    { key: "Impact", hint: "natural impact armor — blank for none" },
+    { key: "Hardening", hint: "rarely used; the Elephant has 5" },
+    { key: "Dodge", hint: "dice rolled to dodge" },
+    { key: "Soak", hint: "dice rolled to soak" },
+    { key: "Attacks", ta: true,
+      hint: "one per entry, pipe-separated: “Bite, Attack 3, Damage 9 | Claw, Attack 9, Damage 3”. "
+        + "A summoning spell that raises damage edits the Damage number in place, so keep that word." },
+    { key: "Notes", ta: true, hint: "special rules — the Bear's free first claw, the Elephant's Trample" },
+  ]},
   rituals: { label: "Rituals", nameKey: "Name", fields: [
     { key: "Name" },
     { key: "Drain", hint: "number" },

@@ -4376,6 +4376,62 @@ function conditionTrack(label, max, get, set) {
     boxes);
 }
 
+/* The animal a summoning spell is pointed at, and what it becomes (#47).
+ *
+ * Renders nothing at all for an ordinary spell, so it can be dropped into the
+ * spell row unconditionally. The choice is play state keyed by spell name — a
+ * caster keeps one Bound Servant at a time, and re-picking replaces it.
+ *
+ * The statblock is recomputed from the animal and the current Force on every
+ * render rather than being stored: advance the spell's Force and a Darkenbeast's
+ * armor follows it, which is the whole reason the modified stats are worth
+ * showing instead of leaving the player to do the arithmetic. */
+function summonPicker(spellName, force) {
+  if (!RULES.isSummonSpell(spellName)) return null;
+  const play = CHAR.play;
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  play.summons = play.summons || {};
+  const chosen = play.summons[spellName] || "";
+  const animals = DATA.tables.animals || [];
+
+  const sel = el("select", {
+    title: "Which animal this spell is on",
+    onchange: async e => {
+      const v = e.target.value;
+      if (v) play.summons[spellName] = v; else delete play.summons[spellName];
+      await playChangedRecalc();
+    } },
+    el("option", { value: "" }, "— no animal chosen —"),
+    ...animals.map(a => el("option", { value: a.Animal }, a.Animal)));
+  sel.value = chosen;
+
+  const rows = [el("div", { class: "sh-summon-pick" },
+    el("span", { class: "sub" }, `${RULES.SUMMON_SPELLS[spellName].label}: `),
+    ro ? el("span", {}, chosen || "none") : sel)];
+
+  const s = RULES.summonedAnimal(spellName, chosen, force, DATA.tables);
+  if (s) {
+    // ″ not m: these are the inches the animal data is written in, unlike every
+    // other distance on the sheet. Marking them is the whole defence against
+    // reading a Gorilla's 3 as three metres.
+    const move = `${s.move}″` + (s.flight ? ` · Fly ${s.flight}″` : "");
+    rows.push(el("div", { class: "sh-summon-stats" },
+      el("div", { class: "sub" },
+        `Move ${move} · Init ${s.initiative} · Condition ${s.condition} boxes`
+        + ` · Armor ${s.ballistic}B/${s.impact}I`
+        + (s.hardening ? ` · Hardening ${s.hardening}` : "")
+        + ` · Dodge ${s.dodge} · Soak ${s.soak}`),
+      ...s.attacks.map(a => el("div", { class: "sub" }, "⚔ " + a)),
+      s.pool_bonus
+        ? el("div", { class: "sub" }, `+${s.pool_bonus} Brawn / Finesse / Resolve pool dice`) : null,
+      ...s.notes.map(n => el("div", { class: "sub", style: "color:var(--manon)" }, n))));
+  } else if (chosen) {
+    rows.push(el("div", { class: "sub", style: "color:var(--amber)" },
+      `Nothing in the animals table answers to “${chosen}” — it may be homebrew this browser doesn't have.`));
+  }
+  return el("div", { class: "sh-summon" }, ...rows);
+}
+
 /* Temporary Effects / Active Modifiers, each row a small form (#46).
  *
  * The header chip counts how many are actually moving dice, not how many rows
@@ -6622,6 +6678,7 @@ function shMagic(body) {
         el("div", { class: "sub" },
           `Drain: ${r.Drain || "—"} · Resist: ${r["Target Resistance"] || "—"} · Duration: ${r.Duration || "—"}`),
         r.Effect ? el("div", { class: "sub" }, r.Effect) : null,
+        summonPicker(sp.name, force),
         descriptionExpander(r.Description, `spells:${sp.name}`)));
     }
     // learn a new spell with cash: listed Cost × starting Force

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "237";
+const APP_VERSION = "238";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -779,6 +779,9 @@ function defaultCharacter() {
       // needs a Trance before its dice are real, so being "on" is play state
       // like a spent pool die rather than a fact about the build.
       active_senses: {},
+      // Which animal each summoning spell is pointed at, keyed by spell name.
+      // A caster keeps one Bound Servant at a time, so re-picking replaces it.
+      summons: {},
       // Legacy, read-only — replaced by `kit`, migrated once by ensureKit().
       disposed: {},
       fitted_mods: [],
@@ -2827,6 +2830,95 @@ function droneCombatBonuses(character, data) {
     }
   }
   return out;
+}
+
+/* ---- summoned animals ------------------------------------------------------
+ * Create Darkenbeast and Bound Servant both hand the caster an animal, and both
+ * change its numbers. The animals table holds the plain creature; everything
+ * here is about what a spell does to one.
+ *
+ * A note on units: Move and Flight are the inches the source lists, not metres.
+ * The rest of the app is in metres, so these are the one place a figure means
+ * something else, and every read-out marks them with ″ rather than m. The
+ * conversion the Horse's own note implies (1m = ½″) is deliberately not applied
+ * anywhere — the numbers stay exactly as written.
+ */
+const SUMMON_SPELLS = {
+  "Create Darkenbeast": {
+    label: "Darkenbeast",
+    // Force/2 armor (rounded down), +2 melee damage, +3 to each pool.
+    apply: (animal, force) => {
+      const armor = Math.floor(toInt(force) / 2);
+      return {
+        ballistic: toInt(asNumber(animal.Ballistic)) + armor,
+        impact: toInt(asNumber(animal.Impact)) + armor,
+        damage_bonus: 2,
+        pool_bonus: 3,
+        test_bonus: 0,
+        // The armor and damage changes are already folded into the numbers
+        // above, so these notes say where they came from rather than repeating
+        // them as instructions. The pool bonus has its own line in the
+        // read-out and is deliberately not repeated here.
+        notes: [`Armor includes +${armor} from Force ${toInt(force)} ÷ 2`,
+                "Melee damage above already includes the spell's +2",
+                "Caster gets an Exploit action to control it; a Simple action to direct it"],
+      };
+    },
+  },
+  "Bound Servant": {
+    label: "Familiar",
+    // Flat +2d on everything it rolls; no armor or damage change.
+    apply: (animal) => ({
+      ballistic: toInt(asNumber(animal.Ballistic)),
+      impact: toInt(asNumber(animal.Impact)),
+      damage_bonus: 0,
+      pool_bonus: 0,
+      test_bonus: 2,
+      notes: ["+2 dice on all its tests",
+              "Caster gets an Exploit action to direct it, and +2d Sorcery/Channeling",
+              "If it dies: caster takes 2d6 Stun, and a new familiar arrives at dawn"],
+    }),
+  },
+};
+
+function isSummonSpell(name) {
+  return Object.prototype.hasOwnProperty.call(SUMMON_SPELLS, name);
+}
+
+/* One summoned animal, resolved: the creature's own line plus what the spell
+ * did to it. Returns null when the spell isn't a summon or no animal is chosen
+ * yet, so callers can simply not render anything. */
+function summonedAnimal(spellName, animalName, force, data) {
+  const spec = SUMMON_SPELLS[spellName];
+  if (!spec) return null;
+  const animal = findRow(data.animals, "Animal", animalName);
+  if (!animal) return null;
+  const mod = spec.apply(animal, force);
+  const attacks = String(animal.Attacks || "").split("|").map(a => a.trim()).filter(Boolean)
+    .map(text => {
+      // "+2 melee damage" moves the number rather than being tacked on as
+      // prose, so the stat line reads as one figure to hit and one to do.
+      if (!mod.damage_bonus) return text;
+      return text.replace(/(Damage\s+)(\d+)/i,
+        (_, lead, n) => `${lead}${toInt(n) + mod.damage_bonus}`);
+    });
+  return {
+    spell: spellName,
+    label: spec.label,
+    name: animal.Animal,
+    force: toInt(force),
+    move: animal.Move, flight: animal.Flight,
+    initiative: animal.Initiative,
+    condition: animal.Condition,
+    ballistic: mod.ballistic, impact: mod.impact,
+    hardening: animal.Hardening,
+    dodge: toInt(asNumber(animal.Dodge)) + mod.test_bonus,
+    soak: toInt(asNumber(animal.Soak)) + mod.test_bonus,
+    pool_bonus: mod.pool_bonus,
+    test_bonus: mod.test_bonus,
+    attacks,
+    notes: [...mod.notes, ...(animal.Notes ? [animal.Notes] : [])],
+  };
 }
 
 /* ---- enhanced senses -------------------------------------------------------
@@ -5583,6 +5675,7 @@ return {
   HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
   BASE_HACK_RANGE_METERS, deckHackRange, deckRangeConflict,
   deckHardening, rigUnitHardening, hardeningBonusFromText,
+  SUMMON_SPELLS, isSummonSpell, summonedAnimal,
   equippedDeckName,
   SPEAKER_BOND_MAX, speakerBondCount,
   KIT_CATEGORIES, applyPlayAdvances,

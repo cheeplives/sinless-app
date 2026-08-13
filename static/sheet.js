@@ -4369,7 +4369,8 @@ function shOverview(body) {
       loadout.append(...[
         el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
           el("span", { class: "sub" },
-            `Total armor: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I`)),
+            `Total armor: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I `
+            + `(Max Ballistic ${CALC.combat.max_ballistic})`)),
         armorSwap,
         at,
       ].filter(Boolean));
@@ -4483,6 +4484,24 @@ function actionsCard() {
     const left = r.total - spent;
     card.append(el("div", { class: "stat-line" + (left ? "" : " dim") },
       el("span", {}, r.label,
+        // A Complex Action costs 2 Simple Actions and nothing tracks it on its
+        // own — spending it just eats the two Simples up front, with the same
+        // warning-and-bail pattern as every other "not enough X" check.
+        (!ro && r.key === "simple")
+          ? el("button", { class: "sh-complex-btn",
+              title: "Spend a Complex Action (2 Simple Actions)",
+              onclick: () => {
+                const cur = used.simple || 0;
+                const left2 = r.total - cur;
+                if (left2 < 2) {
+                  alert(`Not enough Simple Actions for a Complex Action `
+                    + `(need 2, have ${left2}).`);
+                  return;
+                }
+                used.simple = cur + 2;
+                playChanged();
+              } }, "Complex")
+          : null,
         (r.sources && r.sources.length)
           ? el("div", { class: "sub", style: "font-weight:400" }, r.sources.join(" · "))
           : null),

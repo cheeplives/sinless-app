@@ -374,12 +374,27 @@ explicit yes.
 | `misc_gear` | Lick | — | `pool Finesse+4` | NEW BEHAVIOUR: original has no signed number before the pool name ("Finesse by 4"), so `POOL_DICE_RE` never matches it — the pool bonus is currently invisible on the sheet. `misc_gear.Effect` is wired to the pool parser, so the rewrite genuinely makes `+4d Finesse Pool` reachable for the first time (a real behaviour change, not just wording). Lick is now flagged `Dose: 1` with `Max Doses: 2`, so the bonus arrives when a dose is USED rather than as a standing toggle, and stacks to two. UNCLEAR: "10/min" — read here as "10 minutes"; could instead mean "per minute" (an ongoing/stacking effect). Description is blank, so this can't be confirmed from context — flagging rather than guessing further. |
 | `misc_gear` | Rage | — | `pool Brawn+4` | NEW BEHAVIOUR: same defect as Lick ("Brawn by 4" has no signed number before the pool name, so it never matched `POOL_DICE_RE`); rewrite makes `+4d Brawn Pool` reachable for the first time. Rage is now flagged `Dose: 1` with `Max Doses: 2` — its "doubling" — so the bonus arrives on Use and stacks to two. `misc_gear.Effect` is wired to the pool parser (unlike the wound-penalty case on Dorf), so this one really does change what the sheet computes. UNCLEAR: "10/min" — same ambiguity as Lick, same reasoning; not resolvable from the (blank) description. |
 
-Both are now **doses**: `Lick` and `Rage` carry `Dose: 1` and `Max Doses: 2`
+| `spells` | Create Darkenbeast | `pool Brawn+3, Finesse+3, Resolve+3` | — | NEW BEHAVIOUR, and the only row here that *removes* a hit. `derivePoolEffects` reads spell Effects (`rules.js:4213`) and has no concept of a summoned creature, so `+3 to Brawn/Finesse/Resolve` was landing on the **caster** — a conditional toggle nobody asked for on the sheet of anyone who knows the spell. The +3 belongs to the darkenbeast. Ruled by the repo owner: remove it. This is the same reasoning that already kept five other summoning spells deliberately unparseable. |
+
+Both drug rows are now **doses**: `Lick` and `Rage` carry `Dose: 1` and `Max Doses: 2`
 (their "doubling"). So accepting these two rewrites doesn't add a standing
 toggle — it makes the Use button do something when the dose is taken, and lets
 a second dose stack. Until the rewrite lands, both are doses that consume, list
 and dismiss correctly while granting no dice, which is the "No dice effect —
 tracked for the record" state.
+
+### Rules corrections the engine can't see
+
+Rows where the repo owner ruled that the *data* was wrong, not just the wording.
+`verify.py` stays silent on these because nothing parses the columns involved —
+which is exactly why they need recording somewhere. Accepting them changes what
+a player reads, and eventually what an engine would compute if these columns are
+ever wired up.
+
+| Table | Row | The ruling |
+|---|---|---|
+| `weapon_mods` | Extended Magazine | The mod adds **2 rounds to base ammunition and then a further 20%**. The Effect only ever stated the percentage. `MagMod` holds `0.2` and can express a single multiplier, so it cannot carry the flat +2 — and nothing in `rules.js` reads `MagMod` today, so no magazine size is computed anywhere yet. Wiring it up later needs two values, not one. |
+| `programs` | Shadow Protocols 1–6 | Loading the program into the I/O stream is a **one-time reduction of the Alert level by the program's Rating**. The Description's "reduce all alert increases by its software rating" — an ongoing damper on every future increase — is the misworded half. `programs.Description` is outside this review's scope, so that column still contradicts these six rows and needs its own fix. |
 
 ---
 
@@ -502,7 +517,7 @@ Everything needing a decision beyond accept/reject on the wording.
 | `hack_actions` | Destroy Camera Network | CHECK: identical Alert/Op Heat cost to "Destroy Single Camera" above despite the larger scope (a whole network vs. one camera). Not changed; confirm this is intentional. |
 
 
-### UNCLEAR (28)
+### UNCLEAR (22)
 
 | Table | Row | Note |
 |---|---|---|
@@ -527,12 +542,6 @@ Everything needing a decision beyond accept/reject on the wording.
 | `programs` | Decoy 4 | UNCLEAR: "IRL" resolved from Description as "in range of influence" — out of context it reads as "in real life." |
 | `programs` | Decoy 5 | UNCLEAR: "IRL" resolved from Description as "in range of influence" — out of context it reads as "in real life." |
 | `programs` | Decoy 6 | UNCLEAR: "IRL" resolved from Description as "in range of influence" — out of context it reads as "in real life." |
-| `programs` | Shadow Protocols 1 | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| `programs` | Shadow Protocols 2 | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| `programs` | Shadow Protocols 3 | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| `programs` | Shadow Protocols 4 | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| `programs` | Shadow Protocols 5 | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| `programs` | Shadow Protocols 6 | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
 | `hack_actions` | Brute Force NAN | UNCLEAR: this row's Description is empty, so "Double I/O in meters" as a base-range formula is my best reading of the shorthand, not a confirmed one. |
 
 
@@ -1488,12 +1497,12 @@ Nothing in this packet is parsed today (`engine_reads_this_column: false`, `curr
 | 113 | Ghost Protocol 4 | Can create false creds duiring Recon/Prep. Can also increase Ghost Rating (page 136). | Can create false credentials during Reconnaissance and Preparation. Can also increase Ghost Rating (see page 136). | — | TYPO: "duiring" → "during". |
 | 114 | Ghost Protocol 5 | Can create false creds duiring Recon/Prep. Can also increase Ghost Rating (page 136). | Can create false credentials during Reconnaissance and Preparation. Can also increase Ghost Rating (see page 136). | — | TYPO: "duiring" → "during". |
 | 115 | Ghost Protocol 6 | Can create false creds duiring Recon/Prep. Can also increase Ghost Rating (page 136). | Can create false credentials during Reconnaissance and Preparation. Can also increase Ghost Rating (see page 136). | — | TYPO: "duiring" → "during". |
-| 116 | Shadow Protocols 1 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 1. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| 117 | Shadow Protocols 2 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 2. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| 118 | Shadow Protocols 3 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 3. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| 119 | Shadow Protocols 4 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 4. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| 120 | Shadow Protocols 5 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 5. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
-| 121 | Shadow Protocols 6 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 6. | — | UNCLEAR: Description states loading it into the I/O stream instead reduces *all* alert increases by the program's Rating — a second, passive mode the Effect text never actually states the magnitude of. |
+| 116 | Shadow Protocols 1 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 1. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
+| 117 | Shadow Protocols 2 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 2. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
+| 118 | Shadow Protocols 3 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 3. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
+| 119 | Shadow Protocols 4 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 4. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
+| 120 | Shadow Protocols 5 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 5. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
+| 121 | Shadow Protocols 6 | Lowers Alert by 1 per success. Can be loaded into I/O | Reduces the Alert level by 1 per Net Success. If loaded into I/O, reduce Alert level by 6. | — | **RULES CHANGE** (repo owner's ruling) — the I/O mode is a one-time reduction of the Alert level by the program's Rating, and the Effect now says so. The Description's "reduce all alert increases by its software rating" is the misworded half: it describes an ongoing damper on every future increase, which is not the intent. `programs.Description` is outside this review's scope, so that column still contradicts this row and needs its own fix. |
 | 122 | Hacking 1 | Runs a deck of MCP 3 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |
 | 123 | Hacking 2 | Runs a deck of MCP 5 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |
 | 124 | Hacking 3 | Runs a deck of MCP 7 or less | Runs a deck with MCP ≤ 2 × Rating + 1. | — | |

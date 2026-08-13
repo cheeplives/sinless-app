@@ -4376,6 +4376,91 @@ function conditionTrack(label, max, get, set) {
     boxes);
 }
 
+/* ---- casting (#45) ---------------------------------------------------------
+ * Cast puts a spell on the Active Spells banner and leaves it there until it's
+ * dismissed. Nothing expires on a timer, for the same reason doses don't:
+ * durations in this game are fiction-paced ("until exposed to sunlight",
+ * "Special"), and a clock that silently dropped a spell mid-scene would be
+ * worse than one the player closes themselves.
+ */
+function activeSpells() { return (CHAR.play && CHAR.play.active_spells) || []; }
+
+/* Cast at a chosen Force, up to the Force the spell is known at.
+ *
+ * Force is asked for rather than assumed, because it decides three separate
+ * things at once: the spell's own Force-scaled effects, how much Drain it
+ * deals, and — the part worth being loud about — whether that Drain is Stun or
+ * LETHAL. The prompt states the consequence before the player commits. */
+async function castSpell(name, knownForce) {
+  const zp = CALC.zoetics.zp_remaining;
+  const row = DATA.tables.spells.find(x => x.Name === name) || {};
+  const raw = prompt(
+    `Cast ${name} at what Force? (1–${knownForce})\n\n`
+    + `Your ZP is ${zp}. At Force ${zp + 1} or higher the Drain is LETHAL.`,
+    String(knownForce));
+  if (raw == null) return;
+  const force = Math.max(1, Math.min(knownForce, parseInt(raw, 10) || 0));
+  if (!force) return;
+  const drain = RULES.spellDrain(row.Drain, force);
+  const lethal = RULES.drainIsLethal(force, zp);
+  CHAR.play.active_spells = activeSpells();
+  CHAR.play.active_spells.push({
+    uid: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name, force, lethal, drain,
+  });
+  await playChangedRecalc();
+  // The Soak roll is the player's to make, so this reminds rather than rolls:
+  // the roller opens loaded with Brawn and their soak dice, and what to beat.
+  const damage = lethal ? "LETHAL" : "Stun";
+  alert(`${name} cast at Force ${force}.\n\n`
+    + (drain == null
+        ? `Drain: ${row.Drain || "Special"} — this spell states no fixed Drain; the table decides.`
+        : `Soak ${drain} Drain, taken as ${damage} damage.`)
+    + `\n\nRoll Brawn to soak — the Soak button on the Condition card loads your dice.`);
+}
+
+function dismissSpell(uid) {
+  CHAR.play.active_spells = activeSpells().filter(s => s.uid !== uid);
+  playChangedRecalc();
+}
+
+/* The Active Spells banner. Magic tab only, per the issue — it's a caster's
+ * working surface, and a mundane character should never see an empty one. */
+function activeSpellsBanner() {
+  const list = activeSpells();
+  if (!list.length) return null;
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const card = el("div", { class: "sh-callout sh-active-spells" },
+    el("div", { class: "sh-doses-head" },
+      el("span", {}, "✨ Active Spells ", el("b", {}, String(list.length)))));
+  for (const s of list) {
+    const row = DATA.tables.spells.find(x => x.Name === s.name) || {};
+    const summon = RULES.summonedAnimal(s.name, (CHAR.play.summons || {})[s.name], s.force, DATA.tables);
+    card.append(el("div", { class: "sh-active-spell" },
+      el("div", { class: "sh-fx-head" },
+        el("span", {}, el("b", {}, s.name), " ",
+          el("span", { class: "chip magic" }, `F${s.force}`), " ",
+          el("span", { class: "chip" + (s.lethal ? " neg" : " ok") },
+            s.drain == null ? "drain: special"
+              : `drain ${s.drain} ${s.lethal ? "LETHAL" : "stun"}`)),
+        ro ? null : el("button", { class: "row-del", title: "Dismiss this spell",
+          onclick: () => dismissSpell(s.uid) }, "✕")),
+      row.Duration ? el("div", { class: "sub" }, `Duration: ${row.Duration}`) : null,
+      row.Effect ? el("div", { class: "sub" }, row.Effect) : null,
+      // A summoning spell that's up shows what it summoned, at the Force it was
+      // actually cast at rather than the Force it's known at.
+      summon ? el("div", { class: "sub", style: "color:var(--manon)" },
+        `${summon.label}: ${summon.name} — Armor ${summon.ballistic}B/${summon.impact}I`
+        + ` · Dodge ${summon.dodge} · Soak ${summon.soak}`
+        + (summon.attacks.length ? ` · ${summon.attacks[0]}` : "")) : null));
+  }
+  card.append(el("p", { class: "hint" },
+    "Spells stay up until dismissed — durations here are fiction-paced, so nothing "
+    + "expires on a clock. Bonuses a spell grants are applied by adding it under "
+    + "Temporary Effects with a pool and dice."));
+  return card;
+}
+
 /* The animal a summoning spell is pointed at, and what it becomes (#47).
  *
  * Renders nothing at all for an ordinary spell, so it can be dropped into the
@@ -6649,6 +6734,10 @@ function shMagic(body) {
     wrap.append(el("p", { class: "hint" },
       `Spells cost their listed price in ${RULES.currencyName().toLowerCase()} per Force to learn or advance. `
       + `Casting at Force above your ZP (${zp}) deals drain as LETHAL damage; at or below, drain is Stun.`));
+    // What's currently up, above the list of what could be — the banner is the
+    // thing you consult mid-scene, the list is what you consult between them.
+    const banner = activeSpellsBanner();
+    if (banner) wrap.append(banner);
     for (const sp of allSpells) {
       const r = DATA.tables.spells.find(x => x.Name === sp.name) || {};
       const force = sp.force + (play.spell_force_advances[sp.name] || 0);
@@ -6661,6 +6750,10 @@ function shMagic(body) {
             lethal ? "drain: LETHAL" : "drain: stun"),
           el("span", { class: "sub" }, ` ${r.School || ""}`),
           sp.inPlay ? el("span", { class: "sh-tag" }, "learned in play") : null,
+          " ",
+          el("button", { class: "btn small roll sh-cast",
+            title: `Cast ${sp.name} — pick a Force up to ${force}`,
+            onclick: () => castSpell(sp.name, force) }, "✦ Cast"),
           " ",
           el("button", { class: "btn small",
             disabled: force >= SPELL_FORCE_MAX ? "1" : null,

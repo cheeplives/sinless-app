@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "238";
+const APP_VERSION = "239";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -782,6 +782,10 @@ function defaultCharacter() {
       // Which animal each summoning spell is pointed at, keyed by spell name.
       // A caster keeps one Bound Servant at a time, so re-picking replaces it.
       summons: {},
+      // Spells currently up: [{ uid, name, force, lethal, drain, note }].
+      // Nothing here expires on a timer — durations in this game are
+      // fiction-paced, the same reason doses are dismissed by hand.
+      active_spells: [],
       // Legacy, read-only — replaced by `kit`, migrated once by ensureKit().
       disposed: {},
       fitted_mods: [],
@@ -2830,6 +2834,38 @@ function droneCombatBonuses(character, data) {
     }
   }
   return out;
+}
+
+/* ---- casting ---------------------------------------------------------------
+ * A cast spell is play state: which spells are up, at what Force, and what each
+ * one is doing. Nothing here touches the chargen record — casting is the most
+ * transient thing a character does.
+ *
+ * Drain is written in the data as an expression in Force ("3 + (Force/2)"),
+ * which is prose the engine has never had to evaluate before. Rather than run
+ * arbitrary text, the shapes actually present are matched: a flat number, a sum
+ * with a Force term, and "Special" for the two that don't state one. Anything
+ * unrecognised returns null and the sheet says so instead of inventing a value.
+ */
+const DRAIN_SPECIAL = "Special";
+function spellDrain(drainText, force) {
+  const raw = String(drainText || "").trim();
+  if (!raw || /^special$/i.test(raw)) return null;
+  const f = toInt(force);
+  // "3 + (Force/2)" / "Force/2" / "2 + Force" / "4"
+  const m = /^(?:(\d+)\s*\+\s*)?\(?\s*force\s*\/\s*(\d+)\s*\)?$/i.exec(raw);
+  if (m) return toInt(m[1] || 0) + Math.floor(f / toInt(m[2]));
+  const plusForce = /^(?:(\d+)\s*\+\s*)?\(?\s*force\s*\)?$/i.exec(raw);
+  if (plusForce) return toInt(plusForce[1] || 0) + f;
+  if (/^\d+$/.test(raw)) return toInt(raw);
+  return null;
+}
+
+/* Drain lands as Lethal when the spell's Force is greater than the caster's
+ * Zoetic Potential, and as Stun at or below it. The sheet already states this
+ * rule above the spell list; this is the same test, in one place. */
+function drainIsLethal(force, zp) {
+  return toInt(force) > toInt(zp);
 }
 
 /* ---- summoned animals ------------------------------------------------------
@@ -5676,6 +5712,7 @@ return {
   BASE_HACK_RANGE_METERS, deckHackRange, deckRangeConflict,
   deckHardening, rigUnitHardening, hardeningBonusFromText,
   SUMMON_SPELLS, isSummonSpell, summonedAnimal,
+  spellDrain, drainIsLethal, DRAIN_SPECIAL,
   equippedDeckName,
   SPEAKER_BOND_MAX, speakerBondCount,
   KIT_CATEGORIES, applyPlayAdvances,

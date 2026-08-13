@@ -1058,6 +1058,13 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-sense .sub{font-size:11px;margin-top:1px}
 /* A limit the character is currently on the wrong side of. */
 .sh-sense.bad > div:first-child{color:var(--bad)}
+/* Active Spells: what's up right now, above the list of what could be. Uses the
+   magic accent rather than the doses banner's amber — a spell being up is a
+   state, not a warning. */
+.sh-active-spells{border-color:var(--manon)}
+.sh-active-spell{padding:5px 0}
+.sh-active-spell + .sh-active-spell{border-top:1px dashed var(--line-dash)}
+.sh-cast{border-color:var(--manon);color:var(--manon)}
 /* A summoning spell's animal and the statblock it becomes. Indented under the
    spell it belongs to, so it reads as part of that spell rather than a new one. */
 .sh-summon{margin:4px 0 2px;padding-left:8px;border-left:2px solid var(--line)}

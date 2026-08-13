@@ -285,6 +285,35 @@ The currency glyph in error messages is `ㄓ` (U+3113). Copy it verbatim.
   which an earlier `[/,&]`-only split silently dropped, losing Finesse.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P01-019: Every spell's Drain expression resolves, and Lethal starts one past ZP
+- **Type:** correctness
+- **Steps:** Any character. Reads the whole spells table, so it doesn't matter
+  which spells this one knows. Restores what it found.
+- **Check:**
+
+      (() => { const c = CHAR; const snap = JSON.stringify([c.play.active_spells, c.magic.spells, c.play.spell_force_advances]); const zp = CALC.zoetics.zp_remaining; const drains = { flat: RULES.spellDrain("4", 6), force: RULES.spellDrain("Force", 6), halfForce: RULES.spellDrain("3 + (Force/2)", 5), plusForce: RULES.spellDrain("2 + Force", 3), special: RULES.spellDrain("Special", 6), junk: RULES.spellDrain("wibble", 6) }; const unparsed = DATA.tables.spells.filter(s => RULES.spellDrain(s.Drain, 4) === null && !/^special$/i.test(String(s.Drain || "").trim())).map(s => s.Name); const lethal = { atZp: RULES.drainIsLethal(zp, zp), aboveZp: RULES.drainIsLethal(zp + 1, zp) }; const [a, s2, f] = JSON.parse(snap); c.play.active_spells = a; c.magic.spells = s2; c.play.spell_force_advances = f; return { drains, unparsed, spellCount: DATA.tables.spells.length, lethal }; })()
+
+- **Expected:** `{ "drains": { "flat": 4, "force": 6, "halfForce": 5, "plusForce": 5, "special": null, "junk": null }, "unparsed": [], "spellCount": 64, "lethal": { "atZp": false, "aboveZp": true } }`
+- **Note:** Drain is written in the data as an expression in Force — thirteen
+  distinct shapes across 64 spells, from `4` to `3 + (Force/2)` to `Special`.
+  Nothing in the engine had ever needed to evaluate it before casting existed.
+
+  `unparsed: []` is the case that matters, and it's a sweep rather than a
+  sample: every spell in the table must produce a number or be honestly
+  `Special`. A new spell written in a shape the matcher doesn't know fails here
+  rather than silently casting for zero Drain.
+
+  `halfForce: 5` pins the rounding — `3 + (5/2)` is 3+2, not 3+2.5 or 3+3.
+
+  `junk: null` is the deliberate refusal. The expressions are matched against
+  known shapes rather than evaluated, so unrecognised text returns null and the
+  sheet says the table decides. Running arbitrary data as arithmetic to save
+  three regexes would be the wrong trade.
+
+  `atZp: false` with `aboveZp: true` fixes the boundary: Drain is Lethal when
+  Force is *greater than* ZP, so casting at exactly your ZP is still Stun.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

@@ -603,6 +603,35 @@ actually testing.
   case from breaking every time one of these messages is reworded.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-025: A deployed drone's cover counts as cover, and hotseat grants dice
+- **Type:** correctness
+- **Steps:** Any finalized character. Gives it three drones with contrasting
+  effects and deploys them one at a time. Clears martial arts so the only cover
+  in play comes from the drone. Restores what it found.
+- **Check:**
+
+      (async () => { const c = CHAR; const snap = JSON.stringify([c.drones, c.martial_arts, (c.play || {}).rigging, (c.play && c.play.kit) ? c.play.kit.drones : null, (c.play && c.play.kit) ? c.play.kit.martial_arts : null]); const drones = [{ name: "Shield-Wall Drone", carried: true, weapons: [], mods: [] }, { name: "Aerial Warden", carried: true, weapons: [], mods: [] }, { name: "Bug-Spy", carried: true, weapons: [], mods: [] }]; c.drones = JSON.parse(JSON.stringify(drones)); c.martial_arts = []; if (c.play && c.play.kit) { c.play.kit.drones = JSON.parse(JSON.stringify(drones)); c.play.kit.martial_arts = []; } const set = async rg => { c.play.rigging = { active_rig: "", linked: {}, active: {}, hotseat: {}, units: {}, ...rg }; await recalc(); return { cover: (CALC.combat.cover || {}).label || null, obs: CALC.skills.Observation.dice_bonus ?? null }; }; const out = { shieldWall: await set({ linked: { "drones:0": true } }), aerialWarden: await set({ linked: { "drones:1": true } }), bugSpyHotseat: await set({ hotseat: { "drones:2": true } }) }; const [d, ma, rg, kd, km] = JSON.parse(snap); c.drones = d; c.martial_arts = ma; if (c.play) c.play.rigging = rg; if (c.play && c.play.kit) { c.play.kit.drones = kd; c.play.kit.martial_arts = km; } await recalc(); return out; })()
+
+- **Expected:** `{ "shieldWall": { "cover": "High cover (−2d)", "obs": null }, "aerialWarden": { "cover": null, "obs": null }, "bugSpyHotseat": { "cover": null, "obs": 1 } }`
+- **Note:** Three separate rules in one fixture.
+
+  A Shield-Wall Drone "Provides mobile High cover", which used to be a note
+  printed beside the cover figure rather than part of it. It now feeds the same
+  best-wins resolution as a martial-art stance and a full-cover infusion — so a
+  Gun-Kata L1 rigger under this drone is at High cover, not Low, and not −3d.
+
+  The Aerial Warden is the reason that isn't just "match /cover/". It "carries 3
+  passengers under High cover" — cover for whoever is riding in it, and the
+  rigger usually isn't. `cover: null` is the assertion that a drone flying a
+  block away doesn't hand its pilot a −2d.
+
+  `bugSpyHotseat` covers the deployment set. droneSkillDice counted linked and
+  active drones; droneCombatBonuses counted linked, active AND hotseat. The same
+  drone could therefore grant its Initiative dice but not its skill dice
+  depending on which box was ticked. Both now agree, so a hotseated Bug-Spy
+  gives its +1d Observation.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

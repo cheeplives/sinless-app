@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "234";
+const APP_VERSION = "235";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -2724,10 +2724,16 @@ function droneSkillDice(character, data) {
   const bonus = {};
   const rigging = ((character.play || {}).rigging || {});
   // A drone grants its rider because it's OUT THERE, not because of how it's
-  // being flown: riding a VCR link and running Active both count. (Active is
-  // the off-link flag — no rig, no link spent.) Counted once either way.
+  // being flown: riding a VCR link, running Active and being hotseated all
+  // count. (Active is the off-link flag — no rig, no link spent.) Counted once
+  // however many of the three are ticked.
+  //
+  // Hotseat was missing here while droneCombatBonuses had it, so the same drone
+  // could grant its Initiative dice and not its skill dice depending on which
+  // boxes were ticked — the two functions have to agree on what "deployed"
+  // means (#38).
   const deployed = {};
-  for (const map of [rigging.linked || {}, rigging.active || {}]) {
+  for (const map of [rigging.linked || {}, rigging.active || {}, rigging.hotseat || {}]) {
     for (const [key, on] of Object.entries(map)) if (on) deployed[key] = true;
   }
   const drones = character.drones || [];
@@ -2770,20 +2776,35 @@ function droneCombatBonuses(character, data) {
   for (const map of [rigging.linked || {}, rigging.active || {}, rigging.hotseat || {}])
     for (const [key, on] of Object.entries(map)) if (on) deployed[key] = true;
   const out = { initiative_dice: 0, dodge_notes: [], cover_notes: [],
-                vision_notes: [], other_notes: [] };
+                cover_grants: [], vision_notes: [], other_notes: [] };
   for (const key of Object.keys(deployed)) {
     if (!key.startsWith("drones:")) continue;
     const unit = (character.drones || [])[+key.split(":")[1]];
     if (!unit) continue;
     const label = unit.label || unit.name;
-    const effect = (findRow(data.drones, "Drone", unit.name) || {}).Effect || "";
+    const row = findRow(data.drones, "Drone", unit.name) || {};
+    const effect = row.Effect || "";
     for (const clause of effect.split(/[,.;]/)) {
       const c = clause.trim();
       if (!c) continue;
       const init = /([+-]?\d+)\s*d?\s*(?:to\s+)?Initiative/i.exec(c);
       if (init) { out.initiative_dice += toInt(init[1]); continue; }
       if (/dodge/i.test(c)) { out.dodge_notes.push({ text: c, source: label }); continue; }
-      if (/cover/i.test(c)) { out.cover_notes.push({ text: c, source: label }); continue; }
+      if (/cover/i.test(c)) {
+        out.cover_notes.push({ text: c, source: label });
+        // Cover the drone puts over the RIGGER feeds the same best-wins
+        // resolution as a martial-art stance or a full-cover infusion, so a
+        // Shield-Wall Drone's High cover finally counts as cover rather than
+        // sitting in a note beside the real figure.
+        //
+        // "Carries 3 passengers under High cover" is deliberately excluded: that
+        // is cover for whoever is riding in it, and the rigger is usually not.
+        // Crediting it would hand a −2d to a character standing somewhere else
+        // entirely.
+        const grant = /passenger/i.test(c) ? null : parseCoverGrant(c);
+        if (grant) out.cover_grants.push({ ...grant, source: label });
+        continue;
+      }
       // A sensor the drone is lending you — its feed is your feed while it's
       // out. Joins the character's own optics rather than sitting on the
       // Rigging tab, because it's the same question ("what can I see?").
@@ -2791,6 +2812,12 @@ function droneCombatBonuses(character, data) {
         out.vision_notes.push({ text: c.replace(/^grants\s+/i, ""), source: label });
         continue;
       }
+      // Anything else (a light radius, a flight ceiling, an Anthrodoid's own
+      // Strength, the VSTOL Bird's stealth penalty) is deliberately NOT
+      // collected here. None of it folds into one of the character's stats, and
+      // the Drones on Station card already prints each deployed unit's full
+      // Effect line — a second list of the same words would be the read-only
+      // copy problem, not a fix for it.
     }
   }
   return out;
@@ -5282,6 +5309,9 @@ function calculate(character) {
   }
   combat.drone_dodge_notes = droneBonus.dodge_notes;
   combat.drone_cover_notes = droneBonus.cover_notes;
+  // Riders that aren't a stat and aren't cover — a light source, a flight
+  // ceiling, a stealth penalty imposed on whoever is looking for the drone.
+  combat.drone_other_notes = droneBonus.other_notes;
   // Every sense the character has right now, from whichever table grants it.
   // Deliberately NOT folded into optics_notes: that list is the handful of
   // augments that change firearm accuracy and range, which is a different
@@ -5305,12 +5335,15 @@ function calculate(character) {
     if (k !== "physical" && k !== "stun") combatOut[k] = v;
   }
   combatOut.exploit_actions = deriveExploitActions(character, data, magicType, augments, amp);
-  // Standing cover from martial-art levels AND full-cover infusions, merged into
-  // a single best-wins value. Cover is a state rather than a stack, so Gun-Kata
-  // L5's High cover is superseded by a full-cover infusion rather than adding to
-  // it. Reported on the Combat card; there's no cover stat to apply it to.
+  // Standing cover from martial-art levels, full-cover infusions AND a deployed
+  // drone that provides it, merged into a single best-wins value. Cover is a
+  // state rather than a stack, so Gun-Kata L5's High cover is superseded by a
+  // full-cover infusion rather than adding to it — and a Shield-Wall Drone's
+  // High cover is the same tier as the martial art's, not another −2d on top.
+  // Reported on the Dodge card; there's no cover stat to apply it to.
   combatOut.cover = bestCover([...(martialArt.mods.cover || []),
-                               ...(infusions.mods.cover || [])]);
+                               ...(infusions.mods.cover || []),
+                               ...(droneBonus.cover_grants || [])]);
 
   // Apply the martial art's stat modifiers (gated by Martial Arts rank via the
   // cumulative levels resolved above) on top of heritage/augment bonuses.

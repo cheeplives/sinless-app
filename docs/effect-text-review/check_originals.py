@@ -78,6 +78,46 @@ def main():
         mismatches.append((r, [str(row.get(r["column"], "") or "").strip()
                                for row in hits]))
 
+    # Name matching alone is not enough. A martial-art style names six rows (one
+    # per level), so `any()` above would accept an Original that had been
+    # overwritten with a DIFFERENT level's text. Comparing the whole (table,
+    # column) as a multiset closes that: it does not care about names at all,
+    # only that the doc holds exactly the values the data holds.
+    doc_cells, data_cells = {}, {}
+    for r in rows:
+        doc_cells.setdefault((r["table"], r["column"]), []).append(r["original"].strip())
+    for (table, column) in doc_cells:
+        data_cells[(table, column)] = sorted(
+            str(row.get(column, "") or "").strip()
+            for row in tables.get(table, [])
+            if isinstance(row, dict) and str(row.get(column, "") or "").strip())
+    setwise = []
+    for key, got in doc_cells.items():
+        want = data_cells[key]
+        if sorted(got) != want:
+            missing = [v for v in want if v not in got]
+            extra = [v for v in got if v not in want]
+            setwise.append((key, missing, extra))
+
+    # …and a multiset is still not enough, because swapping two Originals inside
+    # one column leaves it unchanged. Two Gun-Kata levels trading text passes
+    # both checks above and is exactly the corruption they were meant to stop.
+    # The doc is generated in table order, so position is the real invariant.
+    ordered = {}
+    for (table, column) in doc_cells:
+        ordered[(table, column)] = [
+            str(row.get(column, "") or "").strip()
+            for row in tables.get(table, [])
+            if isinstance(row, dict) and str(row.get(column, "") or "").strip()]
+    positional = []
+    for key, got in doc_cells.items():
+        want = ordered[key]
+        if len(got) != len(want):
+            continue                      # length is already reported as setwise
+        for i, (g, w) in enumerate(zip(got, want)):
+            if g != w:
+                positional.append((key, i, g, w))
+
     print("%s\n  %d rows checked against static/data.js" % (
         os.path.basename(args.doc), len(rows)))
     if unfound:
@@ -93,8 +133,28 @@ def main():
             for a in actual:
                 print("      data: %s" % a)
         return 1
+    if setwise:
+        print("\n  %d table/column(s) whose Originals are not the data's values:\n"
+              % len(setwise))
+        for (table, column), missing, extra in setwise:
+            print("    %s / %s" % (table, column))
+            for v in missing[:6]:
+                print("      in data, not in doc:  %s" % v[:100])
+            for v in extra[:6]:
+                print("      in doc, not in data:  %s" % v[:100])
+        return 1
+    if positional:
+        print("\n  %d Original(s) in the wrong position — the values are all present,"
+              "\n  so only order gives this away (two rows swapped):\n" % len(positional))
+        for (table, column), i, got, want in positional[:12]:
+            print("    %s / %s  row %d" % (table, column, i + 1))
+            print("      doc:  %s" % got[:100])
+            print("      data: %s" % want[:100])
+        return 1
     if not unfound:
-        print("\n  Every Original matches the data exactly.")
+        print("\n  Every Original matches the data exactly — by name, as a whole-column")
+        print("  multiset, and in order. The last of those is what covers the 24")
+        print("  martial-art rows whose style name repeats across six levels.")
     return 1 if mismatches else 0
 
 

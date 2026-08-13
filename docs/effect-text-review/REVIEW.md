@@ -479,15 +479,24 @@ established stat abbreviation.
 Everything needing a decision beyond accept/reject on the wording.
 
 
-### CONTRADICTS DESC (5)
+### CONTRADICTS DESC (5) — all resolved
 
-| Table | Row | Note |
-|---|---|---|
-| `augments` | Repulsors | **CONTRADICTS DESC** — the Description says the 12m figure is the flight *ceiling* ("move up to 12 m above surfaces") and 30m is the *movement speed* while flying ("movement of 30 m"); the Effect text has these two numbers swapped ("12m of flying movement ... with a 30m ceiling"). Not renumbered here — flagging for the data owner to pick the correct pairing |
-| `spells` | Create Barrier | CONTRADICTS DESC — Description gives Condition = 2x Successes **+ Force**; Effect omits the `+Force` term entirely. Also Description gives height as "four to twenty feet," a real-world unit no other row in this packet uses (everywhere else pairs meters with tabletop inches at a 2:1 ratio); Effect's "1.5 to 6m" doesn't convert cleanly to that inches convention either. Flagging both, not renumbering. |
-| `spells` | Rune of the Unspeakable Alarm | CONTRADICTS DESC — Description scales the ward as 20 sq ft **per point of Force**; Effect gives a flat 6 sq.m with no Force term and a different unit (sq.m vs sq ft). Flagging, not renumbering. |
-| `spells` | Firestorm | CONTRADICTS DESC — Description gives the radius as **4 m (2") per point of force**, double the Effect's stated "2m/Force." Flagging, not renumbering. |
-| `rituals` | Raise Ward | CONTRADICTS DESC — Description ties the 1000 cubic meter cap to Zoetic Potential ("for every point of her Zoetic Potential"); Effect states it as a flat cap with no ZP term. Flagging, not renumbering. |
+Approved by the repo owner: in every one of these the **Description is right and
+the Effect is the corrupted copy**, so the Proposed text now carries the
+Description's numbers. That is a renumbering, which the style guide otherwise
+forbids — it is allowed here only because each row had a second source of truth
+sitting beside it saying what the number should be.
+
+None of these five is read by any parser, so `verify.py` is silent on them. The
+guard is the Description, not the engine.
+
+| Table | Row | Was | Now |
+|---|---|---|---|
+| `augments` | Repulsors | 12m movement, 30m ceiling | **30m movement, 12m ceiling** — swapped. The Description carries tabletop inches on both figures (`12 m-6"`, `30 m-15"`) at the usual 2:1, which is what identifies which number is which. |
+| `spells` | Create Barrier | Condition: 2x Successes | **Condition: 2x Successes + Force** — the missing term restored. Height stays in metres: 1.5–6m is *five* to twenty feet, so the Description's "four" is the loose figure, and that is a `Description` fix outside this scope. |
+| `spells` | Rune of the Unspeakable Alarm | flat 6 sq.m | **2 sq.m per point of Force** — 20 sq ft is 1.86 sq.m, rounded to 2 to stay metric. The old flat 6 is exactly 2 × Force 3, so it reads as an example that lost its scaling term. The rounding is the one judgement call in this table. |
+| `spells` | Firestorm | 2m/Force area | **4m/Force radius** — the Effect had written the *tabletop-inch* half of `4 m (2")` as if it were metres. Also "radius", which is what the Description measures. |
+| `rituals` | Raise Ward | flat 1000 cubic metres | **1000 cubic metres per point of Zoetic Potential** — as a flat cap it made a ZP 1 and a ZP 6 mage identical warders. |
 
 
 ### CHECK (21)
@@ -517,7 +526,13 @@ Everything needing a decision beyond accept/reject on the wording.
 | `hack_actions` | Destroy Camera Network | CHECK: identical Alert/Op Heat cost to "Destroy Single Camera" above despite the larger scope (a whole network vs. one camera). Not changed; confirm this is intentional. |
 
 
-### UNCLEAR (22)
+### UNCLEAR (22) — owner-handled
+
+The repo owner is resolving these directly in the Proposed column rather than
+having them rewritten from the flag. Treat the notes below as the record of what
+was ambiguous, not as an open queue. Run `check_originals.py` after editing —
+when a row's Original and Proposed read alike, an edit aimed at Proposed can
+land on the Original instead, which is how four rows were corrupted earlier.
 
 | Table | Row | Note |
 |---|---|---|
@@ -545,7 +560,13 @@ Everything needing a decision beyond accept/reject on the wording.
 | `hack_actions` | Brute Force NAN | UNCLEAR: this row's Description is empty, so "Double I/O in meters" as a base-range formula is my best reading of the shorthand, not a confirmed one. |
 
 
-### TYPO (29)
+### TYPO (29) — approved
+
+Approved by the repo owner. Every fix listed here is already sitting in that
+row's Proposed cell, so there is nothing further to apply: they land with the
+rest of the wording pass. None touches a row name — a misspelt *name* is a
+rename, which orphans saved characters and needs a `RENAMED_*` map, so those
+stay in CHECK.
 
 | Table | Row | Note |
 |---|---|---|
@@ -698,7 +719,7 @@ Everything needing a decision beyond accept/reject on the wording.
 | 106 | Trackmobi | Can mount to tracked chasis. 6m movement, 1 wt mount, and 1 ballistic armor. | Can mount to a tracked chassis. Movement 6m. Weight-1 mount. Grants Ballistic Armor. | — | **TYPO** — "chasis" corrected to "chassis" |
 | 107 | Delux Trackmobi | Can mount to tracked chasis. 8m movement, 2 wt mount, and 2 ballistic armor. | Can mount to a tracked chassis. Movement 8m. Weight-2 mount. Grants Ballistic Armor. | — | **TYPO** — "chasis" corrected to "chassis". **CHECK** — the row's Name ("Delux Trackmobi") looks like a misspelling of "Deluxe"; not changed here since renaming a row is out of scope (needs a `RENAMED_*` migration map per the style guide) |
 | 108 | Luxury Trackmobi | Can mount to tracked chasis. 8m movement, 3 wt mount, and 2 ballistic and 1 impact armor. | Can mount to a tracked chassis. Movement 8m. Weight-3 mount. Grants Impact and Ballistic Armor. | — | **TYPO** — "chasis" corrected to "chassis" |
-| 109 | Repulsors | Repulsors allowing vectored flight. 12m of flying movement up to 20 minutes with a 30m ceiling. Can lift 450 kg. Treat as in full cover, but double recoil penalties. | Repulsors allowing vectored flight. 12m of flying movement up to 20 minutes with a 30m ceiling. Can lift 450 kg. Treat as in full cover. Double recoil penalties. | — | **CONTRADICTS DESC** — the Description says the 12m figure is the flight *ceiling* ("move up to 12 m above surfaces") and 30m is the *movement speed* while flying ("movement of 30 m"); the Effect text has these two numbers swapped ("12m of flying movement ... with a 30m ceiling"). Not renumbered here — flagging for the data owner to pick the correct pairing |
+| 109 | Repulsors | Repulsors allowing vectored flight. 12m of flying movement up to 20 minutes with a 30m ceiling. Can lift 450 kg. Treat as in full cover, but double recoil penalties. | Repulsors allowing vectored flight. 30m of flying movement for up to 20 minutes with a 12m ceiling. Can lift 450 kg. Treat as in full cover. Double recoil penalties. | — | **CONTRADICTS DESC — RESOLVED (approved)**: the two numbers were swapped and are now the way round the Description has them — 12m is the *ceiling* ("move up to 12 m-6\" above surfaces"), 30m is the *speed* ("movement of 30 m-15\""). Both of the Description's figures carry their tabletop inches at the usual 2:1, which is what confirms which is which. Left alone: the Description's lift is "1,000 pounds-453 kg" against the Effect's 450 kg — a rounding, not a contradiction. |
 | 110 | Adrenal Pump | When active: +2 to Resolve, Brawn, and Finesse Pools for 10 minutes. At end, 9 stun damage. Recharge: 30/min, +1 stun to all dmg | When active: +2d Brawn/Finesse/Resolve Pool for 10 minutes. At end, 9 stun damage. Recharge: 30 minutes. +1 stun to all damage. | `pool Resolve+2, Brawn+2, Finesse+2` | **UNCLEAR** — "Recharge: 30/min" in the original is ambiguous (a 30-minute recharge time, vs. some per-minute rate); rendered here as "30 minutes" to match how "Recharge:" reads elsewhere in this table, but the true intent should be checked against the source |
 | 111 | Hyper Adrenal Pump | When active: +4 to Resolve, Brawn, and Finesse Pools for 10 minutes. At end, 9 stun damage. Recharge: 30/min, +1 stun to all dmg | When active: +4d Brawn/Finesse/Resolve Pool for 10 minutes. At end, 9 stun damage. Recharge: 30 minutes. +1 stun to all damage. | `pool Resolve+4, Brawn+4, Finesse+4` | **UNCLEAR** — same "30/min" ambiguity as Adrenal Pump (row 110) |
 | 112 | Augmented Eyesight | Ignore penalties for low light, treat darkness as low light, and shift your range categories on firearms by one. | Ignore penalties for low light. Treat darkness as low light. Shift your range categories on firearms by one. | `sense: Sees in darkness / low light` | |
@@ -1259,7 +1280,7 @@ Chosen conventions for this packet, applied consistently across both tables:
 
 | # | Name | Original | Proposed | Engine | Notes |
 |---|---|---|---|---|---|
-| 1 | Create Barrier | 20m long x 1.5 to 6m tall translucent, solid barrier. 2x Success=Condition  1/2 Force=Armor | Translucent, solid barrier 20m long x 1.5-6m tall. Condition: 2x Successes. Armor: Force/2. | — | CONTRADICTS DESC — Description gives Condition = 2x Successes **+ Force**; Effect omits the `+Force` term entirely. Also Description gives height as "four to twenty feet," a real-world unit no other row in this packet uses (everywhere else pairs meters with tabletop inches at a 2:1 ratio); Effect's "1.5 to 6m" doesn't convert cleanly to that inches convention either. Flagging both, not renumbering. |
+| 1 | Create Barrier | 20m long x 1.5 to 6m tall translucent, solid barrier. 2x Success=Condition  1/2 Force=Armor | Translucent, solid barrier 20m long x 1.5-6m tall. Condition: 2x Successes + Force. Armor: Force/2. | — | **CONTRADICTS DESC — RESOLVED (approved)**: the missing `+ Force` term is restored to the Condition track, per the Description ("twice the number of successes plus the force"). Height deliberately left in meters — the Description's "four to twenty feet" is the outlier (no other row in the packet uses feet), and 1.5m/6m convert to **five** to twenty feet, so it is the Description's "four" that is off by a foot, not the Effect. That is a `spells.Description` fix, outside this review's scope. |
 | 2 | Disguise Astral Aura | Alter aura and hide things from astral vision | Alter aura and hide things from astral vision. | — | |
 | 3 | Flight | Cast fly in any direction their normal Move | Caster can fly in any direction at their normal Movement rate. | — | |
 | 4 | Light | Bright Light appears anywhere you can see. Increases vis to adjacent areas as well. | Bright light appears anywhere within sight. Raises visibility in adjacent areas as well. | — | |
@@ -1270,7 +1291,7 @@ Chosen conventions for this packet, applied consistently across both tables:
 | 9 | Shatter Ward | Destroy wards w/ Force<Force+Success of spell. Otherwise, lower Ward Force by 1 | Destroys ward if caster's Force + Successes >= ward's Force. Otherwise, ward's Force is lowered by 1. | — | CHECK — original reuses the word "Force" for both the caster's Force and the ward's Force without distinguishing them (`Force<Force+Success`). Rewrite disambiguates per Description's wording; no number or comparison changed. |
 | 10 | Powerball | Affects 1m radius per Force. Deals 1/2 Force+Successes in physical damage to all in area | Affects 1m/Force radius. Deals Force/2 + Successes physical damage to all in area. | — | |
 | 11 | Powerbolt | Deals Force+Successes physical damage to single target | Deals Force + Successes physical damage to single target. | — | |
-| 12 | Rune of the Unspeakable Alarm | Ward of 6 sq.m of area. Audible or silent alarm. Can be permanent w/ reagents | Wards 6 sq.m of area. Audible or silent alarm, caster's choice. Can be made permanent with reagents. | — | CONTRADICTS DESC — Description scales the ward as 20 sq ft **per point of Force**; Effect gives a flat 6 sq.m with no Force term and a different unit (sq.m vs sq ft). Flagging, not renumbering. |
+| 12 | Rune of the Unspeakable Alarm | Ward of 6 sq.m of area. Audible or silent alarm. Can be permanent w/ reagents | Wards 2 sq.m of area per point of Force. Audible or silent alarm, caster's choice. Can be made permanent with reagents. | — | **CONTRADICTS DESC — RESOLVED (approved)**: the Force scaling is restored, kept in metres per the packet convention. 20 sq ft is 1.86 sq.m, rounded to **2 sq.m per point of Force**. Worth noting the old flat figure supports this rather than fighting it: 2 × Force 3 = the 6 sq.m the Effect stated, so it reads as a Force-3 example that lost its scaling term. The 7% rounding is the one judgement call here — say so if you want 1.86 or a different figure. |
 | 13 | The Charm of Raucous Cacophony | Loud sound (20db/Force) of caster's choice. Force 7+ does 1/2 success in physical damage to 2m | Loud sound, 20db/Force, of caster's choice. At Force 7+, deals Successes/2 physical damage within 2m. | — | |
 | 14 | Forbidden Glamour of Accord | Everyone w/n LoS to caster gains 2 bonus dice to Negotiaion/Coercion/Leadership vs vs targets | Everyone within line of sight of caster gains +2d Negotiation/Coercion/Leadership tests versus targets. | — | TYPO — "Negotiaion" → "Negotiation"; duplicated "vs vs" → "versus". CHECK — flat skill-dice bonus stated only in prose; style guide prefers a structured Skill Bonus column for this. |
 | 15 | Chant of Dire Malady | All w/n 2m/Force of point of origin must resist or vomit and only get simple actions. -2d to all in zone regardless. | All within 2m/Force of point must resist or vomit and take only simple actions. -2 penalty dice to all tests in zone regardless. | — | |
@@ -1321,7 +1342,7 @@ Chosen conventions for this packet, applied consistently across both tables:
 | 60 | Shapeshift | Choose Force in animals. Can switch to those forms freely as a complex action during Dur. Heal 1d6 stun&physical boxes when shifting. Can't speak/spellcast while shifted. | Choose Force animals. Can switch between chosen forms freely as a complex action during Duration. Heal 1d6 stun and physical boxes when shifting. Can't speak or spellcast while shifted. | — | |
 | 61 | Healing | Can heal 1/2 (Force+Successes) physical damage from Tgt. Can not be used again until more damage suffered. | Heals (Force + Successes)/2 physical damage from target. Cannot be used again until target suffers more damage. | — | |
 | 62 | Natural Fury | Take on a bark-like encasment and strength. Gain Force in dice to Brawn,+2B/2I Armor,+1 melee dmg | Takes on a bark-like encasement and strength. Gains Force bonus dice to Brawn Pool. +2 Ballistic/Impact Armor. +1 melee damage. | — | TYPO — "encasment" → "encasement". **NEW BEHAVIOUR avoided** — "Force bonus dice to Brawn Pool" kept in prose (not `+Nd Brawn Pool`) because the bonus is Force-scaled; `Force` can't satisfy `POOL_DICE_RE`'s signed-digit requirement regardless, matching today's no-hit state. Flagging per the loud-flag instruction — this spell buffs a pool via its Description. |
-| 63 | Firestorm | Flames fill 2m/Force area. Anyone in area takes 3+Force+Success in physical damage. Entering/starting in zone suffers automatic 1d6 physical damage. | Flames fill a 2m/Force area. Anyone in area takes 3 + Force + Successes physical damage. Entering or starting turn in zone suffers automatic 1d6 physical damage. | — | CONTRADICTS DESC — Description gives the radius as **4 m (2") per point of force**, double the Effect's stated "2m/Force." Flagging, not renumbering. |
+| 63 | Firestorm | Flames fill 2m/Force area. Anyone in area takes 3+Force+Success in physical damage. Entering/starting in zone suffers automatic 1d6 physical damage. | Flames fill a 4m/Force radius. Anyone in area takes 3 + Force + Successes physical damage. Entering or starting turn in zone suffers automatic 1d6 physical damage. | — | **CONTRADICTS DESC — RESOLVED (approved)**: radius corrected to 4m per point of Force, per the Description's `4 m (2") per point of force`. The Effect's "2m" was the *tabletop-inch* half of that pair written as if it were metres — the 2:1 ratio holds everywhere else in the packet, which is what identifies the Effect as the wrong one. Also says "radius" now rather than "area", which is what the Description measures. |
 | 64 | Blight | Tgt sickened. Suffers Force in penalty dice to all actions and 1/2 Force physical damage. | Target sickened. Suffers Force penalty dice to all actions and Force/2 physical damage. | — | |
 
 ### rituals — Effect
@@ -1332,7 +1353,7 @@ Chosen conventions for this packet, applied consistently across both tables:
 | 2 | Cottage Refuge | Roll Ritual. Anyone trying to enter uninvited must overcome Success on Resolve to enter | Roll Ritual. Anyone entering uninvited must beat the Successes with a Resolve test to enter. | — | |
 | 3 | Locating A Person | Roll Ritual w/ item of import to Tgt and 1 manastelliate. Success=Range of spell (15km/150km/1500km/Planet/Solar System/Anywhere), if target outside Range, then it fails. Otherwise, gives location relative to caster. | Roll Ritual with an item important to target and 1 manastelliate. Successes: Range (15km/150km/1500km/Planet/Solar System/Anywhere). Fails if target is outside Range. Otherwise gives location relative to caster. | — | |
 | 4 | Preservation | Roll Ritual. Reduce decay to 1/10th the normal rate. Can preserve anything w/n 1 sq meter per Success | Roll Ritual. Reduces decay to 1/10th the normal rate. Can preserve anything within 1 sq meter per Success. | — | |
-| 5 | Raise Ward | Roll Ritual on space up to 1000 cubic meters. Each success, the ward lasts 1 week. Force reduces magic that crosses the border and forces Athletics check to non-keyed individuals. | Roll Ritual on space up to 1000 cubic meters. Each Success, ward lasts 1 week. Force reduces magic crossing the border and forces an Athletics check on non-keyed individuals. | — | CONTRADICTS DESC — Description ties the 1000 cubic meter cap to Zoetic Potential ("for every point of her Zoetic Potential"); Effect states it as a flat cap with no ZP term. Flagging, not renumbering. |
+| 5 | Raise Ward | Roll Ritual on space up to 1000 cubic meters. Each success, the ward lasts 1 week. Force reduces magic that crosses the border and forces Athletics check to non-keyed individuals. | Roll Ritual on space up to 1000 cubic meters per point of Zoetic Potential. Each Success, ward lasts 1 week. Force reduces magic crossing the border and forces an Athletics check on non-keyed individuals. | — | **CONTRADICTS DESC — RESOLVED (approved)**: the cap now scales with Zoetic Potential, per the Description ("1000 cubic meters (5\"x5\"x5\") for every point of her Zoetic Potential"). As a flat cap it made a ZP 1 mage and a ZP 6 mage identical warders, which is the reading the Description rules out. |
 | 6 | Recall Device | Req 1 manastelliate to enchant item of 1 wt or less. Item can be recalled at will, taking Drain each time. | Requires 1 manastelliate to enchant an item of 1 weight or less. Item can be recalled at will, taking Drain each time. | — | |
 | 7 | Sterilize | Purifies 250ml of water, 200 cubic cm of matter, a single wound, or a serving of food | Purifies 250ml of water, 200 cubic cm of matter, a single wound, or a serving of food. | — | |
 | 8 | Travel Over Distance | Roll Ritual. Teleport to spot prepared with 10 manastelliate. Drain affects all travelers. Failure causes mishap. | Roll Ritual. Teleports to a spot prepared with 10 manastelliate. Drain affects all travelers. Failure causes a mishap. | — | |

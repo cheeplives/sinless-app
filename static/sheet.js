@@ -3806,8 +3806,20 @@ function shOverview(body) {
 
   // Flat card list in a balanced multi-column flow (see .sh-ov-grid): columns
   // fill to equal height and reflow 3→2→1 by width, so no column is overloaded.
+  //
+  // Actions This Round heads the middle column. The flow balances by height, so
+  // being second in the list wouldn't put it there — it needs an explicit
+  // column break, which is what .sh-col-break is. Everything before it fills
+  // column one; Actions starts column two.
+  // Only the pool card precedes the break. Everything before a forced break is
+  // still balanced across the columns ahead of it, so leaving Condition there
+  // too pushed Actions into column THREE — pools and Condition took one column
+  // each. One card before the break puts Actions at the head of column two,
+  // which is where it was asked for.
+  const actions = actionsCard();
+  actions.classList.add("sh-col-break");
   body.append(el("div", { class: "sh-ov-grid" },
-    ...[poolCard, cond, actionsCard(), infCard, initCard, dodgeCard,
+    ...[poolCard, actions, cond, infCard, initCard, dodgeCard,
         stationCard, maCard].filter(Boolean)));
 
   /* The Heritage Traits card used to sit here, on the grounds that a Bat's

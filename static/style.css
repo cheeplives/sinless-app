@@ -714,6 +714,11 @@ label.opt input{margin-top:3px}
 .sh-two{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
 .sh-ov-grid{columns:3 250px;column-gap:14px;margin-bottom:14px}
 .sh-ov-grid>*{break-inside:avoid;margin:0 0 14px}
+/* Start a fresh column here. The flow otherwise balances purely by height, so
+   this is the only way to say "head the middle column" — Actions This Round is
+   the thing you touch every round and shouldn't be hunted for. Harmless once
+   the layout narrows to one column, where a column break has nothing to do. */
+.sh-ov-grid > .sh-col-break{break-before:column}
 .sh-h4{font-family:var(--disp);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:14px 0 6px}
 .sh-bullets{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
 .sh-bullets li{position:relative;padding-left:16px;font-size:13px;line-height:1.4;color:var(--text)}

@@ -8292,7 +8292,13 @@ function shRigging(body) {
               return `Handling ${r.Handling} · Body ${eBody}`
                 + (sm.body ? ` (base ${r.Body})` : "")
                 + ((ball || imp) ? ` · Armor ${ball}B/${imp}I` : "")
-                + ` · Hardening ${unitHardening(r, sm)}`
+                // `key` (this unit's slot in the joined list) is what lets the
+                // equipped rig's hardening mods reach a linked unit. Omitting
+                // it here meant the Rigging tab — the one screen a rigger
+                // actually reads a drone's stats on — silently showed the
+                // unmodified figure while the Overview and Gear tab showed the
+                // boosted one (#44).
+                + ` · Hardening ${unitHardening(r, sm, key)}`
                 + ` · weapons ${summary.weapon_count ?? u.weapons.length}/${summary.weapon_cap ?? cfg.capOf(r)}`;
             })()),
           r.Effect ? el("div", { class: "sub", style: "color:var(--manon)" }, r.Effect) : null,

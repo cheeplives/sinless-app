@@ -187,6 +187,19 @@ Ignore recoil
 +1 Recoil Capacity
 ```
 
+### Mount capacity
+
+```
+Weight-1 mount            sentence-initial
+Gain 2 weight-1 mounts    mid-sentence
+```
+
+One hyphenated form, the number attached to the word it qualifies. The table
+currently holds `1 wt mount`, `1-weight mounts` and `1 weight Weapon Mount` for
+the same idea. Note this is the mount's **capacity**, not an item's `Weight`
+stat — the energy weapons' `Wt 3+1` is a different quantity and keeps its own
+notation.
+
 ### Durations and quantities
 
 ```

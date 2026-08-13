@@ -3568,9 +3568,6 @@ function shOverview(body) {
         counterBtn("Full Heal", () => {
           play.physical_damage = 0; play.stun_damage = 0; playChanged();
         }, "good"))),
-    // What shape you're in, in the literal sense: a worn Shapeshift form leads
-    // the Condition card because it changes what the rest of the card is about.
-    shiftedFormBanner(),
     conditionTrack("Physical", CALC.condition.physical,
       () => play.physical_damage, v => { play.physical_damage = v; }),
     conditionTrack("Stun", CALC.condition.stun,
@@ -4551,10 +4548,12 @@ function activeSpellsBanner() {
   return card;
 }
 
-/* The form a shapeshifted caster is currently wearing, for the Condition card.
+/* The Shapeshift form currently worn, resolved, or null in your own skin.
  *
- * Returns null in your own skin, so it can be dropped into the card
- * unconditionally.
+ * Lives in the Conditional Effects panel rather than on the Condition card:
+ * being shifted is exactly what that panel is for — a thing you switched on
+ * that changes what your numbers mean, sitting beside the Wildling shift, a
+ * triggered Adrenal Pump and the rest.
  *
  * The animal's own numbers are shown but NOT applied to the character. The
  * spell heals "1d6 boxes from both their physical and stun condition track" —
@@ -4562,21 +4561,26 @@ function activeSpellsBanner() {
  * are reference. Swapping the tracks out would also silently rewrite recorded
  * damage every time someone shifted, which is a much worse failure than making
  * the player read two numbers. */
-function shiftedFormBanner() {
-  const st = RULES.shapeshiftState(CHAR, shapeshiftForce());
+function shiftedForm() {
+  const force = shapeshiftForce();
+  const st = RULES.shapeshiftState(CHAR, force);
   if (!st.active) return null;
-  const s = RULES.summonedAnimal("Shapeshift", st.active, shapeshiftForce(), DATA.tables);
-  if (!s) return null;
-  return el("div", { class: "sh-callout sh-shifted" },
-    el("div", { class: "sh-fx-head" },
-      el("span", {}, "🐾 Shifted — ", el("b", {}, s.name)),
-      (activeTabObj() && activeTabObj().readonly) ? null
-        : el("button", { class: "btn small", title: "Return to your own shape",
-            onclick: () => { CHAR.play.shapeshift.active = ""; playChangedRecalc(); } }, "Revert")),
-    animalStatBlock(s),
-    el("div", { class: "sub" },
-      "The tracks below are still yours — the form's own Condition is what it "
-      + "would have as a creature."));
+  return RULES.summonedAnimal("Shapeshift", st.active, force, DATA.tables);
+}
+
+/* The worn form as a row for the Conditional Effects panel. */
+function shiftedFormRow(s) {
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  return el("div", { class: "sh-fx-row on sh-shifted" },
+    el("div", { class: "sh-fx-what" },
+      el("span", { class: "sh-fx-name" }, "🐾 Shifted — ", el("b", {}, s.name),
+        el("span", { class: "sub" }, " · Shapeshift")),
+      animalStatBlock(s),
+      el("div", { class: "sh-fx-text sub" },
+        "Your own Condition tracks still apply — the form's is what it would "
+        + "have as a creature.")),
+    ro ? null : el("button", { class: "btn warn", title: "Return to your own shape",
+      onclick: () => { CHAR.play.shapeshift.active = ""; playChangedRecalc(); } }, "Revert"));
 }
 
 /* The Force the character knows Shapeshift at, or 0 if they don't know it.
@@ -8669,17 +8673,26 @@ function poolEffectsPanel() {
   // Giving them an On/Off here as well would be two controls for one bonus,
   // and the two would disagree the moment either was touched.
   const list = poolEffects().filter(e => !e.dose);
-  if (!list.length) return null;
+  // A worn Shapeshift form belongs here too, and can be the ONLY thing here —
+  // a caster with no drugs and no Wildling still needs somewhere that says they
+  // are currently a hawk. So the panel survives an empty effect list when a
+  // form is on.
+  const shifted = shiftedForm();
+  if (!list.length && !shifted) return null;
   const play = CHAR.play;
   const ro = !!(activeTabObj() && activeTabObj().readonly);
-  const anyOn = list.some(e => poolEffectOn(e.id));
+  const anyOn = list.some(e => poolEffectOn(e.id)) || Boolean(shifted);
 
   const onList = list.filter(e => poolEffectOn(e.id));
+  // The form counts as one of the things that can be on, in both halves of the
+  // tally, so "1/1" reads correctly for a shifted caster with nothing else.
+  const onCount = onList.length + (shifted ? 1 : 0);
+  const total = list.length + (shifted ? 1 : 0);
 
   const card = el("div", { class: `sh-callout sh-fx ${anyOn ? "warn" : "info"}` },
     el("div", { class: "sh-fx-head" },
       el("span", {}, anyOn ? "⚡ " : "○ ", el("b", {}, "Conditional Effects"), " ",
-        el("b", {}, anyOn ? `${onList.length}/${list.length}` : String(list.length))),
+        el("b", {}, anyOn ? `${onCount}/${total}` : String(total))),
       counterBtn(fxCollapsed ? "Show ▾" : "Hide ▴", () => {
         fxCollapsed = !fxCollapsed;
         renderSheet();
@@ -8691,14 +8704,22 @@ function poolEffectsPanel() {
   // uses, and for the same reason. A bare count would make "none active" and
   // "Adrenal Pump running" look identical at a glance.
   if (fxCollapsed) {
+    // Being shifted leads the summary. It's the loudest thing that can be true
+    // here — you are not currently shaped like a person — so it should not be
+    // something you have to expand the panel to discover.
+    const onBits = [
+      ...(shifted ? [`Shifted: ${shifted.name}`] : []),
+      ...onList.map(e => `${e.label} (${Object.entries(e.pools)
+        .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" ")})`),
+    ];
     card.append(el("div", { class: "sh-fold-sum" },
-      anyOn
-        ? onList.map(e => `${e.label} (${Object.entries(e.pools)
-            .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" ")})`).join(" · ")
-        : list.map(e => e.label).join(" · ") + " — none active"));
+      anyOn ? onBits.join(" · ")
+            : list.map(e => e.label).join(" · ") + " — none active"));
     return card;
   }
   card.classList.add("is-open");
+
+  if (shifted) card.append(shiftedFormRow(shifted));
 
   for (const e of list) {
     const on = poolEffectOn(e.id);

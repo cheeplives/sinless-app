@@ -1075,9 +1075,11 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-form-row.on{color:var(--ok)}
 .sh-form-row.over{opacity:.55}
 .sh-form-btns{display:inline-flex;align-items:center;gap:4px}
-/* The worn form, on the Condition card. Uses the magic accent — being shifted
-   is a state you chose, not a warning. */
-.sh-shifted{border-color:var(--manon);margin:6px 0}
+/* The worn form, as a row in the Conditional Effects panel. Its statblock is a
+   block rather than the one-liner the other rows carry, so the row lets its
+   left column breathe instead of clamping. */
+.sh-fx-row.sh-shifted .sh-fx-text{-webkit-line-clamp:none;overflow:visible}
+.sh-fx-row.sh-shifted .sh-summon-stats{margin-top:2px}
 /* A summoning spell's animal and the statblock it becomes. Indented under the
    spell it belongs to, so it reads as part of that spell rather than a new one. */
 .sh-summon{margin:4px 0 2px;padding-left:8px;border-left:2px solid var(--line)}

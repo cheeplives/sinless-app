@@ -42,7 +42,7 @@ behaviour back is a regression, and this is what it's measured against.
 
 ## Where things stand
 
-**Every JC-001 … JC-025 is ruled on and implemented.** The rulings came from
+**JC-001 … JC-025 are all ruled on and implemented.** The rulings came from
 [issue #27](https://github.com/cheeplives/sinless-app-beta/issues/27) and the
 follow-up round.
 
@@ -55,6 +55,11 @@ and the picker half of **JC-008**.
 **JC-018 is the one to come back to.** It is marked RESOLVED but the owner asked
 to keep it in view for a second look once the rest settled; the entry says what
 to weigh.
+
+**JC-026 is OPEN** — whether a known spell's `Skill Bonus`/`Skill Note` should
+apply unconditionally, surfaced by the effect-text-review pass and not yet a
+live issue (no spell has either column populated today), but worth ruling on
+before one does.
 
 ---
 
@@ -669,3 +674,41 @@ Raised while implementing the rulings above, and ruled on in the same round.
   `CACHE_VERSION` bump. Re-typing Smartlink as Eyeware would be the bigger
   change: it would start counting toward "More than 1 Eyeware augment requires
   Cybertechtronic Eyes" on every existing character, so it needs a P02 re-run.
+
+## JC-026: A known spell grants its Skill Bonus / Skill Note unconditionally
+- **Status:** OPEN
+- **Where:** `gearSkillEffects` (`static/rules.js:3944`,
+  `rowsOf((character.magic || {}).spells, "spells", "Name")`)
+- **Observed:** `gearSkillEffects` gates every other source on being currently
+  *active* — armor worn, a weapon equipped, gear carried, a spirit infused or
+  bonded rather than merely known — and says so in its own doc comment. Spells
+  are the one exception: knowing a spell is enough, with no notion of it being
+  cast, maintained, or otherwise "on". Not live today — no row in the `spells`
+  table has `Skill Bonus` or `Skill Note` populated, so this read is currently a
+  no-op for every character. `Bound Servant` is the row that surfaced the
+  question: its prose (`+2d to all tests` for the familiar, `+2d
+  Sorcery/Channeling` for the caster) was deliberately left as text rather than
+  migrated into those columns, specifically because migrating it would make the
+  bonus permanent from the moment the spell is learned rather than only while a
+  familiar is actually bound. The gate is missing, not misused — nobody has hit
+  it yet because nobody has populated the columns it would misread.
+- **Question:** Should a known spell's Skill Bonus / Skill Note apply always,
+  or only while the spell is somehow "in effect"?
+- **Options:** A) Always, as today — a spell known is a spell mastered, and
+  `Bound Servant`'s permanent familiar (a 2 ZP spell bought specifically for a
+  standing effect) is the argument this is sometimes exactly right. B) Never
+  unconditionally — gate spells the same way spirits are gated, which raises
+  a harder question with no existing precedent: what "active" means for a
+  spell with no duration field to check against (an instant like Confusion vs.
+  a bind like Bound Servant aren't the same shape). C) Per-row, via a new flag
+  (`Standing: 1`, following `RaisesMax`/`Dose`'s pattern) — the minimal change,
+  but every spell with a Skill Bonus/Skill Note needs a considered value, not
+  a default.
+- **Raised by:** the effect-text-review pass (`docs/effect-text-review/`,
+  now deleted) while adding `Skill Bonus`/`Skill Note` prose-vs-column checks
+  across every table; recorded here so the question survives the bundle.
+- **RULING (owner only):** _
+- **Follow-up on ruling:** If A, no code changes — just note the design intent
+  somewhere `gearSkillEffects`'s doc comment can point to. If B or C, every
+  spell currently carrying a Skill Bonus or Skill Note needs to be re-audited
+  against whatever "active" ends up meaning, which is a P02/P04 re-run.

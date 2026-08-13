@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "220";
+const APP_VERSION = "221";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -747,9 +747,14 @@ function migrateUnitAttachments(character, tables) {
  * an old save can surface at any time.
  *
  * "Cybertechronic Ears" was a misspelling of the "Cybertech*t*ronic" its sibling
- * Cybertechtronic Eyes uses. */
+ * Cybertechtronic Eyes uses. "Delux Trackmobi" was missing its second "e" —
+ * confirmed with the repo owner that no saved character owns one yet, so this
+ * entry is precautionary rather than a rescue, but the convention is to add one
+ * regardless: the next character that buys it is exactly the case this exists
+ * to cover, and "no one has it yet" stops being true the moment this ships. */
 const RENAMED_AUGMENTS = {
   "Cybertechronic Ears": "Cybertechtronic Ears",
+  "Delux Trackmobi": "Deluxe Trackmobi",
 };
 
 /* Apply RENAMED_AUGMENTS everywhere an augment name is stored on a character:
@@ -799,6 +804,50 @@ function migrateRenamedSpirits(character) {
   // Focus/Fetish link to a spell, ritual or spirit; Spirit Bags to a spirit.
   for (const item of character.gear || []) {
     if (item && item.link) item.link = to(item.link);
+  }
+}
+
+/* Spells renamed in the base data, old name -> new. Same contract as
+ * RENAMED_AUGMENTS: `spells` resolves by name, so a rename orphans the spell on
+ * every saved character that knows it -- it drops out of `magic.spells`
+ * silently (nothing errors; it just stops appearing), a Force advance keyed to
+ * the old name in `play.spell_force_advances` stops matching and goes inert,
+ * and a Focus/Fetish linked to it (`gear[].link`) shows a blank instead of the
+ * spell's name. Add an entry whenever a Spell's Name changes and never remove
+ * one.
+ *
+ * "The Infinite Illusion of Spiritual Seperation" was missing the second "a"
+ * in "Separation". */
+const RENAMED_SPELLS = {
+  "The Infinite Illusion of Spiritual Seperation":
+    "The Infinite Illusion of Spiritual Separation",
+};
+
+/* Apply RENAMED_SPELLS everywhere a spell name is stored on a character:
+ * the chargen list, anything bought in play, the Force-advance ledger (a key,
+ * not a value -- rebuild the object so the advance survives under the new
+ * name), and a Focus/Fetish's `link`. Idempotent.
+ *
+ * Spells never enter `play.kit` (KIT_CATEGORIES has no "spells" -- magic stays
+ * on the character rather than being deep-copied at Finalize the way gear is),
+ * so those two arrays are the only places a *known* spell lives. */
+function migrateRenamedSpells(character) {
+  const to = name => RENAMED_SPELLS[name] || name;
+  const rename = list => {
+    for (const entry of list || []) {
+      if (entry && RENAMED_SPELLS[entry.name]) entry.name = RENAMED_SPELLS[entry.name];
+    }
+  };
+  rename((character.magic || {}).spells);
+  rename(((character.play || {}).purchases || {}).spells);
+  const advances = ((character.play || {}).spell_force_advances);
+  if (advances && Object.keys(RENAMED_SPELLS).some(old => old in advances)) {
+    const rebuilt = {};
+    for (const [name, plus] of Object.entries(advances)) rebuilt[to(name)] = plus;
+    character.play.spell_force_advances = rebuilt;
+  }
+  for (const item of character.gear || []) {
+    if (item && RENAMED_SPELLS[item.link]) item.link = RENAMED_SPELLS[item.link];
   }
 }
 
@@ -1090,6 +1139,7 @@ function mergeDefaults(character) {
   // Follow renamed data rows onto saved characters (see RENAMED_AUGMENTS).
   migrateRenamedAugments(character);
   migrateRenamedSpirits(character);
+  migrateRenamedSpells(character);
   migrateRenamedAmmo(character);
 
   // The per-unit Damage counter was a free-form tally no code ever read, and the

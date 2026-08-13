@@ -1189,7 +1189,19 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-step{width:28px;height:28px;border:1px solid var(--line);border-radius:6px;
   background:var(--panel-2);color:var(--text);font-size:15px;line-height:1;cursor:pointer}
 .sh-roller-step:hover{border-color:var(--manon-dim)}
-.sh-roller-count{font-family:var(--mono);font-size:15px;font-weight:600;min-width:44px;text-align:center}
+/* The dice count: a typable field plus its unit. Wide enough for three digits
+   because the cap is 100. The spinner arrows are hidden — the roller has its own
+   larger ± either side, and a second pair of tiny native arrows inside the box
+   would be two controls doing one job. */
+.sh-roller-count{font-family:var(--mono);font-size:15px;font-weight:600;
+  min-width:44px;text-align:center;display:inline-flex;align-items:baseline;gap:3px}
+.sh-roller-count-input{width:3.2em;font:inherit;text-align:right;color:var(--strong);
+  background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 4px}
+.sh-roller-count-input:focus{outline:none;border-color:var(--roll)}
+.sh-roller-count-input::-webkit-outer-spin-button,
+.sh-roller-count-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.sh-roller-count-input{-moz-appearance:textfield;appearance:textfield}
+.sh-roller-count-unit{color:var(--dim);font-size:13px}
 .sh-roller-roll{flex:1}
 /* which pool the roll comes out of, and what it will cost. Stacked, not
    side-by-side: the panel is ~260px and a squeezed select loses its own name */

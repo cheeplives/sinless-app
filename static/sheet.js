@@ -1166,7 +1166,10 @@ function counterBtn(label, fn, cls) {
  * dice and carries Reaction as a flat bonus added to the successes, writing
  * the total straight into the sheet's Initiative field on every roll and
  * re-roll (see rollerApply). */
-const ROLLER_MAX_DICE = 30;
+/* 100 dice. The old cap was 30, which a high-Force spell or a fully-stacked
+ * attack can genuinely exceed — the ceiling was a UI convenience, not a rule,
+ * and hitting it silently capped a legitimate roll. */
+const ROLLER_MAX_DICE = 100;
 const rollerD6 = () => 1 + Math.floor(Math.random() * 6);
 /* dice: {value, selected, rerolled}
  * `count`     — the LIMIT dice: skill (or skill ± specialization). These are
@@ -1209,7 +1212,23 @@ const rollerTotalDice = () => rollerEffective().total;
 
 function rollerRefresh() {
   const cur = $("#die-roller");
-  if (cur) cur.replaceWith(rollerOverlay());
+  if (!cur) return;
+  // The dice count is a text field you can type into, and every refresh builds a
+  // brand new one — so without this, typing a second digit would lose focus
+  // after the first. Remember where the caret was and put it back on the
+  // replacement. Only the count field needs this; nothing else here is typed in.
+  const active = document.activeElement;
+  const wasCount = active && active.classList
+    && active.classList.contains("sh-roller-count-input");
+  const caret = wasCount ? active.selectionStart : null;
+  cur.replaceWith(rollerOverlay());
+  if (!wasCount) return;
+  const next = $("#die-roller .sh-roller-count-input");
+  if (!next) return;
+  next.focus();
+  // A number input rejects setSelectionRange in some browsers; the caret is a
+  // nicety, so losing it must not take the focus down with it.
+  try { next.setSelectionRange(caret, caret); } catch { /* not selectable */ }
 }
 
 /* The wound penalty the tracks currently impose: every 3 boxes marked on either
@@ -1363,16 +1382,37 @@ function rollerOverlay() {
         onclick: () => { st.open = false; rollerRefresh(); } }, "✕")),
     el("div", { class: "sh-roller-controls" },
       stepBtn(-1, "–"),
-      // Skill dice, then the free dice alongside them — the same "3d +2b"
-      // shorthand the weapon chips use.
+      // The skill dice, as a box you can type into. It used to be a read-only
+      // "3d6 +2b" label, which meant reaching 40 dice was forty clicks of the +
+      // spinner. The spinners still drive it — this is the same st.count they
+      // move — and the free dice keep their "+2b" shorthand beside it rather
+      // than inside the field, because those are not yours to type.
       (() => {
         const eff = rollerEffective();
+        const suffix = (eff.bonus ? ` +${eff.bonus}b` : "") + (st.bonus ? ` +${st.bonus}` : "");
         return el("span", { class: "sh-roller-count",
             title: `${eff.total}d6 thrown — ${eff.limit} skill`
               + (eff.bonus ? ` + ${eff.bonus} bonus` : "")
               + (eff.penalty ? ` · wound −${eff.penalty} already taken off` : "") },
-          `${eff.limit}d6` + (eff.bonus ? ` +${eff.bonus}b` : "")
-          + (st.bonus ? ` +${st.bonus}` : ""));
+          el("input", { type: "number", class: "sh-roller-count-input",
+            min: "0", max: String(ROLLER_MAX_DICE),
+            value: String(st.count),
+            "aria-label": "Skill dice",
+            oninput: e => {
+              // Typed dice are limit dice, and the cap is the whole roll, so the
+              // free dice already in the roll take their share of the 100 first.
+              const free = rollerTotalDice() - st.count;
+              const raw = parseInt(e.target.value, 10);
+              st.count = Number.isFinite(raw)
+                ? Math.max(0, Math.min(raw, ROLLER_MAX_DICE - free))
+                : 0;
+              rollerRefresh();
+            },
+            // An empty box while typing is fine; an empty box you walked away
+            // from is a roll of nothing, so it settles back to a usable value.
+            onblur: () => { if (rollerTotalDice() < 1) { st.count = 1; rollerRefresh(); } },
+          }),
+          el("span", { class: "sh-roller-count-unit" }, "d6" + suffix));
       })(),
       stepBtn(1, "+"),
       el("button", { class: "btn sh-roller-roll",

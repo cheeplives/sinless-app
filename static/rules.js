@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "254";
+const APP_VERSION = "255";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -1005,6 +1005,37 @@ function migrateRenamedSpells(character) {
   }
 }
 
+/* RENAMED_WEAPONS: rows retired in favour of an equivalent that stayed.
+ *
+ * "Underbarrel mounted grenade launcher (40mm)" was a second row for the same
+ * real thing as "Underslung Grenade Launcher (40mm) (Underbarrel slot)", and
+ * was retired on 2026-08-13 once the surviving row became reachable through the
+ * Under-slung grenade launcher mod. A weapon resolves by name, so without this
+ * a character who owned the retired one would find it priced at zero, rolling
+ * nothing and reporting no stats.
+ *
+ * PERSONAL weapons only. Drone and vehicle hardpoints draw from their own
+ * tables, which never had this row — a drone carrying the name was already an
+ * orphan (P14 documents exactly that in the rigger-drones fixture) and stays
+ * one, because renaming it would silently invent a mount weapon that has never
+ * existed. Never remove an entry. */
+const RENAMED_WEAPONS = {
+  "Underbarrel mounted grenade launcher (40mm)":
+    "Underslung Grenade Launcher (40mm) (Underbarrel slot)",
+};
+
+/* Apply RENAMED_WEAPONS to the three places a personal weapon name is stored:
+ * the chargen record, the play kit, and anything bought in play. */
+function migrateRenamedWeapons(character) {
+  const play = character.play || {};
+  for (const list of [character.weapons, (play.kit || {}).weapons,
+                      (play.purchases || {}).weapons]) {
+    for (const entry of list || []) {
+      if (entry && RENAMED_WEAPONS[entry.name]) entry.name = RENAMED_WEAPONS[entry.name];
+    }
+  }
+}
+
 /* RENAMED_AMMO: personal HEI and Tracer rounds arrived on 2026-08-10 and would
  * otherwise read as the mount rounds of the same designation, so those two
  * mount rounds — and only those two — say "Vehicle": a Wolfhound's Vehicle
@@ -1294,6 +1325,7 @@ function mergeDefaults(character) {
   migrateRenamedAugments(character);
   migrateRenamedSpirits(character);
   migrateRenamedSpells(character);
+  migrateRenamedWeapons(character);
   migrateRenamedAmmo(character);
 
   // The per-unit Damage counter was a free-form tally no code ever read, and the

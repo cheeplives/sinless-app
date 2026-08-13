@@ -255,7 +255,7 @@ actually testing.
 - **Type:** correctness
 - **Check:**
 
-      (() => { const mk = mods => { const c = RULES.defaultCharacter(); c.name = "G"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.weapons = [{ name: "Militech Whisper 1000", mods }]; const w = RULES.calculate(c).weapons[0]; return [w.Conceal, w.conceal_mod ?? 0]; }; return { base: DATA.tables.weapons.find(r => r.Weapon === "Militech Whisper 1000").Conceal, none: mk([]), optical: mk(["Optical Scope"]), three: mk(["Gyro-mount", "Optical Scope", "Bayonet"]), silencer: mk(["Silencer"]), blankRated: (() => { const c = RULES.defaultCharacter(); c.name = "G"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.weapons = [{ name: "Underbarrel mounted grenade launcher (40mm)", mods: [] }]; return RULES.calculate(c).weapons[0].Conceal; })() }; })()
+      (() => { const mk = mods => { const c = RULES.defaultCharacter(); c.name = "G"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.weapons = [{ name: "Militech Whisper 1000", mods }]; const w = RULES.calculate(c).weapons[0]; return [w.Conceal, w.conceal_mod ?? 0]; }; return { base: DATA.tables.weapons.find(r => r.Weapon === "Militech Whisper 1000").Conceal, none: mk([]), optical: mk(["Optical Scope"]), three: mk(["Gyro-mount", "Optical Scope", "Bayonet"]), silencer: mk(["Silencer"]), blankRated: (() => { const c = RULES.defaultCharacter(); c.name = "G"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.weapons = [{ name: "Underslung Grenade Launcher (40mm) (Underbarrel slot)", mods: [] }]; return RULES.calculate(c).weapons[0].Conceal; })() }; })()
 
 - **Expected:**
 

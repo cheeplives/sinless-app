@@ -1106,15 +1106,21 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-summon-pick select{font:inherit;font-size:12px;padding:2px 5px;background:var(--bg);
   color:var(--text);border:1px solid var(--line);border-radius:5px}
 .sh-summon-stats{margin-top:3px}
-/* Tracked effects/modifiers: one small form per row. The fields wrap so the
-   card survives a phone width, and Dice is narrow because it holds "-2". */
+/* Tracked effects/modifiers: name, pool, dice, what it's doing, and delete all
+   on one line, wrapping as a unit rather than as a head row sitting above a
+   separate fields row at a different height. .sh-fx-row is shared with
+   poolEffectsPanel's rows, which genuinely want its base flex-row layout
+   (what/swing/text beside a button) — .sh-fx-tracked opts this row out of
+   that into a plain stack: the one line, then the rare legacy-value note. */
 .sh-fx-row{padding:6px 0}
 .sh-fx-row + .sh-fx-row{border-top:1px dashed var(--line-dash)}
-.sh-fx-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.sh-fx-fields{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 2px}
-.sh-fx-field{display:flex;flex-direction:column;gap:2px;min-width:0}
-.sh-fx-field input,.sh-fx-field select{font:inherit;font-size:12px;padding:3px 5px;
+.sh-fx-tracked{flex-direction:column;align-items:stretch}
+.sh-fx-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.sh-fx-name{font-weight:600}
+.sh-fx-line select{font:inherit;font-size:12px;padding:3px 5px;
   background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px}
+.sh-fx-line .sh-fx-swing{flex:1 1 160px;margin-top:0}
+.sh-fx-line .row-del{margin-left:auto}
 /* A sense you have to switch on. The button sits under its description rather
    than beside it — the popover is narrow, and a right-aligned button would
    squeeze the "+2d Reconnaissance while active" line into two of its own. */
@@ -1425,6 +1431,19 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
    space to spare, including the Armor chip's three figures. */
 @media(max-width:560px){
   .sh-meters{grid-template-columns:1fr 1fr}
+  /* Below here, two real 250px columns (plus the gap) no longer fit the
+     content box. columns:3 250px alone would collapse to one column on its
+     own at this width, but .sh-col-break (put there to open a second column
+     with Actions This Round) forces that column into existence regardless —
+     break-before:column isn't limited by column-count, so even set to 1 it
+     still splits off a "column 2" that has nowhere to go but off the right
+     edge. The symptom is a card that ends early with a tall blank gap under
+     it: that's column 1 balanced against a column 2 sitting out of view, not
+     a missing card. Cancelling the forced break too is what actually removes
+     it — columns:1 on its own only stops the WIDTH from excusing a second
+     column; it doesn't stop the BREAK from demanding one. */
+  .sh-ov-grid{columns:1}
+  .sh-ov-grid>.sh-col-break{break-before:auto}
 }
 /* Chargen keeps its summary rail as a sidebar down to ~11" tablets (portrait
  * ≈ 820px) — just progressively narrower — rather than burying it below the

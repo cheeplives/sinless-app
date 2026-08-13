@@ -8758,8 +8758,6 @@ function trackedPoolMod(pool) {
  * `kind` only changes the wording; both lists store and apply the same shape. */
 function trackedEffectRow(entry, list, index) {
   const commit = () => playChangedRecalc();
-  const field = (label, node) => el("label", { class: "sh-fx-field" },
-    el("span", { class: "sub" }, label), node);
   // Stable per-row field id so a re-render can hand focus back to the pool
   // selector — changing it recalculates, which rebuilds the sheet under the
   // control being used (#57). Keyed by name rather than index so deleting an
@@ -8773,13 +8771,15 @@ function trackedEffectRow(entry, list, index) {
     el("option", { value: "" }, "No pool"),
     ...POOL_ORDER.map(p => el("option", { value: p }, p)));
   poolSel.value = entry.pool || "";
-  return el("div", { class: "sh-fx-row" },
-    el("div", { class: "sh-fx-head" },
-      el("b", {}, entry.name || "(unnamed)"),
-      el("button", { class: "row-del",
-        onclick: () => { list.splice(index, 1); playChangedRecalc(); } }, "✕")),
-    el("div", { class: "sh-fx-fields" },
-      field("Pool", poolSel),
+  const dice = toIntSafe(entry.dice);
+  // Name, pool, dice, what it's doing, and delete — one line, so reading a row
+  // doesn't mean scanning up and down between a head and a fields block that
+  // used to sit at different heights. The delete button rides margin-left:auto
+  // to the far end of whichever line it lands on, wrapped or not.
+  return el("div", { class: "sh-fx-row sh-fx-tracked" },
+    el("div", { class: "sh-fx-line" },
+      el("b", { class: "sh-fx-name" }, entry.name || "(unnamed)"),
+      poolSel,
       // A number input that re-renders on every keystroke fights a typed
       // minus sign: the interim "-" parses as NaN, gets coerced to 0, and the
       // rebuilt field shows "0" out from under the player mid-type — which is
@@ -8787,18 +8787,21 @@ function trackedEffectRow(entry, list, index) {
       // stepper only commits on blur/Enter (or the −/+ buttons), the same
       // click-to-type pattern every other spend-a-die control on this sheet
       // already uses, so there's no keystroke for a rebuild to race.
-      field("Dice", miniCounter("", () => toIntSafe(entry.dice) || 0,
-        v => { entry.dice = v; }, -99, 99))),
-    // Say what it's actually doing, so a row that affects nothing looks
-    // deliberate rather than broken.
-    el("div", { class: "sub" }, entry.pool && toIntSafe(entry.dice)
-      ? `${toIntSafe(entry.dice) > 0 ? "+" : ""}${toIntSafe(entry.dice)}d ${entry.pool}, applied to the pool`
-      : "Reminder only — no pool dice applied"),
+      miniCounter("", () => toIntSafe(entry.dice) || 0,
+        v => { entry.dice = v; }, -99, 99),
+      // Say what it's actually doing, so a row that affects nothing looks
+      // deliberate rather than broken.
+      el("span", { class: "sh-fx-swing" + (entry.pool && dice ? " on" : "") },
+        entry.pool && dice
+          ? `${dice > 0 ? "+" : ""}${dice}d ${entry.pool}, applied to the pool`
+          : "Reminder only — no pool dice applied"),
+      el("button", { class: "row-del",
+        onclick: () => { list.splice(index, 1); playChangedRecalc(); } }, "✕")),
     // Modifiers saved before this form existed carry a free-text "value"
     // ("+2", "−1d") and nothing else. Dropping it would quietly lose what the
     // player wrote, so it's shown until they fill in the pool and dice that
     // replace it.
-    (entry.value && !(entry.pool && toIntSafe(entry.dice)))
+    (entry.value && !(entry.pool && dice))
       ? el("div", { class: "sub", style: "color:var(--amber)" },
           `Was noted as "${entry.value}" — set a pool and dice above to apply it`)
       : null);

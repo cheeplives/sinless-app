@@ -154,29 +154,6 @@ function weaponRollSpec(name, type, accuracy, bonuses = [], reach = null) {
   return { skill, pool: s.pool, spec, locked, skillDice, acc, limitDice, bonus, why, bwhy };
 }
 
-function weaponRollParts(type, weaponName, accuracy = 0, reach = null) {
-  const mapped = WEAPON_SKILL_BY_TYPE[type] || "Firearms";
-  const skill = unarmedSwapFor(mapped, reach) || mapped;
-  const s = CALC.skills[skill] || {};
-  const pool = s.pool || "Finesse";
-  // final already folds in group-fallback dice, so no "grp" notation needed
-  const spec = specAdjustFor(skill, weaponName, type);
-  const rated = s.final > 0;
-  const skillDice = rated ? Math.max(0, s.final + spec.delta) : 0;
-  // Accuracy is part of the limit, not a free bonus, so it rides with the skill
-  // dice here as it does on the Overview chip.
-  const acc = +accuracy || 0;
-  const dice = skillDice + (rated || acc ? acc : 0);
-  const rating = rated ? skillDice : "untrained";
-  // Name the specialty rather than just moving the number, so a rating that
-  // differs from the Skills tab explains itself.
-  const note = (rated && spec.delta > 0) ? ` (+1 ${spec.term})`
-    : (rated && spec.delta < 0) ? ` (−1 outside ${spec.term})` : "";
-  return { skill, pool, dice,
-    text: `Roll ${pool} ${CALC.pools[pool]}d · ${skill} ${rating}${note}`
-      + (acc ? ` + Acc ${acc} = ${dice}d` : "") };
-}
-function weaponRoll(type, weaponName) { return weaponRollParts(type, weaponName).text; }
 
 const LIFESTYLE_EFFECTS = {
   Squatter: "Rough living: begin play with one Physical condition box already checked and take a −1 penalty die on all tests during the run.",
@@ -3492,6 +3469,49 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
   return wrap;
 }
 
+/* The compact skill-dice chip a weapon shows -- "(5d +3b)", click to roll.
+ *
+ * Hoisted out of shOverview so the Gear tab can use the same one. Gear was
+ * rendering weaponRollParts' prose instead ("Roll Finesse 12d - Firearms 4"),
+ * which spells out the pool as well as the skill and reads as a different,
+ * busier stat than the chip beside the identical weapon on the Overview.
+ */
+// A specialization is +1 on what it covers and −1 on everything else the
+// skill rolls, so it resolves per weapon rather than as the flat −1/+1 pair
+// the Skills tab shows. The chip shows the LIMIT (skill + Accuracy) beside
+// the free dice, because that's the line that matters: the limit comes out
+// of a pool and the bonus dice don't.
+function weaponSkillDice(name, type, accuracy, bonuses = [], reach = null) {
+  const rs = weaponRollSpec(name, type, accuracy, bonuses, reach);
+  if (!rs) return null;
+  const { skill, limitDice, bonus, spec, why, bwhy } = rs;
+  // The bladed cyber implants roll Cybertech Combat, which is trained only —
+  // with no dice in it the weapon can't be used at all, so say so rather than
+  // showing an Accuracy-only dice count that implies you can swing it.
+  if (rs.locked)
+    return el("b", { class: "wpn-dice locked",
+      title: `${skill} is trained only — needs at least 1 die in the skill or its group` },
+      "(trained only)");
+  // Click the chip to load the roller: limit dice go in as skill dice (they
+  // cost pool), free dice go in the bonus row.
+  return rollable(el("span", { class: "wpn-dice-set" },
+    el("b", { class: "wpn-dice" + (spec.delta ? (spec.delta > 0 ? " spec-on" : " spec-off") : ""),
+      title: why.join(" ") }, `(${limitDice}d`),
+    bonus
+      ? el("b", { class: "wpn-bonus", title: `Bonus dice: ${bwhy.join(" + ")}` },
+          ` +${bonus}b`)
+      : null,
+    el("b", { class: "wpn-dice" }, ")")),
+    // Weapon name alone in the header — it's a panel title, and the skill
+    // that made the number is one line down in the hint.
+    { dice: limitDice, bonus, label: name, pool: rs.pool,
+      note: `${skill}: ${rs.skillDice} skill`
+        + (rs.acc ? ` + ${rs.acc} Accuracy` : "")
+        + (bonus ? ` + ${bonus} bonus` : ""),
+      title: `Roll ${limitDice + bonus}d6 — ${why.join(" ")}`
+        + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
+}
+
 function shOverview(body) {
   const play = CHAR.play;
   const econ = kismetEcon();
@@ -3892,41 +3912,6 @@ function shOverview(body) {
      * own Accuracy. Melee rows list Reach and carry no Accuracy, so those come
      * out as the bare skill. Returns null when nothing maps, so it can be
      * dropped straight into el(). */
-    // A specialization is +1 on what it covers and −1 on everything else the
-    // skill rolls, so it resolves per weapon rather than as the flat −1/+1 pair
-    // the Skills tab shows. The chip shows the LIMIT (skill + Accuracy) beside
-    // the free dice, because that's the line that matters: the limit comes out
-    // of a pool and the bonus dice don't.
-    const weaponSkillDice = (name, type, accuracy, bonuses = [], reach = null) => {
-      const rs = weaponRollSpec(name, type, accuracy, bonuses, reach);
-      if (!rs) return null;
-      const { skill, limitDice, bonus, spec, why, bwhy } = rs;
-      // The bladed cyber implants roll Cybertech Combat, which is trained only —
-      // with no dice in it the weapon can't be used at all, so say so rather than
-      // showing an Accuracy-only dice count that implies you can swing it.
-      if (rs.locked)
-        return el("b", { class: "wpn-dice locked",
-          title: `${skill} is trained only — needs at least 1 die in the skill or its group` },
-          "(trained only)");
-      // Click the chip to load the roller: limit dice go in as skill dice (they
-      // cost pool), free dice go in the bonus row.
-      return rollable(el("span", { class: "wpn-dice-set" },
-        el("b", { class: "wpn-dice" + (spec.delta ? (spec.delta > 0 ? " spec-on" : " spec-off") : ""),
-          title: why.join(" ") }, `(${limitDice}d`),
-        bonus
-          ? el("b", { class: "wpn-bonus", title: `Bonus dice: ${bwhy.join(" + ")}` },
-              ` +${bonus}b`)
-          : null,
-        el("b", { class: "wpn-dice" }, ")")),
-        // Weapon name alone in the header — it's a panel title, and the skill
-        // that made the number is one line down in the hint.
-        { dice: limitDice, bonus, label: name, pool: rs.pool,
-          note: `${skill}: ${rs.skillDice} skill`
-            + (rs.acc ? ` + ${rs.acc} Accuracy` : "")
-            + (bonus ? ` + ${bonus} bonus` : ""),
-          title: `Roll ${limitDice + bonus}d6 — ${why.join(" ")}`
-            + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
-    };
     const loadout = el("div", { class: "card sh-card" }, el("h3", {}, "Loadout"));
 
     // Natural / implanted / power-granted weapons (Hand Razors, Spurs, Fangs,
@@ -6182,17 +6167,14 @@ function shGear(body) {
           reorderHandle(() => arrayMove(arr, wi, -1), () => arrayMove(arr, wi, 1),
             wi > 0, wi < arr.length - 1),
           el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
-          (() => {   // the roll hint doubles as the roll button
-            // Skill + Accuracy is the limit, so both load; the firing mode's
-            // free dice are picked on the Overview, where the mode is chosen.
-            const roll = weaponRollParts(r.Type, w.name, calcRow.Accuracy ?? r.Accuracy ?? 0, r.Reach);
-            const hint = el("div", { class: "sub", style: "color:var(--manon)" }, roll.text);
-            return roll.dice
-              ? rollable(hint, { dice: roll.dice, label: w.name, pool: roll.pool,
-                  note: `${roll.skill}: ${roll.dice} limit dice — firing-mode bonus `
-                    + "dice are added on the Overview" })
-              : hint;
-          })(),
+          // The same skill chip the Overview shows for this weapon — "(5d)",
+          // the limit you'd roll — rather than a sentence naming the pool as
+          // well. Two spellings of one stat across two tabs read as two stats
+          // and invited the reader to work out which was right. Firing-mode
+          // bonus dice still aren't included here: the mode is chosen on the
+          // Overview, so this is the weapon's own limit either way.
+          el("span", { class: "sub sh-gear-dice" },
+            weaponSkillDice(w.name, r.Type, calcRow.Accuracy ?? r.Accuracy ?? 0, [], r.Reach)),
           shMountEditor(en, r, w.equipped !== false)),
         el("td", { class: "sub" },
           `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}${weaponTraitBits(r)}` +

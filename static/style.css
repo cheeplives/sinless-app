@@ -661,6 +661,9 @@ label.opt input{margin-top:3px}
    meter has always had. Move dims its unit the way Kismet dims its maximum —
    the metres are the figure, "m" is just what they're in. */
 .sh-meter.move,.sh-meter.armor{cursor:pointer}
+/* Three figures in a tile sized for two. Dropping a couple of points keeps
+   "12 / 18 / 9" on one line at the narrowest tile width rather than wrapping. */
+.sh-meter .v.armor3{font-size:15px;letter-spacing:-.01em}
 .sh-meter.move{border-color:var(--roll-dim)}
 .sh-meter.move .v{color:var(--roll)}
 /* Kismet: a meter, not a pool. Same colour it wore as a tile so it's the same
@@ -1208,9 +1211,17 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-fab:hover{border-color:var(--roll)}
 .sh-roller-fab.open{border-color:var(--roll);color:var(--roll);
   background:color-mix(in srgb,var(--roll) 18%,var(--panel-2))}
+/* Capped and column-flexed so a big roll can't grow the panel off the screen.
+   Raising the cap to 100 dice made 20 rows of them, which pushed the count box
+   and the Roll button out of view — you'd type a number and lose sight of the
+   field you typed it into (#48). Only the dice scroll; head, controls and the
+   success total stay put. */
 .sh-roller{position:fixed;right:16px;bottom:70px;z-index:60;width:264px;
+  max-height:calc(100vh - 90px);display:flex;flex-direction:column;
   background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;
   box-shadow:0 12px 28px rgba(0,0,0,.5)}
+/* Nothing else in the panel may shrink; the dice take whatever is left. */
+.sh-roller > *{flex:0 0 auto}
 .sh-roller-head{display:flex;justify-content:space-between;align-items:center;
   font-family:var(--disp);font-size:12px;letter-spacing:.18em;text-transform:uppercase;
   color:var(--dim);margin-bottom:8px}
@@ -1253,7 +1264,11 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-wound{font-family:var(--mono);font-size:11px;color:var(--bad);margin:-2px 0 8px}
 /* what the roll actually cost, once it's thrown */
 .sh-roller-spent{font-family:var(--mono);font-size:11.5px;color:var(--amber);margin-bottom:6px}
-.sh-roller-dice{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+/* min-height:0 is what actually lets this shrink inside the flex column —
+   without it the flex item refuses to go below its content height and scrolls
+   nothing. Capped so a small roll doesn't leave a tall empty well. */
+.sh-roller-dice{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;
+  flex:0 1 auto;min-height:0;max-height:230px;overflow-y:auto;overscroll-behavior:contain}
 .sh-roller-die{width:40px;height:40px;border:1px solid var(--line);border-radius:8px;
   background:var(--panel-2);color:var(--dim);font-family:var(--mono);font-size:19px;font-weight:700;
   line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}

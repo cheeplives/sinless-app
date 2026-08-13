@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "241";
+const APP_VERSION = "242";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -257,6 +257,24 @@ const RECOIL_IGNORED_WEAPON_TYPES = ["Pistol", "SMG"];
 const RECOIL_IGNORED_TYPES_LABEL = "pistols and SMGs";
 function recoilIgnoredForType(type) {
   return RECOIL_IGNORED_WEAPON_TYPES.some(t => String(type || "").startsWith(t));
+}
+
+/* A cybergun's recoil. Implanted guns live in their own table and take no weapon
+ * mods, so there is nothing per-gun to add — it's the character's own capacity.
+ *
+ * Their Type is prose ("Palm Pistol", "Forearm SMG"), which is why this tests
+ * the words rather than reusing recoilIgnoredForType's prefix match: a Forearm
+ * SMG starts with "Forearm", not "SMG". Shotgun and Heavy Pistol cyberguns exist
+ * too, and a Shotgun correctly gets no relief from Gun-Kata. */
+function cybergunRecoil(gunRow, combat) {
+  const type = String((gunRow || {}).Type || "");
+  const isPistolOrSmg = RECOIL_IGNORED_WEAPON_TYPES.some(
+    t => new RegExp(`\\b${t}\\b`, "i").test(type));
+  return {
+    Recoil: toInt((combat || {}).recoil_capacity),
+    recoil_mod: 0,
+    recoil_ignored: Boolean((combat || {}).recoil_ignored) && isPistolOrSmg,
+  };
 }
 const GYROMOUNT_RECOIL_BONUS = 2;
 const PLATELET_DAMAGE_REDUCTION = 1;
@@ -5686,7 +5704,7 @@ return {
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
   weaponIntegratedMods, weaponIsOneshot, ONESHOT_NOTE,
-  BASE_RECOIL_CAPACITY, recoilStrengthBonus, recoilIgnoredForType,
+  BASE_RECOIL_CAPACITY, recoilStrengthBonus, recoilIgnoredForType, cybergunRecoil,
   gearIsDose, gearMaxDoses, liveDoseRows,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,

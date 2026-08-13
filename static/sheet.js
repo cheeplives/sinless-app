@@ -1456,7 +1456,10 @@ function rollerOverlay() {
             // from is a roll of nothing, so it settles back to a usable value.
             onblur: () => { if (rollerTotalDice() < 1) { st.count = 1; rollerRefresh(); } },
           }),
-          el("span", { class: "sh-roller-count-unit" }, "d6" + suffix));
+          // "d6" was noise beside a box you type a die count into — the panel
+          // is a die roller, and nothing else in it is measured in anything
+          // else (#48). The bonus-dice shorthand stays: that IS information.
+          suffix ? el("span", { class: "sh-roller-count-unit" }, suffix) : null);
       })(),
       stepBtn(1, "+"),
       el("button", { class: "btn sh-roller-roll",
@@ -2012,40 +2015,71 @@ function armorMeter() {
   const c = CALC.combat;
   return el("div", {
     class: "sh-meter armor", role: "button", tabindex: "0",
-    title: `Ballistic ${c.ballistic_armor} / Impact ${c.impact_armor}`
-      + " — ballistic lowers damage, impact applies to melee."
-      + " Click for your Max Ballistic and Min Impact.",
-    "aria-label": `Armor: ballistic ${c.ballistic_armor}, impact ${c.impact_armor}`,
+    // Max Ballistic leads because it answers a question the totals can't: it
+    // decides whether an incoming hit is Physical or Stun. The totals only say
+    // how much of it you shrug off afterwards.
+    title: `Max Ballistic ${c.max_ballistic} — a weapon whose Pen reaches it deals`
+      + ` PHYSICAL damage, below it Stun. Total Ballistic ${c.ballistic_armor}`
+      + ` then reduces the damage. Total Impact ${c.impact_armor} applies to melee.`,
+    "aria-label": `Armor: max ballistic ${c.max_ballistic}, total ballistic `
+      + `${c.ballistic_armor}, total impact ${c.impact_armor}`,
     onclick: () => openArmorPopover(),
     onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openArmorPopover(); } },
   },
     el("div", { class: "k" }, "Armor"),
-    el("div", { class: "v" }, `${c.ballistic_armor} / ${c.impact_armor}`),
-    el("span", { class: "sub" }, "bal · imp"));
+    // No spaces around the slashes: three figures have to fit a tile built for
+    // two, and at phone width "5 / 6 / 7" overflows it while "5/6/7" doesn't.
+    // The sub-label underneath is what says which is which.
+    el("div", { class: "v armor3" },
+      `${c.max_ballistic}/${c.ballistic_armor}/${c.impact_armor}`),
+    el("span", { class: "sub" }, "max B · bal · imp"));
 }
 
+/* What the three armor figures actually do, in the order a hit resolves.
+ *
+ * The first version of this box had Max Ballistic wrong in a way that mattered:
+ * it called it "the most ballistic armor this character benefits from" and
+ * warned when the total went above it, as though it were a cap on useful armor.
+ * It isn't a cap at all — it's the threshold that decides the DAMAGE TYPE of an
+ * incoming hit, and having a total well above it is normal and good (#55). */
 function openArmorPopover() {
   openAnchoredPopover({
-    kind: "armor", anchorSel: ".sh-meter.armor", label: "Armor limits",
+    kind: "armor", anchorSel: ".sh-meter.armor", label: "Armor",
     build: (refresh, close) => {
       const c = CALC.combat;
-      const over = c.ballistic_armor > c.max_ballistic;
-      const under = c.impact_armor < c.min_impact;
+      // Which piece the threshold actually comes from, so a player can see what
+      // they'd be giving up by swapping it out. Worn armor and implanted/innate
+      // sources are checked together: combat.armor_sources only ever holds the
+      // second kind (augments, heritage, Chelonian), so on a character whose
+      // best ballistic is a coat — the ordinary case — it is empty.
+      const best = [
+        ...(CALC.armor || [])
+          .filter(a => a.active !== false)
+          .map(a => ({ name: a.Armor || a.name, b: toIntSafe(a.Ballistic) })),
+        ...(c.armor_sources || []).map(s => ({ name: s.name, b: toIntSafe(s.b) })),
+      ].filter(s => s.b > 0 && s.b === toIntSafe(c.max_ballistic)).map(s => s.name);
       return [
         popoverHead("🛡 Armor", close),
         el("div", { class: "sh-sense" },
-          el("div", {}, `Worn ${c.ballistic_armor} ballistic / ${c.impact_armor} impact`),
-          el("div", { class: "sub" }, "Ballistic lowers damage taken; impact applies to melee")),
-        el("div", { class: "sh-sense" + (over ? " bad" : "") },
           el("div", {}, `Max Ballistic ${c.max_ballistic}`),
-          el("div", { class: "sub" }, over
-            ? `Over by ${c.ballistic_armor - c.max_ballistic} — ballistic above your maximum does nothing`
-            : "The most ballistic armor this character benefits from")),
-        el("div", { class: "sh-sense" + (under ? " bad" : "") },
-          el("div", {}, `Min Impact ${c.min_impact}`),
-          el("div", { class: "sub" }, under
-            ? `Short by ${c.min_impact - c.impact_armor} impact`
-            : "The impact rating this character should not drop below")),
+          el("div", { class: "sub" },
+            "The highest Ballistic on any ONE piece — it does not add up. "
+            + "A weapon whose Pen is this or higher deals PHYSICAL damage; "
+            + "below it, the hit is Stun."
+            + (best.length ? ` From: ${best.join(" · ")}.` : ""))),
+        el("div", { class: "sh-sense" },
+          el("div", {}, `Total Ballistic ${c.ballistic_armor}`),
+          el("div", { class: "sub" },
+            "Every piece added together. This is what reduces the damage once "
+            + "the type above has been decided.")),
+        el("div", { class: "sh-sense" },
+          el("div", {}, `Total Impact ${c.impact_armor}`),
+          el("div", { class: "sub" }, "Applies to melee.")),
+        c.min_impact ? el("div", { class: "sh-sense" },
+          el("div", {}, `Impact you can't lose ${c.min_impact}`),
+          el("div", { class: "sub" },
+            "Implanted or innate — bone lacing, a heritage's own hide. Still "
+            + "there with everything else stripped off.")) : null,
       ];
     },
   });
@@ -4012,6 +4046,10 @@ function shOverview(body) {
               ` · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
               + ((calcRow.Ammo ?? r.Ammo) ? ` · Mag ${calcRow.Ammo ?? r.Ammo}` : "")
               + ` · Hardening ${RULES.hardeningOf(r)}`
+              // Recoil belongs on the line you actually shoot from. It shipped
+              // on the Gear tab and in chargen but never here, which is the one
+              // place a firing mode is chosen (#56).
+              + recoilBit(calcRow)
               + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : "")
               + (RULES.weaponIsOneshot(r) ? ` · ${RULES.ONESHOT_NOTE}` : ""),
               modNames.length
@@ -4064,7 +4102,9 @@ function shOverview(body) {
               "Cybergun", weaponSkillDice(cg.name, "Cybergun", shot.acc, cgBonuses),
               " · ", bit("Acc", "acc"), " · ", bit("DMG", "damage"), " · ", bit("Pen", "pen"),
               base.bar ? " · " : null, base.bar ? bit("Barrier", "bar") : null,
-              ` · Mag ${g.Ammo}`,
+              ` · Mag ${g.Ammo}`
+              + ` · Hardening ${RULES.hardeningOf(g)}`
+              + recoilBit(RULES.cybergunRecoil(g, CALC.combat)),
               el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab"),
               ammo.notes.length
                 ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
@@ -4127,9 +4167,15 @@ function shOverview(body) {
           // gameplay effects those carry (issue #18). wornArmor is a filtered
           // view, so map back through the full owned list to reach the CALC row.
           const arow = (CALC.armor || [])[armorAll.indexOf(a)] || {};
+          // ZR and Rarity join the line so armor reports the same shape the
+          // weapon rows beside it do — both were on the weapon line and on
+          // neither armor line, which is exactly the kind of gap #56 asks for a
+          // pass on. Rarity is skipped when the data says "-" (no rating).
           const notes = [
             [arow.material, arow.style].filter(Boolean).join(" · ") || r.Slot || "",
             `wt ${r.wt || 0}`,
+            `ZR ${r.ZR || 0}`,
+            (r.Rarity && r.Rarity !== "-") ? `Rarity ${r.Rarity}` : "",
             (arow.extras || []).length ? arow.extras.join(", ") : "",
           ].filter(Boolean).join(" · ");
           const aeffects = arow.effects || [];
@@ -5883,7 +5929,9 @@ function shGear(body) {
         el("td", {}, el("b", {}, cg.name + " (smart)"),
           el("div", { class: "sub" }, "Implanted cyberarm gun — configured on the Augments tab")),
         el("td", { class: "sub" },
-          `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · ${g.Modes} · Pen ${g.Pen}${barrierBit(g, g.Bar)} · Ammo ${g.Ammo}`),
+          `Cybergun · Acc ${g.Acc} · DMG ${g.Dmg} · ${g.Modes} · Pen ${g.Pen}${barrierBit(g, g.Bar)} · Ammo ${g.Ammo}`
+          + ` · Hardening ${RULES.hardeningOf(g)}`
+          + recoilBit(RULES.cybergunRecoil(g, CALC.combat))),
         el("td", { class: "sub" }, "—"),
         el("td", {}, "")));
     });

@@ -632,6 +632,33 @@ actually testing.
   gives its +1d Observation.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-026: Max Ballistic is a per-piece threshold, not a cap on total armor
+- **Type:** correctness
+- **Steps:** Any character. Wears one armor piece, then adds a second, and
+  compares the two figures. Restores what it found.
+- **Check:**
+
+      (async () => { const c = CHAR; const snap = JSON.stringify([c.armor, (c.play && c.play.kit) ? c.play.kit.armor : null]); const set = async list => { c.armor = JSON.parse(JSON.stringify(list)); if (c.play && c.play.kit) c.play.kit.armor = JSON.parse(JSON.stringify(list)); await recalc(); return { maxB: CALC.combat.max_ballistic, totalB: CALC.combat.ballistic_armor }; }; const one = await set([{ name: "Power Armor", active: true, mods: [] }]); const two = await set([{ name: "Power Armor", active: true, mods: [] }, { name: "Helmet", active: true, mods: [] }]); const [a, k] = JSON.parse(snap); c.armor = a; if (c.play && c.play.kit) c.play.kit.armor = k; await recalc(); return { onePiece: one, twoPieces: two, maxHeldWhileTotalRose: one.maxB === two.maxB && two.totalB > one.totalB }; })()
+
+- **Expected:** `{ "onePiece": { "maxB": 5, "totalB": 5 }, "twoPieces": { "maxB": 5, "totalB": 6 }, "maxHeldWhileTotalRose": true }`
+- **Note:** Two figures that look alike and mean completely different things.
+
+  **Max Ballistic** is the highest Ballistic on any ONE source and does not add
+  up. It decides the DAMAGE TYPE of an incoming hit: a weapon whose Pen reaches
+  it deals Physical, below it the hit is Stun.
+
+  **Total Ballistic** is every piece summed, and only reduces the damage after
+  that type is settled.
+
+  `maxHeldWhileTotalRose` is the whole case. Adding a Helmet raises the total to
+  6 and leaves the threshold at 5, because the Helmet's own 1 was never going to
+  beat Power Armor's 5. A build that treats Max Ballistic as a cap would report
+  the character "over" it here, which is what the Armor popover used to say —
+  it described the figure as "the most ballistic armor this character benefits
+  from" and warned when the total exceeded it. Both wrong: exceeding it is
+  normal, and it isn't about benefit at all (#55).
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

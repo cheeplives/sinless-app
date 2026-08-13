@@ -4111,6 +4111,34 @@ function shOverview(body) {
   body.append(notesCard(3));
 }
 
+/* The character's own recoil capacity, with where each point came from.
+ *
+ * This is the base every gun starts from; a weapon's own mods are added on its
+ * stat line, not here. Shown in two places on purpose — in the Dossier Notes
+ * card as a derived figure of the build, and at the foot of the Finesse card
+ * because Firearms is a Finesse skill and this is the number you check in the
+ * same breath as the dice you're about to roll. */
+function recoilSummary() {
+  const c = CALC.combat;
+  const parts = [`base ${RULES.BASE_RECOIL_CAPACITY ?? 1}`];
+  if (c.recoil_strength_bonus) parts.push(`+${c.recoil_strength_bonus} Strength`);
+  if (c.recoil_augment_bonus) parts.push(`+${c.recoil_augment_bonus} Gyromount`);
+  return {
+    value: c.recoil_capacity,
+    breakdown: parts.join(" · "),
+    ignored: c.recoil_ignored ? `Gun-Kata: recoil ignored on ${c.recoil_ignored_types}` : "",
+  };
+}
+
+function recoilStatLine() {
+  const r = recoilSummary();
+  return el("div", { class: "sh-recoil" },
+    statLine("Recoil capacity", String(r.value), r.breakdown),
+    el("div", { class: "sub" }, r.breakdown
+      + (r.ignored ? ` — ${r.ignored}` : "")
+      + ". Mods fitted to a gun add to this on its own line."));
+}
+
 function statLine(label, value, title) {
   return el("div", title ? { class: "stat-line", title } : { class: "stat-line" },
     label, el("b", {}, value));
@@ -4618,6 +4646,10 @@ function shSkills(body) {
       if (isBrawn) appendMartialArtRows(t);
       card.append(t);
     }
+    // Firearms, Heavy Weapons and Archery are all Finesse, so the number that
+    // decides how much of a burst you can hold on target belongs at the foot of
+    // this card rather than a tab away.
+    if (pool === "Finesse") card.append(recoilStatLine());
     grid.append(card);
   }
   body.append(grid);
@@ -5525,7 +5557,8 @@ function shGear(body) {
           shMountEditor(en, r, w.equipped !== false)),
         el("td", { class: "sub" },
           `${r.Type || ""} · Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0} · DMG ${calcRow.Damage ?? r.Damage ?? "—"} · ${r["Firing modes"] || "melee"} · Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}${weaponTraitBits(r)}` +
-          ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "")),
+          ((calcRow.Ammo ?? r.Ammo) ? ` · Ammo ${calcRow.Ammo ?? r.Ammo}` : "") +
+          recoilBit(calcRow)),
         el("td", {},
           el("input", { type: "checkbox", ...(w.equipped !== false ? { checked: 1 } : {}),
             onchange: async e => { w.equipped = e.target.checked; await playChangedRecalc(); } }),
@@ -7752,16 +7785,17 @@ function shNotes(body) {
   // A Replicant's clock belongs with the rest of what being one costs you, not
   // only on the Overview. Same live control, same play field.
   const lifespan = replicantLifespanTracker();
-  if (autos.length || lifespan) {
-    const dossier = el("div", { class: "card sh-card" },
-      el("h3", {}, "Dossier Notes"),
-      el("p", { class: "hint" }, "Generated from your build — reminders that don't fit the other tabs."));
-    autos.forEach(n => dossier.append(el("div", { class: "sh-callout" }, "⚠ ", n)));
-    if (lifespan) dossier.append(lifespan);
-    body.append(el("div", { class: "sh-notes-top" }, notes, dossier));
-  } else {
-    body.append(notes);
-  }
+  // The card always renders now, because recoil capacity is always there to
+  // report. It goes in as a stat line rather than a ⚠ callout: this card mixes
+  // two kinds of generated content, and a standing figure of the build is not a
+  // warning about it.
+  const dossier = el("div", { class: "card sh-card" },
+    el("h3", {}, "Dossier Notes"),
+    el("p", { class: "hint" }, "Generated from your build — reminders that don't fit the other tabs."));
+  dossier.append(recoilStatLine());
+  autos.forEach(n => dossier.append(el("div", { class: "sh-callout" }, "⚠ ", n)));
+  if (lifespan) dossier.append(lifespan);
+  body.append(el("div", { class: "sh-notes-top" }, notes, dossier));
   const traits = heritageTraitsCard();
   if (traits) body.append(traits);
   body.append(imagesCard());

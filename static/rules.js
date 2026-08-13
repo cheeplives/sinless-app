@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "226";
+const APP_VERSION = "227";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -237,6 +237,27 @@ function speakerBondCount(character) {
 }
 const COVERT_SYNTHSKIN_DODGE_BONUS = 1;
 const PERFECT_SITUATIONAL_AWARENESS_BONUS = 3;   // +3d dodge AND soak (amp power)
+/* Recoil capacity — how many recoil tokens a shooter can absorb before it costs
+ * them dice. Everyone has 1. Strength buys more, but in two flat steps rather
+ * than by the point: it used to be raw Strength, which handed a heavy hitter a
+ * recoil capacity in the twenties and made the whole stat meaningless for them.
+ *
+ * The tiers are checked highest-first and only one applies — a Strength of 24
+ * is +2, NOT +1 for passing 12 and +2 again for passing 24. */
+const BASE_RECOIL_CAPACITY = 1;
+const RECOIL_STRENGTH_TIERS = [[24, 2], [12, 1]];
+function recoilStrengthBonus(strength) {
+  const tier = RECOIL_STRENGTH_TIERS.find(([floor]) => toInt(strength) >= floor);
+  return tier ? tier[1] : 0;
+}
+/* Gun-Kata rank 3 ("Ignore Recoil") is a pistol-and-SMG discipline — it does not
+ * steady a heavy machine gun. Pistol rows are typed by weight (PistolLt/Med/Hvy),
+ * hence the prefix test rather than an exact match. */
+const RECOIL_IGNORED_WEAPON_TYPES = ["Pistol", "SMG"];
+const RECOIL_IGNORED_TYPES_LABEL = "pistols and SMGs";
+function recoilIgnoredForType(type) {
+  return RECOIL_IGNORED_WEAPON_TYPES.some(t => String(type || "").startsWith(t));
+}
 const GYROMOUNT_RECOIL_BONUS = 2;
 const PLATELET_DAMAGE_REDUCTION = 1;
 // Augments granting a special sense or immunity (no numeric stat) — surfaced as
@@ -3047,6 +3068,10 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
     const fittedMods = [];
     let accMod = 0;
     let concealMod = 0;
+    // Gyro-mount, Bi-pod and Gas Vent each carry RecoilMod. The column has been
+    // in the data (and in the homebrew editor) all along with nothing reading
+    // it, so a player could fit a bipod and watch it do nothing.
+    let recoilMod = 0;
     // Built in at the factory: same stat effects as a bolted-on one, no cost,
     // and no slot consumed. Applied first so a duplicate the player chose is
     // recognisable below.
@@ -3063,6 +3088,7 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
       const acc = asNumber(modRow.AccMod);
       if (acc > 0) accMod += acc;
       concealMod += asNumber(modRow["Conceal Mod"]);
+      recoilMod += asNumber(modRow.RecoilMod);
       integratedMods.push({ name: modName, slot: modRow.Slot,
                             effect: modRow.Effect, integrated: true,
                             penalty_waived: acc < 0 ? acc : 0 });
@@ -3077,6 +3103,7 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
         // Concealability: bolting things to a gun makes it harder to hide, and
         // the mods' numbers add straight onto the weapon's own Conceal rating.
         concealMod += asNumber(modRow["Conceal Mod"]);
+        recoilMod += asNumber(modRow.RecoilMod);
         fittedMods.push({ name: modName, slot: modRow.Slot, effect: modRow.Effect });
       }
     }
@@ -3144,6 +3171,10 @@ function priceWeapons(character, data, gearCostMultiplier, warnings, strength, e
       item.Conceal = String(toInt(asNumber(item.Conceal)) + toInt(concealMod));
       item.conceal_mod = concealMod;
     }
+    // Just the mods' contribution. The character's own capacity is added in
+    // calculate(), which is also where Gun-Kata's "Ignore Recoil" is resolved —
+    // pricing a gun shouldn't need to know what martial art its owner studies.
+    item.recoil_mod = toInt(recoilMod);
     item.qty = qty;
     item.mods = fittedMods;
     item.integrated_mods = integratedMods;
@@ -3747,9 +3778,15 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
     move: BASE_MOVE_METERS + heritage.move_bonus + augments.move_bonus,
     // Mobi augments now surface as structured move_modes; keep heritage quirks here.
     move_special: [...heritage.special_move_notes],
-    // Recoil capacity: Strength + Gyromount(+2 each). Fitted weapon mods
-    // (Bi-pod, Gas Vent) and the Cybergun's doubled Strength add on top per-gun.
-    recoil_capacity: finalAttributes.Strength + augments.recoil_capacity_bonus,
+    // Recoil capacity: everyone starts at 1, Strength adds a flat step at 12 and
+    // a bigger one at 24, and each Gyromount augment adds +2. Fitted weapon mods
+    // (Gyro-mount, Bi-pod, Gas Vent) raise it further for the one gun they're on
+    // — that part is per-weapon and lands in CALC.weapons, not here.
+    recoil_capacity: BASE_RECOIL_CAPACITY
+      + recoilStrengthBonus(finalAttributes.Strength)
+      + augments.recoil_capacity_bonus,
+    recoil_strength_bonus: recoilStrengthBonus(finalAttributes.Strength),
+    recoil_augment_bonus: augments.recoil_capacity_bonus,
     optics_notes: augments.combat_notes,
     sense_notes: augments.sense_notes,
     move_modes: augments.move_modes,
@@ -5081,8 +5118,23 @@ function calculate(character) {
   const maMods = martialArt.mods;
   combatOut.dodge_bonus += maMods.dodge_bonus;
   combatOut.soak_bonus += maMods.soak_bonus;
+  // Per-gun recoil capacity: the character's own figure plus whatever is bolted
+  // to that particular weapon. Melee and thrown weapons have no recoil to
+  // absorb, so they get no rating rather than a meaningless one — a Katana
+  // reading "Recoil 3" would be noise on every melee character's sheet.
+  for (const item of weapons.items) {
+    if (item.Type === "Melee" || item.Type === "Thrown") continue;
+    item.recoil_ignored = Boolean(maMods.recoil_ignored) && recoilIgnoredForType(item.Type);
+    item.Recoil = combatOut.recoil_capacity + toInt(item.recoil_mod);
+  }
   combatOut.move += maMods.move_bonus;
-  if (maMods.recoil_ignored) combatOut.recoil_ignored = 1;
+  // Kept as a flag for the summary line, but it is no longer a blanket "this
+  // character never suffers recoil" — Gun-Kata steadies pistols and SMGs, and
+  // the per-weapon rows above are what decide which guns that reaches.
+  if (maMods.recoil_ignored) {
+    combatOut.recoil_ignored = 1;
+    combatOut.recoil_ignored_types = RECOIL_IGNORED_TYPES_LABEL;
+  }
   combatOut.martial_notes = maMods.applied;
   // Natural / implanted / power-granted melee weapons for the Overview loadout,
   // plus heritage bite/spit attacks (Shark, Snake).
@@ -5236,6 +5288,7 @@ return {
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
   weaponIntegratedMods, weaponIsOneshot, ONESHOT_NOTE,
+  BASE_RECOIL_CAPACITY, recoilStrengthBonus, recoilIgnoredForType,
   gearIsDose, gearMaxDoses, liveDoseRows,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,

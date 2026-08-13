@@ -273,7 +273,7 @@ const HOMEBREW_CONFIG = {
     { key: "BI", hint: "number" },
     { key: "Cost", hint: "number, or 25% for a share of the weapon's cost" },
     { key: "Effect", ta: true },
-    { key: "RecoilMod", hint: "+/-N" },
+    { key: "RecoilMod", hint: "+/-N — added to the shooter's recoil capacity, but only for the gun this is fitted to" },
     { key: "AccMod", hint: "+/-N" },
     { key: "MagMod", hint: "e.g. x1.5" },
     { key: "HardMod", hint: "+/-N" },

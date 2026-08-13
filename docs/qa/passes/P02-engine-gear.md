@@ -524,6 +524,57 @@ actually testing.
   must read exactly 1, or a multiplier is leaking in from somewhere else.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P02-022: Recoil capacity is 1 plus flat Strength steps, not raw Strength
+- **Type:** correctness
+- **Steps:** Any character. Restores its own Strength and augments afterwards.
+- **Check:**
+
+      (async () => { const c = CHAR; const str = c.attributes.Strength; const aug = JSON.parse(JSON.stringify(c.augments)); const out = {}; const at = async (s, augs) => { c.attributes.Strength = s; c.augments = augs; if (c.play && c.play.kit) c.play.kit.augments = JSON.parse(JSON.stringify(augs)); await recalc(); return CALC.combat.recoil_capacity; }; out.str1 = await at(1, []); out.str11 = await at(11, []); out.str12 = await at(12, []); out.str23 = await at(23, []); out.str24 = await at(24, []); out.str24gyro = await at(24, [{ name: "Gyromount" }]); out.str1twoGyro = await at(1, [{ name: "Gyromount", count: 2 }]); c.attributes.Strength = str; c.augments = aug; if (c.play && c.play.kit) c.play.kit.augments = JSON.parse(JSON.stringify(aug)); await recalc(); return out; })()
+
+- **Expected:** `{ "str1": 1, "str11": 1, "str12": 2, "str23": 2, "str24": 3, "str24gyro": 5, "str1twoGyro": 5 }`
+- **Note:** `str24: 3` is the case worth having. The Strength tiers are checked
+  highest-first and exactly one applies — a Strength of 24 is base 1 plus 2, not
+  base 1 plus 1 for clearing 12 and another 2 for clearing 24. Reading the tiers
+  as cumulative is the obvious way to write this and gives 4.
+
+  `str11` and `str23` are the boundaries from below: the steps land *at* 12 and
+  24, not near them.
+
+  This replaced a formula that was raw Strength plus Gyromounts, which handed a
+  heavy hitter a recoil capacity in the twenties and made the stat meaningless
+  for exactly the characters most likely to fire something with recoil.
+
+  `str1twoGyro: 5` shows the augment stacks per copy (1 + 2 + 2) and that
+  `count` is honoured — two Gyromounts as one entry with `count: 2` must equal
+  two separate entries.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P02-023: Each gun carries its own recoil, and Gun-Kata only steadies two types
+- **Type:** correctness
+- **Steps:** Any character; the check sets Strength 1 and no augments so the
+  character's own capacity is exactly 1 and every number below is the mods'
+  contribution. Restores what it found.
+- **Check:**
+
+      (async () => { const c = CHAR; const snap = JSON.stringify([c.attributes.Strength, c.augments, c.weapons, c.martial_arts || []]); const put = async (str, augs, weapons, arts) => { c.attributes.Strength = str; c.augments = augs; c.weapons = weapons; c.martial_arts = arts; if (c.play && c.play.kit) Object.assign(c.play.kit, JSON.parse(JSON.stringify({ augments: augs, weapons, martial_arts: arts }))); await recalc(); }; const guns = [{ name: "FN-RAL Heavy Assault", equipped: true, mods: [] }, { name: "FN-RAL Heavy Assault", equipped: true, mods: ["Bi-pod (Rifle Only)", "Gas Vent"] }, { name: "Ingram MAC 14", equipped: true, mods: [] }, { name: "Katana", equipped: true, mods: [] }]; await put(1, [], guns, []); const cap = CALC.combat.recoil_capacity; const plain = CALC.weapons.map(x => `${x.Type}:${x.Recoil ?? "—"}${x.recoil_ignored ? " ignored" : ""}`); await put(1, [], guns, [{ style: "Gun-Kata", rank: 3 }]); const kata = CALC.weapons.map(x => `${x.Type}:${x.Recoil ?? "—"}${x.recoil_ignored ? " ignored" : ""}`); const [s, a, w, m] = JSON.parse(snap); await put(s, a, w, m); return { cap, plain, kata }; })()
+
+- **Expected:** `{ "cap": 1, "plain": ["Rifle:1", "Rifle:3", "SMG:1", "Melee:—"], "kata": ["Rifle:1", "Rifle:3", "SMG:1 ignored", "Melee:—"] }`
+- **Note:** Two identical rifles, one bare and one wearing a Bi-pod and a Gas
+  Vent, are the point: `Rifle:1` beside `Rifle:3` proves recoil is resolved per
+  weapon rather than once per character. The `RecoilMod` column has been in the
+  data — and in the homebrew editor — since before anything read it, so fitting
+  a bipod used to do nothing at all.
+
+  `Melee:—` is deliberate. A Katana has no recoil to absorb, so it gets no
+  rating rather than the character's number; "Recoil 1" on a sword would be
+  noise on every melee sheet.
+
+  The `plain` → `kata` diff is the scope test. Gun-Kata rank 3 says "Ignore
+  Recoil", and the engine's generic effect parser sets one flag from that text;
+  applying the flag as written makes a heavy assault rifle recoilless. Only the
+  SMG changes here, and the rifles hold at 1 and 3.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

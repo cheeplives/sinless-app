@@ -2217,6 +2217,17 @@ function concealBit(row, calcRow) {
   const mod = (calcRow || {}).conceal_mod || 0;
   return `${c || 0}${mod ? ` (+${mod} mods)` : ""}`;
 }
+/* Recoil capacity for one gun: the shooter's own capacity plus whatever is
+   bolted to this weapon, or "Ignored" when Gun-Kata rank 3 covers the type.
+   Blank for melee, thrown and anything the engine didn't rate — there is no
+   recoil to absorb, and a Katana reading "Recoil 3" would be pure noise.
+   Shared with sheet.js so chargen and play agree. */
+function recoilBit(calcRow) {
+  const c = calcRow || {};
+  if (c.recoil_ignored) return " · Recoil ignored";
+  if (c.Recoil == null) return "";
+  return ` · Recoil ${c.Recoil}${c.recoil_mod ? ` (+${c.recoil_mod} mods)` : ""}`;
+}
 /* Everything a weapon carries that isn't a number: the mods built into it at
    the factory and, for a sealed weapon, the fact that it can't be reloaded.
    Read off the data row, so it says the same thing in chargen and in play, and
@@ -2293,7 +2304,7 @@ function tabWeapons(p) {
       return el("tr", {},
         el("td", {}, el("b", {}, it.name),
           el("div", { class: "sub" },
-            `${r.Type} \u00b7 Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}${calcRow.smartlink ? " (smart)" : ""} \u00b7 DMG ${calcRow.Damage ?? r.Damage} \u00b7 ${r["Firing modes"] || "melee"} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} \u00b7 Conceal ${concealBit(r, calcRow)} \u00b7 ZR ${r.ZR || 0} \u00b7 Weight ${r.Weight || 0}${weaponTraitBits(r)}`
+            `${r.Type} \u00b7 Acc ${calcRow.Accuracy ?? r.Accuracy ?? 0}${calcRow.smartlink ? " (smart)" : ""} \u00b7 DMG ${calcRow.Damage ?? r.Damage} \u00b7 ${r["Firing modes"] || "melee"} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, calcRow.Bar ?? r.Bar)} \u00b7 Conceal ${concealBit(r, calcRow)} \u00b7 ZR ${r.ZR || 0} \u00b7 Weight ${r.Weight || 0}${weaponTraitBits(r)}${recoilBit(calcRow)}`
             + (isThrown ? ` \u00b7 \u00d7${it.qty || 1}` : "")),
           canMod ? fittedCategoryEditor({
             id: `wmods-${i}-${it.name}`,

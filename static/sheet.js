@@ -3624,7 +3624,8 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
       title: oneshot ? RULES.ONESHOT_NOTE
         : "Reload to a full magazine"
           + (/crossbow/i.test(fireLabel) ? " — a Complex Action to recock" : "")
-          + (r.Type === "Cybergun" && !r.Reloadable ? " — implanted; not meant to be done mid-fight" : ""),
+          + (r.Type === "Cybergun" && !r.Reloadable ? " — implanted; not meant to be done mid-fight" : "")
+          + ". Also steadies the gun (recoil back to 0).",
       onclick: () => {
         if (oneshot) return;
         // A cybergun's magazine lives inside the arm — swapping it isn't a
@@ -3636,6 +3637,11 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
         const reloadCost = /crossbow/i.test(fireLabel) ? 2 : 1;
         if (!spendSimpleActions(reloadCost, `Reloading ${fireLabel}`)) return;
         w.loaded = maxAmmo;
+        // A fresh magazine comes with the gun re-seated, so reloading steadies
+        // it for free — no separate Stabilize, and no shot to add recoil back.
+        // After the spend, so a reload refused for lack of actions doesn't
+        // hand out the stabilize anyway.
+        stabilizeRecoil(calcRow);
         playChanged();
       } }, "Reload"),
     aimedFireButton(rollSpec, fireLabel, mode, {

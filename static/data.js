@@ -20,7 +20,7 @@ const DATA_BUNDLE ={
 {"Type":"Palm Pistol","Acc":"0","Dmg":"2","Ammo":"5","Modes":"SS","Rarity":"3","Pen":"2","Bar":"0","Cost":"300"},
 {"Type":"Forearm SMG","Acc":"3","Dmg":"3","Ammo":"40","Modes":"SS, DT, BF","Rarity":"4","Pen":"3","Bar":"2","Cost":"2000"},
 {"Type":"Heavy Pistol","Acc":"2","Dmg":"6","Ammo":"15","Modes":"SS, DT","Rarity":"4","Pen":"4","Bar":"0","Cost":"500"},
-{"Type":"Shotgun","Acc":"2","Dmg":"10","Ammo":"5","Modes":"DT","Rarity":"3","Pen":"3","Bar":"2","Cost":"2500"}
+{"Type":"Shotgun","Acc":"2","Dmg":"10","Ammo":"5","Modes":"SS, DT","Rarity":"3","Pen":"3","Bar":"2","Cost":"2500"}
 ],
 "animals":[
 {"Animal":"Gorilla","Move":"6","Flight":"","Initiative":"10","Condition":"10","Ballistic":"","Impact":"2","Hardening":"","Dodge":"2","Soak":"8","Attacks":"Bite, Attack 0, Damage 15 | Slam, Reach 1, Attack 10, Damage 12","Notes":""},

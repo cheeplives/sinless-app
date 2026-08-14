@@ -3243,10 +3243,38 @@ function unitGunState(table, unit, wi) {
   return (guns[wi] ??= {});
 }
 
+/* The Gunnery-based attack test for a rigger firing a drone/vehicle mount —
+ * "Use gunnery to fire a vehicle weapon" per the action reference. A mounted
+ * weapon row carries no Type column for weaponSkillName() to map through
+ * (it isn't Firearms/Melee/etc — whatever's bolted to the mount is aimed
+ * with Gunnery regardless of what it is), so this builds the same shape
+ * weaponRollSpec() returns directly off the Gunnery skill rather than
+ * forcing a Type lookup that doesn't apply. No specialization support
+ * (Gunnery has none of the per-weapon specialties Firearms/Melee do). */
+function gunneryRollSpec(accuracy, bonuses = []) {
+  const s = (CALC.skills || {})["Gunnery"];
+  if (!s) return null;
+  const locked = s.trained_only && !(s.final > 0 || s.dice_bonus);
+  const skillDice = Math.max(0, s.final);
+  const acc = +accuracy || 0;
+  const limitDice = skillDice + acc;
+  const bonus = bonuses.reduce((n, b) => n + (+b.dice || 0), 0);
+  const why = [`Gunnery ${s.final}`, `= ${skillDice} skill`];
+  if (acc) why.push(`+ Accuracy ${acc} = ${limitDice} limit dice`);
+  const bwhy = [];
+  for (const b of bonuses) if (+b.dice) bwhy.push(`${b.label} +${b.dice}`);
+  return { skill: "Gunnery", pool: s.pool, locked, skillDice, acc, limitDice, bonus, why, bwhy };
+}
+
 /* Firing controls for a mounted weapon: mode + magazine for a ballistic mount,
    a heat tracker for an energy one. Energy mounts state Heat and Heat Limit in
    their own columns, so unlike personal energy weapons nothing has to be parsed
-   out of prose. */
+   out of prose.
+ *
+ * Fire, Reload and Aimed Fire all spend from the "Rigging" Exploit Actions a
+ * jumped-in rig's cores grant before reaching for a Simple Action — a
+ * rigger directs a mount through the same exploit pool the Rigging tab
+ * already lists, not through a personal weapon's action economy. */
 function unitGunControls(table, unit, wi, wn, wr, isEnergy) {
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const st = unitGunState(table, unit, wi);
@@ -3261,6 +3289,19 @@ function unitGunControls(table, unit, wi, wn, wr, isEnergy) {
     else wrap.append(miniCounter("Heat", cur, v => { st.heat = v; }, 0, max || 99));
     wrap.append(el("span", { class: "sub" },
       ` ${per} per shot · max ${max}${max && cur() >= max ? " — overheated" : ""}`));
+    // No ordinary Fire button here, matching personal Energy weapons — Heat
+    // is tracked by hand above. Aimed Fire still applies, spending a point
+    // of Heat (when the row rates one) the same way Fire spends a round.
+    if (!ro) {
+      const overheated = !!(max && cur() + per > max);
+      const rollSpec = gunneryRollSpec(wr.Accuracy);
+      const aimed = aimedFireButton(rollSpec, wn, "SS", {
+        disabled: overheated,
+        disabledTitle: "Not enough heat capacity left for another shot",
+        spend: () => { st.heat = cur() + per; },
+      }, "Rigging");
+      if (aimed) wrap.append(el("div", { class: "sh-fire-btns" }, aimed));
+    }
     return wrap;
   }
 
@@ -3286,14 +3327,46 @@ function unitGunControls(table, unit, wi, wn, wr, isEnergy) {
     const dry = loaded < md.ammo;
     wrap.append(el("span", { class: "sh-fire-mag" + (dry ? " dry" : "") },
       `${loaded}/${maxAmmo} rds`));
-    if (!ro) wrap.append(
+    // Same skill+Accuracy math as a personal weapon's Fire button, just off
+    // Gunnery instead of a Type-mapped skill — see gunneryRollSpec().
+    const bonuses = [];
+    if (md.dice) bonuses.push({ label: mode, dice: md.dice });
+    const rollSpec = gunneryRollSpec(wr.Accuracy, bonuses);
+    const rollable = rollSpec && !rollSpec.locked && (rollSpec.limitDice + rollSpec.bonus) > 0;
+    if (!ro) wrap.append(el("div", { class: "sh-fire-btns" },
       el("button", { class: "btn small", disabled: dry ? "1" : null,
         title: dry ? `Not enough rounds for ${mode} (needs ${md.ammo})`
-                   : `Fire ${mode} — spends ${md.ammo} round${md.ammo === 1 ? "" : "s"}`,
-        onclick: () => { st.loaded = Math.max(0, loaded - md.ammo); playChanged(); } }, "Fire"),
+                   : `Fire ${mode} — spends ${md.ammo} round${md.ammo === 1 ? "" : "s"}`
+                     + (rollable
+                         ? ` and loads ${rollSpec.limitDice + rollSpec.bonus}d6 in the roller`
+                         : ""),
+        onclick: () => {
+          // Same Full-Auto-is-Complex rule as a personal weapon's Fire, but
+          // drawing on Rigging Exploit Actions before Simple ones.
+          if (!spendActionUnits("Rigging", mode === "FA" ? 2 : 1, `Firing ${mode} (${wn})`)) return;
+          if (rollable)
+            openPoolRoller({ dice: rollSpec.limitDice, bonus: rollSpec.bonus,
+              pool: rollSpec.pool, label: wn,
+              note: `${rollSpec.skill}: ${rollSpec.skillDice} skill`
+                + (rollSpec.acc ? ` + ${rollSpec.acc} Accuracy` : "")
+                + (rollSpec.bonus ? ` + ${rollSpec.bonus} bonus (${mode})` : "") });
+          st.loaded = Math.max(0, loaded - md.ammo);
+          playChanged();
+        } }, "Fire"),
       el("button", { class: "btn small", disabled: loaded >= maxAmmo ? "1" : null,
-        title: "Reload to a full magazine",
-        onclick: () => { st.loaded = maxAmmo; playChanged(); } }, "Reload"));
+        title: "Reload to a full magazine"
+          + (/crossbow/i.test(wn) ? " — a Complex Action to recock" : ""),
+        onclick: () => {
+          const reloadCost = /crossbow/i.test(wn) ? 2 : 1;
+          if (!spendActionUnits("Rigging", reloadCost, `Reloading ${wn}`)) return;
+          st.loaded = maxAmmo;
+          playChanged();
+        } }, "Reload"),
+      aimedFireButton(rollSpec, wn, mode, {
+        disabled: dry,
+        disabledTitle: `Not enough rounds for Aimed Fire (needs ${md.ammo})`,
+        spend: () => { st.loaded = Math.max(0, loaded - md.ammo); },
+      }, "Rigging")));
   }
 
   // Exotic rounds are mount-specific; ordinary personal ammo never fits one.
@@ -3393,8 +3466,10 @@ function attackButton(label, rs, opts = {}) {
  * `resource` is how the caller checks and pays whatever a shot actually
  * costs (a magazine round, a point of Heat) so ballistic and Energy weapons
  * can share this without either one being taught the other's bookkeeping:
- * { disabled, disabledTitle, spend() }. */
-function aimedFireButton(rollSpec, fireLabel, mode, resource) {
+ * { disabled, disabledTitle, spend() }. `kind` is an Exploit Action kind to
+ * draw on before Simple Actions (e.g. "Rigging" for a drone/vehicle mount);
+ * null (personal weapons) spends Simple Actions outright. */
+function aimedFireButton(rollSpec, fireLabel, mode, resource, kind = null) {
   if (!rollSpec || rollSpec.locked
       || (rollSpec.skillDice + rollSpec.bonus + rollSpec.acc) <= 0) return null;
   const faBlocked = mode === "FA";
@@ -3405,7 +3480,7 @@ function aimedFireButton(rollSpec, fireLabel, mode, resource) {
       : `Aimed Fire — a Complex Action; Accuracy (${rollSpec.acc}) becomes bonus dice `
         + "instead of costing pool",
     onclick: () => {
-      if (!spendSimpleActions(2, `Aimed Fire with ${fireLabel}`)) return;
+      if (!spendActionUnits(kind, 2, `Aimed Fire with ${fireLabel}`)) return;
       openPoolRoller({ dice: rollSpec.skillDice, bonus: rollSpec.bonus + rollSpec.acc,
         pool: rollSpec.pool, label: fireLabel,
         note: `${rollSpec.skill}: ${rollSpec.skillDice} skill`
@@ -3534,8 +3609,22 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
     // disappearing and leaving the row looking different for no stated reason.
     el("button", { class: "btn small",
       disabled: (oneshot || loaded >= maxAmmo) ? "1" : null,
-      title: oneshot ? RULES.ONESHOT_NOTE : "Reload to a full magazine",
-      onclick: () => { if (!oneshot) { w.loaded = maxAmmo; playChanged(); } } }, "Reload"),
+      title: oneshot ? RULES.ONESHOT_NOTE
+        : "Reload to a full magazine"
+          + (/crossbow/i.test(fireLabel) ? " — a Complex Action to recock" : "")
+          + (r.Type === "Cybergun" ? " — implanted; not meant to be done mid-fight" : ""),
+      onclick: () => {
+        if (oneshot) return;
+        // A cybergun's magazine lives inside the arm — swapping it isn't a
+        // pocket reload, so this makes the player say so explicitly rather
+        // than silently topping off an implant mid-fight.
+        if (r.Type === "Cybergun"
+            && !confirm(`${fireLabel} cannot be reloaded during combat. Reload anyway?`)) return;
+        const reloadCost = /crossbow/i.test(fireLabel) ? 2 : 1;
+        if (!spendSimpleActions(reloadCost, `Reloading ${fireLabel}`)) return;
+        w.loaded = maxAmmo;
+        playChanged();
+      } }, "Reload"),
     aimedFireButton(rollSpec, fireLabel, mode, {
       disabled: dry,
       disabledTitle: `Not enough rounds loaded for Aimed Fire (needs ${cost})`,
@@ -4600,44 +4689,54 @@ function actionsCard() {
  * counter would, and New Round clears it the same way either way.
  */
 
-/* Spend `n` Simple Actions, warning and refusing if there aren't enough.
- * Shared by Cast, every Fire press, and a melee/unarmed Attack once its
- * Melee Exploit Actions are used up (or it never had any). */
-function spendSimpleActions(n, why) {
+/* Total Exploit Actions of `kind` the build grants — the same total the
+ * Actions This Round card lists under "<kind> exploit". */
+function exploitActionTotal(kind) {
+  return (CALC.combat.exploit_actions || [])
+    .filter(a => a.kind === kind)
+    .reduce((n, a) => n + a.count, 0);
+}
+
+/* Spend `n` action-units, drawing from Exploit Actions of `kind` first (if
+ * any are left) and topping up with Simple Actions for the rest — the free
+ * extra a martial style or a jumped-in rig grants, only reaching for a
+ * Simple Action once that runs out or was never granted. `kind` of null
+ * skips the exploit pool entirely (Cast, personal-weapon Fire — nothing
+ * grants those an exploit action to draw on first).
+ *
+ * Never partially spends: a refusal (with a warning naming the actual
+ * shortfall) leaves both pools exactly as they were, even when the exploit
+ * pool alone would have covered part of `n`. */
+function spendActionUnits(kind, n, why) {
   const used = (CHAR.play.actions_used = CHAR.play.actions_used || {});
-  const total = CALC.combat.simple_actions || 0;
-  const cur = used.simple || 0;
-  const left = total - cur;
-  if (left < n) {
-    alert(`Out of Simple Actions — ${why} needs ${n}, you have ${left} left.`);
+  const exploitLeft = kind ? Math.max(0, exploitActionTotal(kind) - (used[kind] || 0)) : 0;
+  const simpleLeft = (CALC.combat.simple_actions || 0) - (used.simple || 0);
+  if (exploitLeft + simpleLeft < n) {
+    alert(kind
+      ? `Out of actions — ${why} needs ${n}, you have ${exploitLeft + simpleLeft} left `
+        + `(${exploitLeft} ${kind} Exploit + ${simpleLeft} Simple).`
+      : `Out of Simple Actions — ${why} needs ${n}, you have ${simpleLeft} left.`);
     return false;
   }
-  used.simple = cur + n;
+  const fromExploit = Math.min(exploitLeft, n);
+  if (fromExploit) used[kind] = (used[kind] || 0) + fromExploit;
+  const fromSimple = n - fromExploit;
+  if (fromSimple) used.simple = (used.simple || 0) + fromSimple;
   return true;
 }
 
-/* Total Melee Exploit Actions the build grants — the same total the Actions
- * This Round card lists under "Melee exploit". */
-function meleeExploitTotal() {
-  return (CALC.combat.exploit_actions || [])
-    .filter(a => a.kind === "Melee")
-    .reduce((n, a) => n + a.count, 0);
+/* Spend `n` Simple Actions outright, warning and refusing if there aren't
+ * enough. Shared by Cast and personal-weapon Fire/Reload — nothing grants
+ * those an Exploit Action to draw on first. */
+function spendSimpleActions(n, why) {
+  return spendActionUnits(null, n, why);
 }
 
 /* A melee/unarmed Attack spends a Melee Exploit Action first — the free
  * extra swing a martial style grants — and only reaches for a Simple Action
- * once those are gone, or weren't granted at all. Returns true once
- * something is actually spent; false (with a warning already shown) when
- * both are out. */
+ * once those are gone, or weren't granted at all. */
 function spendMeleeAttack() {
-  const used = (CHAR.play.actions_used = CHAR.play.actions_used || {});
-  const total = meleeExploitTotal();
-  const cur = used.Melee || 0;
-  if (cur < total) {
-    used.Melee = cur + 1;
-    return true;
-  }
-  return spendSimpleActions(1, "a melee attack");
+  return spendActionUnits("Melee", 1, "a melee attack");
 }
 
 function miniCounter(label, get, set, min = 0, max = 9999) {

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "276";
+const APP_VERSION = "277";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -3310,11 +3310,19 @@ function budgetMagic(character, data, magicType, warnings, errors) {
 
   let infusionSpent = 0, relationshipSpent = 0, bondSpent = 0;
   if (magicType === "Speaker" || magicType === "Archmage") {
-    for (const name of character.speaker.infusions || []) {
+    /* These budgets are what Magic priority bought at CREATION, so anything
+     * added later with Kismet is excluded — otherwise the tab reads overspent
+     * for a character that has done nothing wrong. applyPlayAdvances appends
+     * play purchases, so dropping them off the end leaves the chargen share. */
+    const kismet = character.kismet_speaker || { bonds: 0, infusions: 0, relationships: 0 };
+    const chargenOnly = (list, bought) =>
+      (list || []).slice(0, Math.max(0, (list || []).length - toInt(bought)));
+
+    for (const name of chargenOnly(character.speaker.infusions, kismet.infusions)) {
       const row = findRow(data.speaker_infusions, "Infusions", name);
       infusionSpent += row ? toInt(asNumber(row.Cost)) : 0;
     }
-    for (const name of character.speaker.relationships || []) {
+    for (const name of chargenOnly(character.speaker.relationships, kismet.relationships)) {
       const row = findRow(data.speaker_spirits, "Spirit", name);
       relationshipSpent += row ? toInt(asNumber(row.Cost)) : 0;
     }
@@ -3322,7 +3330,10 @@ function budgetMagic(character, data, magicType, warnings, errors) {
     for (const row of data.speaker_bond_costs) {
       bondCostByIndex[toInt(Number(row.Bond))] = toInt(asNumber(row.Cost));
     }
-    const bondCount = speakerBondCount(character);
+    // Kismet buys the TOP rungs of the ladder, so the chargen share is the
+    // bottom ones — a character who bought 1 at creation and 2 in play spent
+    // creation points on rung 1 alone.
+    const bondCount = speakerBondCount(character) - toInt(kismet.bonds);
     for (let i = 1; i <= bondCount; i++) bondSpent += bondCostByIndex[i] || 0;
   }
 
@@ -5192,6 +5203,7 @@ function applyPlayAdvances(character) {
    * creation budget held, which is the honest reading — the extra was paid for
    * in Kismet, not in points. */
   const speaker = character.speaker = character.speaker || {};
+  const boughtBefore = speakerBondCount(character);
   if (play.bond_advances) {
     speaker.bonds = Math.min(SPEAKER_BOND_MAX,
       toInt(asNumber(speaker.bonds)) + advance(play.bond_advances));
@@ -5201,6 +5213,19 @@ function applyPlayAdvances(character) {
     if (!Array.isArray(bought) || !bought.length) continue;
     speaker[field] = [...(speaker[field] || []), ...bought];
   }
+  /* What Kismet paid for, so budgetMagic can leave it out of the CREATION
+   * budgets. Without this the Magic tab reads overspent the moment a Speaker
+   * buys anything in play — a false alarm, since nothing is wrong and no error
+   * fires. Kismet purchases are appended above, so the chargen share is always
+   * the prefix; the bond count is recorded before the ladder grows.
+   *
+   * Transient: applyPlayAdvances works on a deepCopy that only calculate()
+   * sees, so this never reaches a saved character. */
+  character.kismet_speaker = {
+    bonds: speakerBondCount(character) - boughtBefore,
+    infusions: (play.speaker_infusions || []).length,
+    relationships: (play.speaker_relationships || []).length,
+  };
   // Martial-art ranks bought in play, per style. Raising an existing style adds
   // to its rank; a style first learned in play is appended. An unknown style is
   // dropped — it can never be raised or displayed.

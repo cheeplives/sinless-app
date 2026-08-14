@@ -311,6 +311,86 @@ function spendKismet(label, n, undo) {
  * the entry from the ledger. Safe to call out of order — every advance is a
  * simple additive counter, so undoing one just subtracts 1 regardless of
  * what was spent afterward. */
+/* Speakers grow their practice with Kismet at the same prices chargen charged:
+ * the bond ladder from speaker_bond_costs (0/3/8/13 for the 1st-4th), and each
+ * infusion or spirit at its own listed Cost. Nothing here is discounted or
+ * marked up — a bond you didn't buy at creation costs what it would have.
+ *
+ * Absent for anyone who isn't a Speaker or Archmage, which is every other
+ * magic type plus the mundane. */
+function speakerKismetSection(spend) {
+  const type = CALC.magic.type;
+  if (type !== "Speaker" && type !== "Archmage") return;
+  const play = CHAR.play;
+  const sp = CHAR.speaker || {};
+  const cost = (rows, key, name) => {
+    const row = (DATA.tables[rows] || []).find(r => r[key] === name);
+    return row ? (parseInt(row.Cost, 10) || 0) : 0;
+  };
+
+  spend.append(el("h4", { class: "sh-h4" }, "Speaker practice"));
+
+  // --- bonds: the next rung of the ladder, priced by its index
+  const bondsNow = RULES.speakerBondCount({ speaker: {
+    bonds: (parseInt(sp.bonds, 10) || 0) + (play.bond_advances || 0) } });
+  const nextBond = bondsNow + 1;
+  const bondRow = (DATA.tables.speaker_bond_costs || [])
+    .find(r => (parseInt(r.Bond, 10) || 0) === nextBond);
+  const bondCost = bondRow ? (parseInt(bondRow.Cost, 10) || 0) : null;
+  spend.append(el("p", { class: "hint" },
+    "Bonds, infusions and spirit relationships cost the same Kismet as they cost "
+    + "points at creation. The creation budgets don't stretch — this is bought, not found."));
+  spend.append(el("div", { class: "sh-advrow", style: "max-width:420px" },
+    el("span", {}, el("b", {}, "Spirit bonds"),
+      el("span", { class: "sub" }, ` ${bondsNow} of ${RULES.SPEAKER_BOND_MAX}`)),
+    bondCost == null
+      ? el("span", { class: "sub" }, "at maximum")
+      : el("button", {
+          class: "btn small", disabled: play.kismet < bondCost ? "1" : null,
+          onclick: async () => {
+            if (!spendKismet(`Bonded a ${ordinalish(nextBond)} spirit`, bondCost,
+                             { kind: "speaker_bond" })) return;
+            play.bond_advances = (play.bond_advances || 0) + 1;
+            await playChangedRecalc();
+          },
+        }, `+1 (${bondCost})`)));
+
+  // --- infusions and relationships: pick an unowned one, pay its listed cost
+  const owned = field => [...(sp[field] || []),
+                          ...(play[field === "infusions" ? "speaker_infusions"
+                                                         : "speaker_relationships"] || [])];
+  const buyer = (label, table, key, field, undoKind, playKey) => {
+    const have = owned(field);
+    const rows = (DATA.tables[table] || [])
+      .filter(r => r[key] && !have.includes(r[key]))
+      .sort((a, b) => (parseInt(a.Cost, 10) || 0) - (parseInt(b.Cost, 10) || 0));
+    if (!rows.length) return;
+    const sel = el("select", {},
+      el("option", { value: "" }, `${label}…`),
+      ...rows.map(r => el("option", { value: r[key] },
+        `${r[key]} (${parseInt(r.Cost, 10) || 0})`)));
+    spend.append(el("div", { class: "add-row" }, sel,
+      el("button", {
+        class: "btn-add",
+        onclick: async () => {
+          const name = sel.value;
+          if (!name) return;
+          const n = cost(table, key, name);
+          if (!spendKismet(`${label}: ${name}`, n, { kind: undoKind, name })) return;
+          (play[playKey] = play[playKey] || []).push(name);
+          await playChangedRecalc();
+        },
+      }, "Buy")));
+  };
+  buyer("Infusion", "speaker_infusions", "Infusions", "infusions",
+        "speaker_infusion", "speaker_infusions");
+  buyer("Relationship", "speaker_spirits", "Spirit", "relationships",
+        "speaker_relationship", "speaker_relationships");
+}
+
+/* "2nd" / "3rd" / "4th" — only ever called with 2-4. */
+function ordinalish(n) { return n + (n === 2 ? "nd" : n === 3 ? "rd" : "th"); }
+
 function undoKismetSpend(entry) {
   const play = CHAR.play;
   const idx = play.kismet_log.indexOf(entry);
@@ -330,6 +410,16 @@ function undoKismetSpend(entry) {
     if (entry) entry.points = Math.max(0, (entry.points || 0) - 1);
   }
   else if (u.kind === "zp") play.zp_advances = Math.max(0, (play.zp_advances || 0) - 1);
+  else if (u.kind === "speaker_bond") play.bond_advances = Math.max(0, (play.bond_advances || 0) - 1);
+  // Infusions and relationships are bought by NAME, so undo removes that name
+  // rather than decrementing a counter. Last occurrence, so buying the same
+  // thing twice and undoing once leaves one behind.
+  else if (u.kind === "speaker_infusion" || u.kind === "speaker_relationship") {
+    const key = u.kind === "speaker_infusion" ? "speaker_infusions" : "speaker_relationships";
+    const list = play[key] || [];
+    const at = list.lastIndexOf(u.name);
+    if (at >= 0) list.splice(at, 1);
+  }
   play.kismet -= entry.delta;   // delta is negative, so this refunds it
   play.kismet_log.splice(idx, 1);
 }
@@ -6029,6 +6119,7 @@ function shKismet(body) {
           await playChangedRecalc();
         },
       }, `+1 (${zpCost})`)));
+  speakerKismetSection(spend);
   body.append(spend);
 
   // --- boons

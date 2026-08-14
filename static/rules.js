@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "275";
+const APP_VERSION = "276";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -5179,6 +5179,27 @@ function applyPlayAdvances(character) {
       character.etiquettes[name] = Math.min(PLAY_SKILL_RANK_CAP,
         toInt(asNumber(character.etiquettes[name] || 0)) + advance(plus));
     }
+  }
+
+  /* Speaker growth bought with Kismet. Bonds, infusions and relationships are
+   * all chargen-owned fields, so — like etiquettes above — a Kismet purchase
+   * can't write them directly; it accumulates here and is folded in.
+   *
+   * The chargen POINT budgets (SPEAKER_INFUSION_POINTS and friends) are
+   * deliberately not extended: those are what Magic priority bought at
+   * creation, and creation is over. A finalized character reports no budget
+   * errors at all (JC-012), so the Magic tab simply shows more spent than the
+   * creation budget held, which is the honest reading — the extra was paid for
+   * in Kismet, not in points. */
+  const speaker = character.speaker = character.speaker || {};
+  if (play.bond_advances) {
+    speaker.bonds = Math.min(SPEAKER_BOND_MAX,
+      toInt(asNumber(speaker.bonds)) + advance(play.bond_advances));
+  }
+  for (const [field, bought] of [["infusions", play.speaker_infusions],
+                                 ["relationships", play.speaker_relationships]]) {
+    if (!Array.isArray(bought) || !bought.length) continue;
+    speaker[field] = [...(speaker[field] || []), ...bought];
   }
   // Martial-art ranks bought in play, per style. Raising an existing style adds
   // to its rank; a style first learned in play is appended. An unknown style is

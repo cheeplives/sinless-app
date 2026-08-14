@@ -3364,20 +3364,56 @@ function attackButton(label, rs, opts = {}) {
       title: opts.title || (`Roll ${total}d6 — ${rs.why.join(" ")}`
         + (rs.bwhy.length ? `, bonus ${rs.bwhy.join(" + ")}` : "")),
       onclick: () => {
-        // Only opts.melee = true (natural/cyber melee weapons and hand-to-
-        // hand mounts) spends anything here — thrown weapons and fixed-pool
-        // ranged implants (Eye Laser, Snake's Spit) also land on this button
-        // but aren't a melee/unarmed swing, so they're left untouched.
-        if (opts.melee && !spendMeleeAttack()) return;
+        // Melee/unarmed (opts.melee) prefers a Melee Exploit Action and only
+        // reaches for a Simple Action once those are gone. Everything else
+        // this button covers — thrown weapons, fixed-pool ranged implants
+        // (Eye Laser, Snake's Spit) — isn't a melee/unarmed swing, so it
+        // spends a Simple Action directly, same as any other shot fired.
+        const spent = opts.melee ? spendMeleeAttack() : spendSimpleActions(1, `Attacking with ${label}`);
+        if (!spent) return;
         openPoolRoller({ dice: rs.limitDice, bonus: rs.bonus,
           pool: rs.pool, label,
           note: opts.note
             || `${rs.skill}: ${rs.skillDice} skill`
                + (rs.acc ? ` + ${rs.acc} Accuracy` : "")
                + (rs.bonus ? ` + ${rs.bonus} bonus` : "") });
-        if (opts.melee) playChanged();
+        playChanged();
       },
     }, "Attack"));
+}
+
+/* Aimed Fire: spend a Complex Action (2 Simple Actions) to line the shot up
+ * properly. weaponRollSpec() normally folds a weapon's Accuracy into its
+ * costly limit dice (limitDice = skillDice + acc) — Aimed Fire is the one
+ * button that pulls Accuracy back OUT of that pool-costing count and grants
+ * it as free bonus dice instead: same total dice, less pool spent, more time
+ * taken. Not offered on Full Auto — emptying a magazine in a spray isn't an
+ * aimed shot.
+ *
+ * `resource` is how the caller checks and pays whatever a shot actually
+ * costs (a magazine round, a point of Heat) so ballistic and Energy weapons
+ * can share this without either one being taught the other's bookkeeping:
+ * { disabled, disabledTitle, spend() }. */
+function aimedFireButton(rollSpec, fireLabel, mode, resource) {
+  if (!rollSpec || rollSpec.locked
+      || (rollSpec.skillDice + rollSpec.bonus + rollSpec.acc) <= 0) return null;
+  const faBlocked = mode === "FA";
+  const blocked = faBlocked || resource.disabled;
+  return el("button", { class: "btn small", disabled: blocked ? "1" : null,
+    title: faBlocked ? "Full Auto can't be aimed — pick a different fire mode"
+      : resource.disabled ? resource.disabledTitle
+      : `Aimed Fire — a Complex Action; Accuracy (${rollSpec.acc}) becomes bonus dice `
+        + "instead of costing pool",
+    onclick: () => {
+      if (!spendSimpleActions(2, `Aimed Fire with ${fireLabel}`)) return;
+      openPoolRoller({ dice: rollSpec.skillDice, bonus: rollSpec.bonus + rollSpec.acc,
+        pool: rollSpec.pool, label: fireLabel,
+        note: `${rollSpec.skill}: ${rollSpec.skillDice} skill`
+          + (rollSpec.bonus ? ` + ${rollSpec.bonus} bonus (${mode})` : "")
+          + (rollSpec.acc ? ` + ${rollSpec.acc} Accuracy (aimed — bonus, not limit)` : "") });
+      resource.spend();
+      playChanged();
+    } }, "Aimed Fire");
 }
 
 /* Firing controls on each Overview weapon row.
@@ -3424,6 +3460,18 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
     wrap.append(el("span", { class: "sub" }, hs
       ? ` ${hs.per} per shot · max ${hs.max}${cur() >= hs.max ? " — overheated" : ""}`
       : " no heat rating listed"));
+    // Energy weapons have no ordinary Fire button here — Heat is tracked by
+    // hand above — but Aimed Fire still applies, spending a point of Heat
+    // (when the row rates one) the same way Fire spends a round.
+    if (!ro) {
+      const overheated = !!(hs && cur() + hs.per > hs.max);
+      const aimed = aimedFireButton(rollSpec, fireLabel, mode, {
+        disabled: overheated,
+        disabledTitle: "Not enough heat capacity left for another shot",
+        spend: () => { if (hs) w.heat = cur() + hs.per; },
+      });
+      if (aimed) wrap.append(el("div", { class: "sh-fire-btns" }, aimed));
+    }
     return wrap;
   }
 
@@ -3487,7 +3535,12 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
     el("button", { class: "btn small",
       disabled: (oneshot || loaded >= maxAmmo) ? "1" : null,
       title: oneshot ? RULES.ONESHOT_NOTE : "Reload to a full magazine",
-      onclick: () => { if (!oneshot) { w.loaded = maxAmmo; playChanged(); } } }, "Reload")));
+      onclick: () => { if (!oneshot) { w.loaded = maxAmmo; playChanged(); } } }, "Reload"),
+    aimedFireButton(rollSpec, fireLabel, mode, {
+      disabled: dry,
+      disabledTitle: `Not enough rounds loaded for Aimed Fire (needs ${cost})`,
+      spend: () => { w.loaded = Math.max(0, loaded - cost); },
+    })));
   return wrap;
 }
 
@@ -4471,7 +4524,11 @@ function actionsCard() {
   const play = CHAR.play;
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const used = (play.actions_used = play.actions_used || {});
-  const rows = [{ key: "simple", label: "Simple", total: CALC.combat.simple_actions || 0 }];
+  // Every character gets exactly one Reflex Action a round, same as every
+  // build's Simple Actions come from the engine — this one's just a flat 1
+  // rather than anything derived, so it's written here instead.
+  const rows = [{ key: "simple", label: "Simple", total: CALC.combat.simple_actions || 0 },
+                { key: "reflex", label: "Reflex", total: 1 }];
   // Grouped by kind, keeping each kind's granting sources. The Combat card used
   // to list those separately (exploitLines); this card is where the actions are
   // actually spent, so the attribution moved here rather than disappearing with

@@ -223,7 +223,13 @@ body{background:var(--ink);color:var(--text);font-family:var(--body);font-size:1
  * top:0 (rail, chargen #tabs, the sheet's .sh-stickybar) are re-anchored to
  * top:var(--ws-h) so they park just below it. */
 #workspace-tabs{position:sticky;top:0;z-index:80;height:var(--ws-h);
-  display:flex;align-items:stretch;gap:0;padding:0 52px 0 8px;
+  display:flex;align-items:stretch;gap:0;
+  /* The theme picker and settings gear are position:fixed on top of this
+     strip, so the strip has to reserve room or they sit over the last tab.
+     Measured at render (workspace.js) because the picker's width follows
+     the scheme NAME -- "Slate Violet" is far wider than the 52px this used
+     to hardcode. The fallback only applies before the first measure. */
+  padding:0 var(--ws-right-gap,52px) 0 8px;
   background:var(--panel);border-bottom:1px solid var(--line)}
 .ws-tabs{display:flex;align-items:stretch;gap:4px;min-width:0;overflow-x:auto;
   scrollbar-width:thin}

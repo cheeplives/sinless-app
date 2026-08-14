@@ -187,6 +187,27 @@ function onTabPointerUp() {
   tabDrag = null;
 }
 
+/* The theme picker and settings gear are `position: fixed` over the right end
+ * of the strip, so the strip reserves room for them via --ws-right-gap. It has
+ * to be measured rather than hardcoded: the picker shows the scheme NAME, so
+ * its width changes with the theme ("Slate Violet" vs "Ash"), and a fixed
+ * reservation left the last tab underneath the controls -- reachable only by
+ * scrolling past it.
+ *
+ * A ResizeObserver keeps it honest when the name changes without the strip
+ * re-rendering; the render-time call covers browsers without one. */
+let themeGapObserver = null;
+function syncThemeControlsGap() {
+  const controls = document.getElementById("theme-controls");
+  if (!controls) return;
+  const gap = Math.ceil(controls.getBoundingClientRect().width) + 16;  // + breathing room
+  document.documentElement.style.setProperty("--ws-right-gap", gap + "px");
+  if (!themeGapObserver && typeof ResizeObserver !== "undefined") {
+    themeGapObserver = new ResizeObserver(() => syncThemeControlsGap());
+    themeGapObserver.observe(controls);
+  }
+}
+
 /* ---- render the strip ---------------------------------------------------- */
 function renderWorkspaceBar() {
   const bar = $("#workspace-tabs");
@@ -195,6 +216,7 @@ function renderWorkspaceBar() {
   // Admin, …) sits at the head of the tab strip so it's available in chargen
   // and play alike. sheetMenu() is defined in sheet.js but is mode-aware.
   const menu = (typeof sheetMenu === "function" && activeTabObj()) ? sheetMenu() : null;
+  syncThemeControlsGap();
   bar.replaceChildren(
     ...(menu ? [menu] : []),
     el("div", { class: "ws-tabs" },

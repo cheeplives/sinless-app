@@ -3481,17 +3481,19 @@ function aimedFireButton(rollSpec, fireLabel, mode, resource, kind = null, calcR
     title: faBlocked ? "Full Auto can't be aimed — pick a different fire mode"
       : resource.disabled ? resource.disabledTitle
       : `Aimed Fire — a Complex Action; Accuracy (${rollSpec.acc}) becomes bonus dice `
-        + "instead of costing pool",
+        + "instead of costing pool, and steadies the gun (recoil back to 0)",
     onclick: () => {
-      // Recoil is checked before anything is spent, so a gun too unsteady to
-      // fire costs neither actions nor ammunition.
-      if (recoilBlocked(fireLabel, calcRow)) return;
+      // No recoil check here, unlike Fire: taking the time to aim IS steadying
+      // the weapon, so an unsteady gun is exactly what this button is for.
       if (!spendActionUnits(kind, 2, `Aimed Fire with ${fireLabel}`)) return;
       openPoolRoller({ dice: rollSpec.skillDice, bonus: rollSpec.bonus + rollSpec.acc,
         pool: rollSpec.pool, label: fireLabel,
         note: `${rollSpec.skill}: ${rollSpec.skillDice} skill`
           + (rollSpec.bonus ? ` + ${rollSpec.bonus} bonus (${mode})` : "")
           + (rollSpec.acc ? ` + ${rollSpec.acc} Accuracy (aimed — bonus, not limit)` : "") });
+      // Stabilize on the way in, so resource.spend()'s addRecoil leaves only
+      // this shot's own point behind rather than stacking on the old total.
+      stabilizeRecoil(calcRow);
       resource.spend();
       playChanged();
     } }, "Aimed Fire");
@@ -4704,7 +4706,8 @@ function actionsCard() {
         + `mods can raise its rating above that.` },
     el("span", {}, "Recoil",
       ro ? null : el("button", { class: "sh-complex-btn",
-        title: "Stabilize — a Free Action; clears accumulated recoil",
+        title: "Stabilize — a Free Action; clears accumulated recoil. "
+          + "You cannot stabilize if the gun was fired this round.",
         onclick: () => { CHAR.play.recoil = 0; playChanged(); } }, "Stabilize")),
     el("span", { style: "text-align:right;display:inline-flex;align-items:center;gap:8px" },
       ro ? el("b", { style: recoil ? "" : "color:var(--dim)" }, String(recoil))
@@ -4813,8 +4816,22 @@ function recoilBlocked(label, calcRow) {
   const cur = recoilTracked();
   if (cur < cap) return false;
   alert(`${label} is unsteady — recoil ${cur} has reached this gun's Recoil ${cap}.\n\n`
-    + "Stabilize (a Free Action) before firing again.");
+    + "Stabilize (a Free Action) before firing again. "
+    + "You cannot stabilize if the gun was fired this round.");
   return true;
+}
+
+/* Aiming steadies the weapon. Spending a Complex Action to line the shot up
+ * shakes the accumulated recoil out before the trigger is pulled, which is
+ * why Aimed Fire is never refused for recoil: it clears the tracker on the
+ * way in and leaves only its own shot's point behind.
+ *
+ * Same two guards as the rest: a null calcRow is a gun that doesn't feed the
+ * character's tracker at all, and with the loadout switch off the app isn't
+ * touching the player's bookkeeping either way. */
+function stabilizeRecoil(calcRow) {
+  if (!CHAR.play.action_costs || !calcRow) return;
+  CHAR.play.recoil = 0;
 }
 
 /* Firing adds recoil: Full Auto shakes loose two, everything else one.

@@ -1103,7 +1103,7 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
    spell it belongs to, so it reads as part of that spell rather than a new one. */
 .sh-summon{margin:4px 0 2px;padding-left:8px;border-left:2px solid var(--line)}
 .sh-summon-pick{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.sh-summon-pick select{font:inherit;font-size:12px;padding:2px 5px;background:var(--bg);
+.sh-summon-pick select{font:inherit;font-size:12px;padding:2px 5px;background:var(--ink);
   color:var(--text);border:1px solid var(--line);border-radius:5px}
 .sh-summon-stats{margin-top:3px}
 /* Tracked effects/modifiers: name, pool, dice, what it's doing, and delete all
@@ -1118,7 +1118,7 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-fx-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .sh-fx-name{font-weight:600}
 .sh-fx-line select{font:inherit;font-size:12px;padding:3px 5px;
-  background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px}
+  background:var(--ink);color:var(--text);border:1px solid var(--line);border-radius:5px}
 .sh-fx-line .sh-fx-swing{flex:1 1 160px;margin-top:0}
 .sh-fx-line .row-del{margin-left:auto}
 /* A sense you have to switch on. The button sits under its description rather
@@ -1273,7 +1273,7 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-count{font-family:var(--mono);font-size:15px;font-weight:600;
   min-width:44px;text-align:center;display:inline-flex;align-items:baseline;gap:3px}
 .sh-roller-count-input{width:3.2em;font:inherit;text-align:right;color:var(--strong);
-  background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 4px}
+  background:var(--ink);border:1px solid var(--line);border-radius:5px;padding:2px 4px}
 .sh-roller-count-input:focus{outline:none;border-color:var(--roll)}
 .sh-roller-count-input::-webkit-outer-spin-button,
 .sh-roller-count-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}

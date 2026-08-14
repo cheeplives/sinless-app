@@ -435,7 +435,7 @@ function mdParseCharacter(text) {
     for (const extra of bits.slice(1)) {
       const v = extra.trim();
       if (/^DMG /.test(v)) continue;                          // derived
-      if (name === "Cybergun Installation") {
+      if (RULES.isCybergunAugment(name)) {
         const gun = mdMatch("cyberguns", v, report, "Cybergun type");
         if (gun) entry.gunType = gun;
       }

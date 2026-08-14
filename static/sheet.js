@@ -3116,9 +3116,10 @@ function equippedCyberguns() {
   let ins = 0;
   for (const arr of sources) {
     for (const a of arr) {
-      if (a.name !== "Cybergun Installation" || !a.gunType) continue;
+      if (!RULES.isCybergunAugment(a.name) || !a.gunType) continue;
       const g = (DATA.tables.cyberguns || []).find(x => x.Type === a.gunType);
-      if (g) out.push({ name: `Cybergun — ${g.Type}`, gun: g, src: a, _ins: ins++ });
+      if (g) out.push({ name: `Cybergun — ${g.Type}`, gun: g, src: a,
+        reloadable: RULES.cybergunReloadable(a.name), _ins: ins++ });
     }
   }
   // A custom drag order is stored on each source augment as cgOrder, unifying the
@@ -3612,13 +3613,14 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
       title: oneshot ? RULES.ONESHOT_NOTE
         : "Reload to a full magazine"
           + (/crossbow/i.test(fireLabel) ? " — a Complex Action to recock" : "")
-          + (r.Type === "Cybergun" ? " — implanted; not meant to be done mid-fight" : ""),
+          + (r.Type === "Cybergun" && !r.Reloadable ? " — implanted; not meant to be done mid-fight" : ""),
       onclick: () => {
         if (oneshot) return;
         // A cybergun's magazine lives inside the arm — swapping it isn't a
         // pocket reload, so this makes the player say so explicitly rather
-        // than silently topping off an implant mid-fight.
-        if (r.Type === "Cybergun"
+        // than silently topping off an implant mid-fight. The Reload Port
+        // variant pays extra ZR specifically to skip this — see r.Reloadable.
+        if (r.Type === "Cybergun" && !r.Reloadable
             && !confirm(`${fireLabel} cannot be reloaded during combat. Reload anyway?`)) return;
         const reloadCost = /crossbow/i.test(fireLabel) ? 2 : 1;
         if (!spendSimpleActions(reloadCost, `Reloading ${fireLabel}`)) return;
@@ -4316,7 +4318,8 @@ function shOverview(body) {
           // the implant states its own Ammo and Modes. Both the choice and the
           // round count live on the source augment entry, since the gun row
           // itself is shared data.
-          const cgRow = { Type: "Cybergun", Weapon: cg.name, Damage: g.Dmg, Ammo: g.Ammo };
+          const cgRow = { Type: "Cybergun", Weapon: cg.name, Damage: g.Dmg, Ammo: g.Ammo,
+            Reloadable: cg.reloadable };
           const ammo = loadedAmmoFor(cg.src, cgRow);
           const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen, bar: g.Bar ?? "" };
           const shot = RULES.applyAmmoStats(base, ammo.mods);
@@ -6994,7 +6997,7 @@ function shAugments(body) {
           } }, "+")))
       : el("td", { class: "num" }, String(a.count || 1));
     // Cybergun shows its chosen gun's stats; melee implants show computed damage.
-    const gun = a.name === "Cybergun Installation" && a.gunType
+    const gun = RULES.isCybergunAugment(a.name) && a.gunType
       ? (DATA.tables.cyberguns || []).find(g => g.Type === a.gunType) : null;
     const implantDmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
     const effectText = gun
@@ -7003,7 +7006,7 @@ function shAugments(body) {
     // Cybergun: choose / change the mounted gun in play. The gun-cost difference
     // (× heritage surcharge) is charged or refunded to the play cash ledger.
     let gunSel = null;
-    if (a.name === "Cybergun Installation") {
+    if (RULES.isCybergunAugment(a.name)) {
       gunSel = el("select", { onchange: async e => {
         const nv = e.target.value;
         const oldGun = (DATA.tables.cyberguns || []).find(g => g.Type === a.gunType);
@@ -7085,7 +7088,7 @@ function shAugments(body) {
   const ownsLeg = ownedAugsAll.some(a => LEG_T.has(buyAugType(a)));
   // Cyberguns are capped at one per cyberarm.
   const cyberarmCount = ownedAugsAll.filter(a => ARM_T.has(buyAugType(a))).length;
-  const cybergunCount = ownedAugsAll.filter(a => a.name === "Cybergun Installation").length;
+  const cybergunCount = ownedAugsAll.filter(a => RULES.isCybergunAugment(a.name)).length;
   const buyLimbNeed = r => {
     switch (RULES.augmentLimbRequirement(r)) {
       case "Arm": return ownsArm ? null : "a Cyberarm";
@@ -7104,7 +7107,7 @@ function shAugments(body) {
         const banned = bioBanned ? "Synthetics cannot install Bioware" : augAvail.bannedReason(r.Name);
         const need = buyLimbNeed(r);
         const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
-        const isCybergun = r.Name === "Cybergun Installation";
+        const isCybergun = RULES.isCybergunAugment(r.Name);
         let disabled = !!need;
         let reason = banned || (need ? `Requires ${need} installed` : "");
         let note = banned ? "banned" : (need ? `needs ${need}` : "");
@@ -7242,10 +7245,10 @@ async function buyAugment(name, mult) {
   const banReason = augmentAvailability(owned).bannedReason(name);
   if (banReason) { alert(`Can't install ${name}: ${banReason}.`); return; }
   // Cyberguns are capped at one per installed cyberarm.
-  if (name === "Cybergun Installation") {
+  if (RULES.isCybergunAugment(name)) {
     const armTypes = new Set(["Right Arm", "Left Arm"]);
     const arms = owned.filter(a => armTypes.has((DATA.tables.augments.find(x => x.Name === a.name) || {}).Type)).length;
-    const guns = owned.filter(a => a.name === "Cybergun Installation").length;
+    const guns = owned.filter(a => RULES.isCybergunAugment(a.name)).length;
     if (arms === 0) { alert("Can't install a Cybergun: requires a Cyberarm."); return; }
     if (guns >= arms) { alert(`Can't install another Cybergun: one per cyberarm (${guns}/${arms}).`); return; }
   }
@@ -9347,7 +9350,7 @@ function buildMarkdown() {
     allAugments.forEach(a => {
       const r = DATA.tables.augments.find(x => x.Name === a.name) || {};
       const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
-      const gun = (a.name === "Cybergun Installation" && a.gunType) ? ` — ${a.gunType}` : "";
+      const gun = (RULES.isCybergunAugment(a.name) && a.gunType) ? ` — ${a.gunType}` : "";
       L.push(`- ${a.name}${(a.count || 1) > 1 ? ` ×${a.count}` : ""}${gun}${dmg !== "" ? ` — DMG ${dmg}` : ""}`);
     });
     if (c.sense_notes && c.sense_notes.length)

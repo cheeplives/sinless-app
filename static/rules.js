@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "266";
+const APP_VERSION = "267";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -1594,6 +1594,21 @@ function validateBoonBaneCounts(heritageType, categories, warnings, errors) {
 }
 
 // ============================================================== step 3: augments
+// Two augment rows grant a mounted cybergun: the base install, and the
+// Reload Port variant its own Description already names ("an external ammo
+// port that extends out from the forearm, allowing you to reload as
+// normal", +0.1 ZR) as row #168's own optional upgrade. They're the same
+// THING everywhere except that one difference — same gun-type picker, same
+// one-per-cyberarm cap, same cost math (augmentEffCost keys off entry.gunType,
+// not the name, so it needs no changes) — so every check that used to test
+// the name literally tests membership here instead. A third variant is one
+// line to add, not a grep across four files.
+const CYBERGUN_AUGMENT_NAMES = new Set(["Cybergun Installation", "Cybergun-Reload Port"]);
+function isCybergunAugment(name) { return CYBERGUN_AUGMENT_NAMES.has(name); }
+// Only the Reload Port variant is exempt from the "cannot be reloaded during
+// combat" confirm — that's the entire point of paying its extra 0.1 ZR.
+function cybergunReloadable(name) { return name === "Cybergun-Reload Port"; }
+
 const AUGMENT_REQUIREMENTS = {
   "Skillwires": [["Chipjack"]],
   "Skillsoft": [["Chipjack"], ["Skillwires"]],
@@ -1606,6 +1621,8 @@ const AUGMENT_REQUIREMENTS = {
   "Camera": [["Datajack", "Optical Datajack", "Memory", "Chipjack"]],
   "Cybergun Installation": [["Right Arm Replacement", "Left Arm Replacement",
                              "Arm Omni-kit"]],
+  "Cybergun-Reload Port": [["Right Arm Replacement", "Left Arm Replacement",
+                            "Arm Omni-kit"]],
   "Gyromount": [["Right Arm Replacement", "Left Arm Replacement",
                  "Arm Omni-kit"]],
 };
@@ -5814,7 +5831,7 @@ return {
   mountCapability, mountRefusal, augmentEffZr, augmentEffCost, augmentQualityMultiplier,
   UNIT_ATTACHMENT_TABLES,
   augmentLimbRequirement, augmentMeleeDamage, augmentTier, augmentStacks,
-  augmentRaisesMax,
+  augmentRaisesMax, isCybergunAugment, cybergunReloadable,
   weaponSkillName,
   specTerms, specTermMatchesWeapon, classifySpecTerms, weaponSpecAdjust,
   FIRING_MODES, weaponFiringModes, firingMode, parseFiringMode,

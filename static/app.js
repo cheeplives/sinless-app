@@ -1689,7 +1689,7 @@ function tabAugments(p) {
   const hasCyberleg = CHAR.augments.some(e => LEG_TYPES.has(ownedAugType(e)));
   // Cyberguns are capped at one per cyberarm.
   const cyberarmCount = CHAR.augments.filter(e => ARM_TYPES.has(ownedAugType(e))).length;
-  const cybergunCount = CHAR.augments.filter(e => e.name === "Cybergun Installation").length;
+  const cybergunCount = CHAR.augments.filter(e => RULES.isCybergunAugment(e.name)).length;
   // Which limb (if any) a cyberlimb augment still needs; null when satisfied.
   const limbUnmet = r => {
     switch (RULES.augmentLimbRequirement(r)) {
@@ -1720,7 +1720,7 @@ function tabAugments(p) {
       const dmg = RULES.augmentMeleeDamage(r, CALC.attributes.Strength.final, CALC.martial_art && CALC.martial_art.mods);
       // Cybergun: one per cyberarm, so it stays visible after the first install
       // and disables at capacity rather than hiding.
-      const isCybergun = r.Name === "Cybergun Installation";
+      const isCybergun = RULES.isCybergunAugment(r.Name);
       let disabled = !!need;
       let reason = banned || (need ? `Requires ${need} installed` : "");
       let note = banned ? "banned" : (need ? `needs ${need}` : "");
@@ -1778,10 +1778,11 @@ function tabAugments(p) {
           ...Object.keys(DATA.skills).sort().map(x => el("option", {}, x)));
         target.value = it.target || "";
       }
-      // Cybergun Installation: choose the mounted gun. Its cost adds to the
-      // installation (RULES.augmentEffCost) and its stats replace the effect text.
+      // Cybergun Installation (or its Reload Port variant): choose the mounted
+      // gun. Its cost adds to the installation (RULES.augmentEffCost) and its
+      // stats replace the effect text.
       let gunSel = null, gun = null;
-      if (it.name === "Cybergun Installation") {
+      if (RULES.isCybergunAugment(it.name)) {
         gun = it.gunType ? (DATA.tables.cyberguns || []).find(g => g.Type === it.gunType) : null;
         gunSel = el("select", { onchange: e => { it.gunType = e.target.value; refresh(); } },
           el("option", { value: "" }, "Choose gun…"),

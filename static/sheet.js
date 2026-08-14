@@ -4676,9 +4676,17 @@ function actionsCard() {
         ro ? null : miniCounter("", () => used[r.key] || 0,
           v => { used[r.key] = v; }, 0, r.total))));
   }
-  card.append(el("p", { class: "hint" },
-    "Spent actions and pool dice both clear on New Round. Totals come from your "
-    + "build, so anything that grants an exploit shows up here on its own."));
+  // Master switch for the automatic spend the loadout's Cast/Fire/Aimed
+  // Fire/Attack/Reload buttons do (spendActionUnits, below) — off by default
+  // so an existing table's habits don't change out from under them; the
+  // manual controls above (New Round, the ± counters, the Complex button)
+  // always work regardless, since those are the player doing their own
+  // bookkeeping rather than the buttons doing it for them.
+  card.append(el("label", { class: "opt", style: "margin-top:4px" },
+    el("input", { type: "checkbox", ...(play.action_costs ? { checked: 1 } : {}),
+      disabled: ro ? "1" : null,
+      onchange: e => { play.action_costs = e.target.checked; playChanged(); } }),
+    el("span", {}, "Enable action costs in loadout")));
   return card;
 }
 
@@ -4706,8 +4714,16 @@ function exploitActionTotal(kind) {
  *
  * Never partially spends: a refusal (with a warning naming the actual
  * shortfall) leaves both pools exactly as they were, even when the exploit
- * pool alone would have covered part of `n`. */
+ * pool alone would have covered part of `n`.
+ *
+ * Gated on the "Enable action costs in loadout" checkbox (Actions This
+ * Round) — off by default, in which case this is a no-op that always
+ * succeeds. That checkbox is the one on/off switch for every automatic
+ * spend Cast/Fire/Aimed Fire/Attack/Reload do; the manual controls on
+ * Actions This Round itself (New Round, the ± counters, the Complex
+ * button) are unaffected either way. */
 function spendActionUnits(kind, n, why) {
+  if (!CHAR.play.action_costs) return true;
   const used = (CHAR.play.actions_used = CHAR.play.actions_used || {});
   const exploitLeft = kind ? Math.max(0, exploitActionTotal(kind) - (used[kind] || 0)) : 0;
   const simpleLeft = (CALC.combat.simple_actions || 0) - (used.simple || 0);

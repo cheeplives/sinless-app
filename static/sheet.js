@@ -3363,12 +3363,20 @@ function attackButton(label, rs, opts = {}) {
     el("button", { class: "btn small",
       title: opts.title || (`Roll ${total}d6 — ${rs.why.join(" ")}`
         + (rs.bwhy.length ? `, bonus ${rs.bwhy.join(" + ")}` : "")),
-      onclick: () => openPoolRoller({ dice: rs.limitDice, bonus: rs.bonus,
-        pool: rs.pool, label,
-        note: opts.note
-          || `${rs.skill}: ${rs.skillDice} skill`
-             + (rs.acc ? ` + ${rs.acc} Accuracy` : "")
-             + (rs.bonus ? ` + ${rs.bonus} bonus` : "") }),
+      onclick: () => {
+        // Only opts.melee = true (natural/cyber melee weapons and hand-to-
+        // hand mounts) spends anything here — thrown weapons and fixed-pool
+        // ranged implants (Eye Laser, Snake's Spit) also land on this button
+        // but aren't a melee/unarmed swing, so they're left untouched.
+        if (opts.melee && !spendMeleeAttack()) return;
+        openPoolRoller({ dice: rs.limitDice, bonus: rs.bonus,
+          pool: rs.pool, label,
+          note: opts.note
+            || `${rs.skill}: ${rs.skillDice} skill`
+               + (rs.acc ? ` + ${rs.acc} Accuracy` : "")
+               + (rs.bonus ? ` + ${rs.bonus} bonus` : "") });
+        if (opts.melee) playChanged();
+      },
     }, "Attack"));
 }
 
@@ -3458,6 +3466,10 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
                        ? ` and loads ${rollSpec.limitDice + rollSpec.bonus}d6 in the roller`
                        : ""),
       onclick: () => {
+        // Full Auto is a Complex Action (2 Simple Actions); every other mode
+        // is Simple. Checked — and refused with a warning — before anything
+        // else moves, same as a dry magazine already disables the button.
+        if (!spendSimpleActions(mode === "FA" ? 2 : 1, `Firing ${mode}`)) return;
         // Same dice the chip beside it would load — firing IS the attack test,
         // so it spends the rounds and opens the roll in one press.
         if (rollable)
@@ -3956,11 +3968,15 @@ function shOverview(body) {
           ? { skillDice: Math.max(0, +gw.dice || 0), bonus: 0, pool: "", locked: false,
               skill: "", why: [`${gw.dice} dice from the implant`], bwhy: [] }
           : weaponRollSpec(gw.name, "Natural", 0, [], gw.reach);
+        // reach is only set on genuine melee/unarmed entries (claws, bio-
+        // blades, Iron Fist); the fixed-pool ranged implants (Eye Laser) and
+        // stats-only ranged natural attacks (Snake's Spit) leave it unset.
+        const meleeAttack = gw.reach != null;
         const attack = gro ? null : el("td", {},
           attackButton(gw.name, rs, gw.dice != null
             ? { note: `${gw.dice} dice — a fixed pool from the implant, not a skill rating`,
-                title: `Roll ${gw.dice}d6 — fixed pool from ${gw.source}` }
-            : {}));
+                title: `Roll ${gw.dice}d6 — fixed pool from ${gw.source}`, melee: meleeAttack }
+            : { melee: meleeAttack }));
         gt.append(el("tr", {},
           el("td", {}, el("b", {}, gw.name)),
           gw.stats
@@ -4027,7 +4043,8 @@ function shOverview(body) {
         const attack = ro ? null : el("td", {},
           (modes.length && mount)
             ? firingModeControls(mount, w, {}, modes, mMode, mKata, rs, g.label)
-            : (g.kind === "weapon" && w) ? attackButton(g.label, rs) : "—");
+            : (g.kind === "weapon" && w)
+              ? attackButton(g.label, rs, { melee: w.Type === "Melee" }) : "—");
         // Loads from the same stock as everything else — a mount is a gun, not
         // a special case. Melee mounts and limbs take nothing, so they say so.
         const ammoCell = ro ? null : el("td", { class: "sub" },
@@ -4139,9 +4156,11 @@ function shOverview(body) {
               if (modes.length)
                 return firingModeControls(w, r, calcRow, modes, mode, kataOffered, rs);
               // Melee, thrown and anything else without a firing mode: no
-              // magazine to track, but the same attack test to roll.
+              // magazine to track, but the same attack test to roll. Only
+              // actual Melee-type rows spend a Melee Exploit/Simple Action —
+              // a thrown weapon isn't a melee/unarmed swing.
               const ro = !!(activeTabObj() && activeTabObj().readonly);
-              return ro ? "—" : attackButton(w.name, rs);
+              return ro ? "—" : attackButton(w.name, rs, { melee: r.Type === "Melee" });
             })()),
             ammo: el("td", { class: "sub" }, munitionPicker(w, r)),
           };
@@ -4229,7 +4248,8 @@ function shOverview(body) {
                 : null),
             fire: el("td", { class: "sub" }, ubModes.length
               ? firingModeControls(st, r, {}, ubModes, ubMode, false, rs, ub.name)
-              : ((activeTabObj() && activeTabObj().readonly) ? "—" : attackButton(ub.name, rs))),
+              : ((activeTabObj() && activeTabObj().readonly) ? "—"
+                  : attackButton(ub.name, rs, { melee: r.Type === "Melee" }))),
             ammo: el("td", { class: "sub" }, munitionPicker(st, r)),
           };
         },
@@ -4516,6 +4536,53 @@ function actionsCard() {
   return card;
 }
 
+/* ---- action economy spends ------------------------------------------------
+ * actionsCard() above is the read-and-manually-adjust view of
+ * `play.actions_used`; these are the "a button got pressed" writes into that
+ * same store, so a Cast/Fire/Attack lands exactly like a manual click of the
+ * counter would, and New Round clears it the same way either way.
+ */
+
+/* Spend `n` Simple Actions, warning and refusing if there aren't enough.
+ * Shared by Cast, every Fire press, and a melee/unarmed Attack once its
+ * Melee Exploit Actions are used up (or it never had any). */
+function spendSimpleActions(n, why) {
+  const used = (CHAR.play.actions_used = CHAR.play.actions_used || {});
+  const total = CALC.combat.simple_actions || 0;
+  const cur = used.simple || 0;
+  const left = total - cur;
+  if (left < n) {
+    alert(`Out of Simple Actions — ${why} needs ${n}, you have ${left} left.`);
+    return false;
+  }
+  used.simple = cur + n;
+  return true;
+}
+
+/* Total Melee Exploit Actions the build grants — the same total the Actions
+ * This Round card lists under "Melee exploit". */
+function meleeExploitTotal() {
+  return (CALC.combat.exploit_actions || [])
+    .filter(a => a.kind === "Melee")
+    .reduce((n, a) => n + a.count, 0);
+}
+
+/* A melee/unarmed Attack spends a Melee Exploit Action first — the free
+ * extra swing a martial style grants — and only reaches for a Simple Action
+ * once those are gone, or weren't granted at all. Returns true once
+ * something is actually spent; false (with a warning already shown) when
+ * both are out. */
+function spendMeleeAttack() {
+  const used = (CHAR.play.actions_used = CHAR.play.actions_used || {});
+  const total = meleeExploitTotal();
+  const cur = used.Melee || 0;
+  if (cur < total) {
+    used.Melee = cur + 1;
+    return true;
+  }
+  return spendSimpleActions(1, "a melee attack");
+}
+
 function miniCounter(label, get, set, min = 0, max = 9999) {
   const clamp = n => Math.max(min, Math.min(max, n));
   const val = el("b", { title: "Click to type a value", style: "cursor:text" }, String(get()));
@@ -4588,6 +4655,9 @@ async function castSpell(name, knownForce, after) {
   if (raw == null) return;
   const force = Math.max(1, Math.min(knownForce, parseInt(raw, 10) || 0));
   if (!force) return;
+  // A cast is a Complex Action — 2 Simple Actions — same as pressing the
+  // Complex button on Actions This Round, just spent from here instead.
+  if (!spendSimpleActions(2, `Casting ${name}`)) return;
   const drain = RULES.spellDrain(row.Drain, force);
   const lethal = RULES.drainIsLethal(force, zp);
   CHAR.play.active_spells = activeSpells();

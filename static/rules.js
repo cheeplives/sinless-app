@@ -764,6 +764,7 @@ function defaultCharacter() {
       notes: "",
       attribute_advances: {},
       skill_advances: {},
+      etiquette_advances: {},     // { etiquette name: +ranks } bought with Kismet in play
       martial_art_advances: {},   // { style: +ranks } bought in play
       ritual_advances: {},
       zp_advances: 0,
@@ -5146,9 +5147,11 @@ function deepCopy(value) {
  * clamped, `skill_advances: { Sorcery: 900 }` was simply believed.
  *
  * Skills top out at 8 — rank 6 by Kismet, 7 on a mastery boon, 8 on a major
- * one. Attributes stay inside the engine's own level range; their per-heritage
- * maximum is checked downstream, where it warns rather than blocks (JC-002).
- * Nothing here ever lowers a value: a negative advance is discarded. */
+ * one. Etiquettes and Knowledges follow the same skill rules (#58) and share
+ * this ceiling. Attributes stay inside the engine's own level range; their
+ * per-heritage maximum is checked downstream, where it warns rather than
+ * blocks (JC-002). Nothing here ever lowers a value: a negative advance is
+ * discarded. */
 const PLAY_SKILL_RANK_CAP = EXPERTISE_SKILL_RANK_CAP;
 
 function applyPlayAdvances(character) {
@@ -5165,6 +5168,16 @@ function applyPlayAdvances(character) {
     if (name in SKILLS) {
       character.skills[name] = Math.min(PLAY_SKILL_RANK_CAP,
         toInt(asNumber(character.skills[name] || 0)) + advance(plus));
+    }
+  }
+  // Etiquettes are chargen-owned (not part of play.kit — see the bright line
+  // below), so a Kismet raise can't write character.etiquettes[name] directly;
+  // it goes through this advances counter instead, same as attributes/skills.
+  character.etiquettes = character.etiquettes || {};
+  for (const [name, plus] of Object.entries(play.etiquette_advances || {})) {
+    if (ETIQUETTES.includes(name)) {
+      character.etiquettes[name] = Math.min(PLAY_SKILL_RANK_CAP,
+        toInt(asNumber(character.etiquettes[name] || 0)) + advance(plus));
     }
   }
   // Martial-art ranks bought in play, per style. Raising an existing style adds

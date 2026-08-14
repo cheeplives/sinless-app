@@ -20,6 +20,8 @@
  *   new skill (rank 1)    4 Kismet
  *   every 10 earned       +1 Kismet pool -> pick a boon (windfall / free
  *                         asset / skill mastery 6→7); every 2nd is a major
+ * Etiquettes and Knowledges are skills like any other (#58) and follow the
+ * same rules above — same Kismet costs, same rank-6 cap, same boons.
  * Magic in play:
  *   spells cost their listed Cost in woolongs PER FORCE to learn or advance
  *   ZP advances cost Kismet (assumed: same tier costs as attributes) and
@@ -319,6 +321,14 @@ function undoKismetSpend(entry) {
   else if (u.kind === "skill") dec(play.skill_advances, u.name);
   else if (u.kind === "martial_art") dec(play.martial_art_advances = play.martial_art_advances || {}, u.name);
   else if (u.kind === "ritual") dec(play.ritual_advances, u.name);
+  else if (u.kind === "etiquette") dec(play.etiquette_advances = play.etiquette_advances || {}, u.name);
+  // Knowledges have no advances counter of their own -- points live straight
+  // on the play.kit entry (the same field the free budget +/- buttons edit),
+  // so undoing just steps that entry back down instead.
+  else if (u.kind === "knowledge") {
+    const entry = allKnowledgeSkills().find(k => k.name === u.name);
+    if (entry) entry.points = Math.max(0, (entry.points || 0) - 1);
+  }
   else if (u.kind === "zp") play.zp_advances = Math.max(0, (play.zp_advances || 0) - 1);
   play.kismet -= entry.delta;   // delta is negative, so this refunds it
   play.kismet_log.splice(idx, 1);
@@ -5856,6 +5866,91 @@ function shKismet(body) {
   two.append(attrBox, skillBox);
   spend.append(two);
 
+  // Etiquettes and Knowledges are skills like any other (#58): same Kismet
+  // costs, same rank-6 cap, same mastery/major boons as the skill list above.
+  const two2 = el("div", { class: "sh-two" });
+
+  const etiquetteBox = el("div", {}, el("h4", { class: "sh-h4" }, "Raise Etiquettes"));
+  const etqValues = (CALC.etiquette_points || {}).values || {};
+  const rankedEtiquettes = RULES.ETIQUETTES.filter(n => (etqValues[n] || 0) > 0)
+    .sort((a, b) => (etqValues[b] || 0) - (etqValues[a] || 0));
+  if (!rankedEtiquettes.length) etiquetteBox.append(el("p", { class: "hint" }, "No trained etiquettes yet."));
+  for (const name of rankedEtiquettes) {
+    const points = etqValues[name] || 0;
+    const atCap = points >= SKILL_KISMET_CAP;
+    const cost = skillRaiseCost(points);
+    etiquetteBox.append(el("div", { class: "sh-advrow" },
+      el("span", {}, el("b", {}, name), el("span", { class: "sub" }, ` rank ${points}`)),
+      el("button", {
+        class: "btn small", disabled: (atCap || play.kismet < cost) ? "1" : null,
+        title: atCap ? "Rank 6 is the Kismet cap — use a mastery boon for 7" : null,
+        onclick: async () => {
+          if (!spendKismet(`Raised ${name} (Etiquette) to rank ${points + 1}`, cost,
+              { kind: "etiquette", name })) return;
+          play.etiquette_advances[name] = (play.etiquette_advances[name] || 0) + 1;
+          await playChangedRecalc();
+        },
+      }, atCap ? "cap 6" : `+1 (${cost})`)));
+  }
+  const untrainedEtiquettes = RULES.ETIQUETTES.filter(n => (etqValues[n] || 0) === 0);
+  const learnEtqSel = el("select", {},
+    el("option", { value: "" }, "Learn new etiquette…"),
+    ...untrainedEtiquettes.map(n => el("option", {}, n)));
+  etiquetteBox.append(el("div", { class: "add-row" }, learnEtqSel,
+    el("button", {
+      class: "btn-add",
+      disabled: (!untrainedEtiquettes.length || play.kismet < NEW_SKILL_KISMET_COST) ? "1" : null,
+      onclick: async () => {
+        const name = learnEtqSel.value;
+        if (!name) return;
+        if (!spendKismet(`Learned new etiquette: ${name}`, NEW_SKILL_KISMET_COST,
+            { kind: "etiquette", name })) return;
+        play.etiquette_advances[name] = (play.etiquette_advances[name] || 0) + 1;
+        await playChangedRecalc();
+      },
+    }, `Learn (${NEW_SKILL_KISMET_COST})`)));
+
+  // Knowledge points are also free-form via 2×Intelligence any time (see the
+  // Knowledge & Etiquette card on the Skills tab) — this is the second, Kismet
+  // -funded path onto the same play.kit entries, for when that budget's spent.
+  const knowledgeBox = el("div", {}, el("h4", { class: "sh-h4" }, "Raise Knowledges"));
+  const rankedKnowledge = allKnowledgeSkills().filter(k => k.name && (k.points || 0) > 0)
+    .sort((a, b) => (b.points || 0) - (a.points || 0));
+  if (!rankedKnowledge.length) knowledgeBox.append(el("p", { class: "hint" }, "No trained knowledges yet."));
+  for (const k of rankedKnowledge) {
+    const points = k.points || 0;
+    const atCap = points >= SKILL_KISMET_CAP;
+    const cost = skillRaiseCost(points);
+    knowledgeBox.append(el("div", { class: "sh-advrow" },
+      el("span", {}, el("b", {}, k.name), el("span", { class: "sub" }, ` rank ${points}`)),
+      el("button", {
+        class: "btn small", disabled: (atCap || play.kismet < cost) ? "1" : null,
+        title: atCap ? "Rank 6 is the Kismet cap — use a mastery boon for 7" : null,
+        onclick: async () => {
+          if (!spendKismet(`Raised ${k.name} (Knowledge) to rank ${points + 1}`, cost,
+              { kind: "knowledge", name: k.name })) return;
+          k.points = points + 1;
+          await playChangedRecalc();
+        },
+      }, atCap ? "cap 6" : `+1 (${cost})`)));
+  }
+  const learnKnowledgeInput = el("input", { type: "text", placeholder: "New knowledge area" });
+  knowledgeBox.append(el("div", { class: "add-row" }, learnKnowledgeInput,
+    el("button", {
+      class: "btn-add", disabled: play.kismet < NEW_SKILL_KISMET_COST ? "1" : null,
+      onclick: async () => {
+        const name = learnKnowledgeInput.value.trim();
+        if (!name) return;
+        if (!spendKismet(`Learned new knowledge: ${name}`, NEW_SKILL_KISMET_COST,
+            { kind: "knowledge", name })) return;
+        kitOf("knowledge_skills").push({ name, points: 1 });
+        await playChangedRecalc();
+      },
+    }, `Learn (${NEW_SKILL_KISMET_COST})`)));
+
+  two2.append(etiquetteBox, knowledgeBox);
+  spend.append(two2);
+
   const ritualBox = el("div", {}, el("h4", { class: "sh-h4" }, "Raise Rituals"));
   const ritualNames = DATA.tables.rituals.map(r => r.Name);
   const rankedRituals = ritualNames.filter(n => (CALC.ritual_skills[n] || 0) > 0)
@@ -5937,10 +6032,32 @@ function shKismet(body) {
       + "Regular boons: financial windfall · a new free asset from an old friend · skill mastery (6→7). "
       + "Every second milestone is a major boon — ask the Agonarch."));
 
-  const masterable = Object.keys(DATA.skills).filter(n => CALC.skills[n].points === 6);
+  // Skills, Etiquettes and Knowledges all share the mastery/major boon rules
+  // (#58), so both boon dropdowns below draw from all three. Options are
+  // namespaced "kind:name" since a skill and a knowledge area could share a
+  // name; applyRankAdvance() routes the redeemed rank to the right bucket —
+  // skill_advances / etiquette_advances, or straight onto the knowledge's own
+  // play.kit entry, same as the Kismet-raise buttons above.
+  const masterableAt = rank => [
+    ...Object.keys(DATA.skills).filter(n => CALC.skills[n].points === rank)
+      .map(n => ({ value: `skill:${n}`, label: n })),
+    ...RULES.ETIQUETTES.filter(n => (etqValues[n] || 0) === rank)
+      .map(n => ({ value: `etiquette:${n}`, label: `${n} (Etiquette)` })),
+    ...allKnowledgeSkills().filter(k => k.name && (k.points || 0) === rank)
+      .map(k => ({ value: `knowledge:${k.name}`, label: `${k.name} (Knowledge)` })),
+  ];
+  const applyRankAdvance = (kind, name) => {
+    if (kind === "etiquette") play.etiquette_advances[name] = (play.etiquette_advances[name] || 0) + 1;
+    else if (kind === "knowledge") {
+      const entry = allKnowledgeSkills().find(k => k.name === name);
+      if (entry) entry.points = (entry.points || 0) + 1;
+    } else play.skill_advances[name] = (play.skill_advances[name] || 0) + 1;
+  };
+
+  const masterable = masterableAt(6);
   const masterSel = el("select", {},
     el("option", { value: "" }, "Skill at rank 6…"),
-    ...masterable.map(n => el("option", {}, n)));
+    ...masterable.map(o => el("option", { value: o.value }, o.label)));
   boons.append(el("div", { class: "sh-tagrow" },
     counterBtn("Redeem: Windfall (roll below)", () => {
       if (econ.regularsAvail < 1) { alert("No regular boons available."); return; }
@@ -5962,12 +6079,13 @@ function shKismet(body) {
     }, econ.majorsAvail ? "accent" : "")));
   boons.append(el("div", { class: "add-row" }, masterSel,
     el("button", { class: "btn-add", onclick: async () => {
-      const name = masterSel.value;
-      if (!name) return;
+      const sel = masterSel.value;
+      if (!sel) return;
+      const [kind, name] = sel.split(/:(.+)/);
       if (econ.regularsAvail < 1) { alert("No regular boons available."); return; }
       play.boons_spent++;
       play.kismet_log.unshift({ label: `Boon redeemed: skill mastery — ${name} 6→7`, delta: 0 });
-      play.skill_advances[name] = (play.skill_advances[name] || 0) + 1;
+      applyRankAdvance(kind, name);
       await playChangedRecalc();
     } }, "Mastery 6→7 (boon)")));
 
@@ -5985,16 +6103,17 @@ function shKismet(body) {
     counterBtn("Gain magic item / experimental tech", () => {
       if (spendMajor("gained a magic item / experimental tech (see Agonarch)")) playChanged();
     }, econ.majorsAvail ? "accent" : "")));
-  // 2) raise a rank-7 skill to 8
-  const skill7 = Object.keys(DATA.skills).filter(n => CALC.skills[n].points === 7);
+  // 2) raise a rank-7 skill (or Etiquette / Knowledge) to 8
+  const skill7 = masterableAt(7);
   const skill7Sel = el("select", {}, el("option", { value: "" }, "Skill at rank 7…"),
-    ...skill7.map(n => el("option", {}, n)));
+    ...skill7.map(o => el("option", { value: o.value }, o.label)));
   boons.append(el("div", { class: "add-row" }, skill7Sel,
     el("button", { class: "btn-add", disabled: skill7.length ? null : "1", onclick: async () => {
-      const name = skill7Sel.value;
-      if (!name) return;
+      const sel = skill7Sel.value;
+      if (!sel) return;
+      const [kind, name] = sel.split(/:(.+)/);
       if (!spendMajor(`raised ${name} 7→8`)) return;
-      play.skill_advances[name] = (play.skill_advances[name] || 0) + 1;
+      applyRankAdvance(kind, name);
       await playChangedRecalc();
     } }, "Skill 7→8 (major)")));
   // 3) add a permanent Kismet die to a pool

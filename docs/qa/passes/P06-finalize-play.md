@@ -967,6 +967,65 @@ path by which play could reach into the creation record.
   rigHardeningFor now sources from `allRigs()` rather than `CHAR.rigs`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-039: A Speaker grows their practice with Kismet, at creation prices
+- **Type:** correctness
+- **Steps:** finalized **Speaker** (or Archmage), Kismet tab. Note the Magic
+  tab's infusion and relationship meters before you start.
+- **Check:**
+
+      (() => { const play = CHAR.play, sp = CHAR.speaker || {}; const before = { kismet: play.kismet, inf: `${CALC.magic.infusion_pts.spent}/${CALC.magic.infusion_pts.budget}`, rel: `${CALC.magic.relationship_pts.spent}/${CALC.magic.relationship_pts.budget}` }; const ladder = (DATA.tables.speaker_bond_costs || []).map(r => `${r.Bond}=${r.Cost}`); const bonds = RULES.speakerBondCount({ speaker: { bonds: (+sp.bonds || 0) + (play.bond_advances || 0) } }); const row = [...document.querySelectorAll("#sheet .sh-advrow")].find(r => /Spirit bonds/.test(r.textContent)); const btn = row && row.querySelector("button"); return { ladder, bondsNow: bonds, max: RULES.SPEAKER_BOND_MAX, rowText: row ? row.textContent.replace(/\s+/g, " ").trim() : null, buttonLabel: btn ? btn.textContent : "(at maximum)", before }; })()
+
+- **Expected:** `ladder` is `["1=0","2=3","3=8","4=13"]`, `max` is `4`, and
+  `buttonLabel` is `+1 (N)` where **N is the cost of the NEXT rung** — 3 for a
+  character with one bond, 8 with two, 13 with three, and the button is replaced
+  by "at maximum" at four.
+- **Then buy one** and re-run the Check. Kismet drops by exactly that cost, a
+  ledger entry appears reading `Bonded a 2nd spirit` (or 3rd/4th), and **`before.inf`
+  and `before.rel` are unchanged**.
+- **Note:** The prices are the creation prices, read live from
+  `speaker_bond_costs` rather than restated here — 0/3/8/13 for the 1st through
+  4th bond. Infusions and spirits likewise cost their own listed `Cost`.
+
+  The budgets not moving is the point of the case. Kismet purchases are excluded
+  from the **creation** budgets, because those are what Magic priority bought and
+  creation is over. A meter that reads overspent for a character who has done
+  nothing wrong is a false alarm, and a false alarm teaches you to ignore the
+  meter — after which it can't warn you when something is genuinely wrong. If
+  `inf` or `rel` climbs after a purchase, that exclusion has broken.
+
+  **The first bond costs 0.** That is faithful to the ladder (`Bond 1 = Cost 0`)
+  and matches what creation charges, but it means a Speaker who took no bonds can
+  claim one free. Deliberate, not a pricing bug — flag it as JUDGEMENT if the
+  table wants a floor.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-040: Each Speaker purchase undoes cleanly, and only for Speakers
+- **Type:** correctness
+- **Check:**
+
+      (() => { const play = CHAR.play; const kinds = ["speaker_bond", "speaker_infusion", "speaker_relationship"]; const src = undoKismetSpend.toString(); const handled = kinds.filter(k => src.includes(k)); const shown = t => { const was = CHAR.magic.chosen_type; CHAR.magic.chosen_type = t; renderSheet(); const hit = /Speaker practice/.test(document.querySelector("#sheet").textContent); CHAR.magic.chosen_type = was; renderSheet(); return hit; }; return { handled, bondAdvances: play.bond_advances || 0, boughtInfusions: play.speaker_infusions || [], boughtRelationships: play.speaker_relationships || [], magicType: CALC.magic.type }; })()
+
+- **Expected:** `handled` lists all three kinds. The three `play.*` fields hold
+  exactly what you've bought this session.
+- **Then press Undo** on a Speaker entry in the Kismet ledger: the Kismet comes
+  back, the entry disappears, and the matching field steps down — `bond_advances`
+  by one, or the bought **name** removed from its list.
+- **Note:** `undoKismetSpend` dispatches on `undo.kind`, and an unhandled kind
+  refunds the Kismet while leaving the purchase in place — a silent duplication
+  bug, which is why `handled` is asserted rather than assumed.
+
+  Bonds decrement a counter; infusions and relationships are bought by name, so
+  undo removes the **last** occurrence. Buy the same infusion twice, undo once,
+  and one remains — check that rather than assuming, since removing the first
+  occurrence looks identical until you own two.
+
+  The section is absent for every other magic type. A Mage at magic priority 3,
+  an Amp at 2 and a Hedge at 1 all render nothing; Archmage renders it. Watch the
+  priority when testing this: setting `chosen_type` to a type the priority
+  doesn't allow resolves to a different one, so a "Mage" at priority 2 is really
+  an Amp or Speaker and proves nothing.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

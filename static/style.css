@@ -228,7 +228,11 @@ body{background:var(--ink);color:var(--text);font-family:var(--body);font-size:1
 .ws-tabs{display:flex;align-items:stretch;gap:4px;min-width:0;overflow-x:auto;
   scrollbar-width:thin}
 .ws-tab{display:flex;align-items:center;gap:7px;max-width:190px;
-  padding:0 8px 0 11px;margin-top:5px;cursor:grab;user-select:none;touch-action:none;
+  padding:0 8px 0 11px;margin-top:5px;cursor:grab;user-select:none;
+  /* pan-x, not none: a swipe across the chips has to be able to scroll the
+     strip, or tabs past the right edge are unreachable on touch. The drag
+     arms on a long press instead and blocks panning from JS. */
+  touch-action:pan-x;
   border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;
   background:var(--ink);color:var(--dim);font-size:12.5px;white-space:nowrap;
   transition:color .12s,background .12s}

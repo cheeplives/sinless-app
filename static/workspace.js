@@ -82,28 +82,69 @@ function activeTabObj() { return WORKSPACE.tabs[WORKSPACE.active] || null; }
 
 /* ---- drag-to-reorder -----------------------------------------------------
  * Pointer Events (not HTML5 drag-and-drop) so it works with both mouse and
- * touch on the tablets we target. A small movement threshold distinguishes a
- * reorder from a plain tab-switch tap; while dragging, the tabs array reorders
- * live as the pointer crosses each chip's midpoint, and the strip re-renders. */
-let tabDrag = null;            // { tab, startX, startY, dragging, activeChar }
+ * touch on the tablets we target. While dragging, the tabs array reorders live
+ * as the pointer crosses each chip's midpoint, and the strip re-renders.
+ *
+ * Arming differs by input, because on touch a reorder and a scroll are the SAME
+ * gesture — both are a horizontal drag across the strip:
+ *
+ *   mouse — 6px of movement, as before. Nothing else wants that gesture.
+ *   touch — a LONG PRESS. The chips used to carry `touch-action: none` so the
+ *           drag could preventDefault, which also meant a swipe starting on a
+ *           chip never became a scroll: with enough tabs open, the ones off the
+ *           right edge were simply unreachable, since the chips cover nearly
+ *           the whole strip. They're `pan-x` now, so an ordinary swipe scrolls,
+ *           and holding still for a moment is what says "I meant to move this".
+ *
+ * Holding still matters mechanically, not just as an affordance: `touch-action`
+ * is latched when the pointer goes down, so once the browser has begun panning
+ * it owns the gesture. Arming only after LONG_PRESS_MS of near-stillness means
+ * it hasn't started, and the touchmove is still cancelable — which is what the
+ * non-passive listener below relies on to stop the strip scrolling under a
+ * chip that's being dragged. */
+let tabDrag = null;            // { tab, startX, startY, dragging, activeChar, timer, touch }
 let suppressTabClick = false;  // set after a drag so the trailing click doesn't switch tabs
-const TAB_DRAG_THRESHOLD = 6;  // px before a press becomes a drag
+const TAB_DRAG_THRESHOLD = 6;  // px before a mouse press becomes a drag
+const TAB_LONG_PRESS_MS = 400; // hold before a touch press becomes a drag
+const TAB_LONG_PRESS_SLOP = 10; // px of drift allowed while waiting — beyond it, it's a scroll
+
+/* Blocks the browser panning the strip while a chip is being dragged. Non-passive
+ * so preventDefault actually bites; only attached once a drag is armed. */
+function blockTabScroll(e) { if (tabDrag && tabDrag.dragging) e.preventDefault(); }
+
+function armTabDrag() {
+  if (!tabDrag || tabDrag.dragging) return;
+  tabDrag.dragging = true;
+  document.body.classList.add("ws-reordering");
+  window.addEventListener("touchmove", blockTabScroll, { passive: false });
+}
 
 function onTabPointerDown(e, tab) {
   if (e.button != null && e.button > 0) return;             // primary button only
   if (e.target.closest(".ws-dup, .ws-close")) return;       // let the chip buttons work
   tabDrag = { tab, startX: e.clientX, startY: e.clientY, dragging: false,
+              touch: e.pointerType === "touch", timer: null,
               activeChar: activeTabObj() ? activeTabObj().char : null };
+  if (tabDrag.touch) tabDrag.timer = setTimeout(armTabDrag, TAB_LONG_PRESS_MS);
   window.addEventListener("pointermove", onTabPointerMove);
   window.addEventListener("pointerup", onTabPointerUp, { once: true });
+  // The browser takes the gesture back the moment it decides to pan, which is
+  // exactly the "this was a scroll" case — drop the press rather than leaving a
+  // half-armed drag behind.
+  window.addEventListener("pointercancel", onTabPointerUp, { once: true });
 }
 
 function onTabPointerMove(e) {
   if (!tabDrag) return;
+  const moved = Math.hypot(e.clientX - tabDrag.startX, e.clientY - tabDrag.startY);
   if (!tabDrag.dragging) {
-    if (Math.hypot(e.clientX - tabDrag.startX, e.clientY - tabDrag.startY) < TAB_DRAG_THRESHOLD) return;
-    tabDrag.dragging = true;
-    document.body.classList.add("ws-reordering");
+    if (tabDrag.touch) {
+      // Drifting before the timer fires means a scroll was intended. Let it go.
+      if (moved > TAB_LONG_PRESS_SLOP) { clearTimeout(tabDrag.timer); tabDrag = null; }
+      return;
+    }
+    if (moved < TAB_DRAG_THRESHOLD) return;
+    armTabDrag();
   }
   e.preventDefault();
   const chips = [...document.querySelectorAll("#workspace-tabs .ws-tab")];
@@ -130,6 +171,12 @@ function onTabPointerMove(e) {
 
 function onTabPointerUp() {
   window.removeEventListener("pointermove", onTabPointerMove);
+  window.removeEventListener("touchmove", blockTabScroll);
+  // Both are registered `once`, but only the one that actually fired removed
+  // itself — drop the other so presses don't accumulate listeners.
+  window.removeEventListener("pointerup", onTabPointerUp);
+  window.removeEventListener("pointercancel", onTabPointerUp);
+  if (tabDrag) clearTimeout(tabDrag.timer);
   if (tabDrag && tabDrag.dragging) {
     document.body.classList.remove("ws-reordering");
     renderWorkspaceBar();

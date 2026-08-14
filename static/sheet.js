@@ -3469,8 +3469,10 @@ function attackButton(label, rs, opts = {}) {
  * can share this without either one being taught the other's bookkeeping:
  * { disabled, disabledTitle, spend() }. `kind` is an Exploit Action kind to
  * draw on before Simple Actions (e.g. "Rigging" for a drone/vehicle mount);
- * null (personal weapons) spends Simple Actions outright. */
-function aimedFireButton(rollSpec, fireLabel, mode, resource, kind = null) {
+ * null (personal weapons) spends Simple Actions outright. `calcRow` is the
+ * weapon's engine row for the recoil check — null means this gun doesn't
+ * feed the character's recoil tracker (drone/vehicle mounts). */
+function aimedFireButton(rollSpec, fireLabel, mode, resource, kind = null, calcRow = null) {
   if (!rollSpec || rollSpec.locked
       || (rollSpec.skillDice + rollSpec.bonus + rollSpec.acc) <= 0) return null;
   const faBlocked = mode === "FA";
@@ -3481,6 +3483,9 @@ function aimedFireButton(rollSpec, fireLabel, mode, resource, kind = null) {
       : `Aimed Fire — a Complex Action; Accuracy (${rollSpec.acc}) becomes bonus dice `
         + "instead of costing pool",
     onclick: () => {
+      // Recoil is checked before anything is spent, so a gun too unsteady to
+      // fire costs neither actions nor ammunition.
+      if (recoilBlocked(fireLabel, calcRow)) return;
       if (!spendActionUnits(kind, 2, `Aimed Fire with ${fireLabel}`)) return;
       openPoolRoller({ dice: rollSpec.skillDice, bonus: rollSpec.bonus + rollSpec.acc,
         pool: rollSpec.pool, label: fireLabel,
@@ -3544,8 +3549,8 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
       const aimed = aimedFireButton(rollSpec, fireLabel, mode, {
         disabled: overheated,
         disabledTitle: "Not enough heat capacity left for another shot",
-        spend: () => { if (hs) w.heat = cur() + hs.per; },
-      });
+        spend: () => { if (hs) w.heat = cur() + hs.per; addRecoil(mode, calcRow); },
+      }, null, calcRow);
       if (aimed) wrap.append(el("div", { class: "sh-fire-btns" }, aimed));
     }
     return wrap;
@@ -3590,6 +3595,9 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
                        ? ` and loads ${rollSpec.limitDice + rollSpec.bonus}d6 in the roller`
                        : ""),
       onclick: () => {
+        // Recoil first: a gun that's shaken loose can't fire at all, so it
+        // must not cost actions or ammunition on the way to being refused.
+        if (recoilBlocked(fireLabel, calcRow)) return;
         // Full Auto is a Complex Action (2 Simple Actions); every other mode
         // is Simple. Checked — and refused with a warning — before anything
         // else moves, same as a dry magazine already disables the button.
@@ -3603,6 +3611,7 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
               + (rollSpec.acc ? ` + ${rollSpec.acc} Accuracy` : "")
               + (rollSpec.bonus ? ` + ${rollSpec.bonus} bonus (${mode})` : "") });
         w.loaded = Math.max(0, loaded - cost);
+        addRecoil(mode, calcRow);
         playChanged();
       } }, "Fire"),
     // A sealed one-shot is its own magazine: once it's fired there is nothing to
@@ -3630,8 +3639,8 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
     aimedFireButton(rollSpec, fireLabel, mode, {
       disabled: dry,
       disabledTitle: `Not enough rounds loaded for Aimed Fire (needs ${cost})`,
-      spend: () => { w.loaded = Math.max(0, loaded - cost); },
-    })));
+      spend: () => { w.loaded = Math.max(0, loaded - cost); addRecoil(mode, calcRow); },
+    }, null, calcRow)));
   return wrap;
 }
 
@@ -4338,6 +4347,11 @@ function shOverview(body) {
             (ammo.row && String(shot[key]) !== String(base[key]))
               ? { class: "wpn-ammo-mod", title: `${ammo.name} ammo` } : {},
             `${label} ${shot[key]}`);
+          // Braced against the arm it's built into, so its recoil rating is
+          // its own (doubled) figure rather than the character's bare one.
+          // Passed as the calcRow so the Fire button's recoil check reads the
+          // same number the stat line prints.
+          const cgRecoil = RULES.cybergunRecoil(g, CALC.combat);
           return {
             name: el("b", {}, cg.name + " (smart)"),
             stats: el("td", { class: "sub" },
@@ -4346,12 +4360,12 @@ function shOverview(body) {
               base.bar ? " · " : null, base.bar ? bit("Barrier", "bar") : null,
               ` · Mag ${g.Ammo}`
               + ` · Hardening ${RULES.hardeningOf(g)}`
-              + recoilBit(RULES.cybergunRecoil(g, CALC.combat)),
+              + recoilBit(cgRecoil),
               el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab"),
               ammo.notes.length
                 ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
             fire: el("td", { class: "sub" }, cgModes.length
-              ? firingModeControls(cg.src, cgRow, {}, cgModes, cgMode, cgKataOffered,
+              ? firingModeControls(cg.src, cgRow, cgRecoil, cgModes, cgMode, cgKataOffered,
                   weaponRollSpec(cg.name, "Cybergun", shot.acc, cgBonuses), cg.name)
               : "—"),
             ammo: el("td", { class: "sub" }, munitionPicker(cg.src, cgRow)),
@@ -4679,13 +4693,32 @@ function actionsCard() {
         ro ? null : miniCounter("", () => used[r.key] || 0,
           v => { used[r.key] = v; }, 0, r.total))));
   }
+  // Recoil sits with the actions rather than on a card of its own: it's the
+  // other thing firing costs you, and Stabilize is a Free Action spent from
+  // this same round. It does NOT clear on New Round — see recoilTracked().
+  const recoil = recoilTracked();
+  const ownCap = toIntSafe((CALC.combat || {}).recoil_capacity);
+  card.append(el("div", { class: "stat-line" + (recoil ? "" : " dim"),
+      title: `Recoil builds by 1 a shot (2 on Full Auto) and is cleared by `
+        + `Stabilize, a Free Action. Your own capacity is ${ownCap}; a gun's `
+        + `mods can raise its rating above that.` },
+    el("span", {}, "Recoil",
+      ro ? null : el("button", { class: "sh-complex-btn",
+        title: "Stabilize — a Free Action; clears accumulated recoil",
+        onclick: () => { CHAR.play.recoil = 0; playChanged(); } }, "Stabilize")),
+    el("span", { style: "text-align:right;display:inline-flex;align-items:center;gap:8px" },
+      ro ? el("b", { style: recoil ? "" : "color:var(--dim)" }, String(recoil))
+         : miniCounter("", recoilTracked, v => { CHAR.play.recoil = v; }, 0, 99))));
   // Master switch for the automatic spend the loadout's Cast/Fire/Aimed
   // Fire/Attack/Reload buttons do (spendActionUnits, below) — off by default
   // so an existing table's habits don't change out from under them; the
-  // manual controls above (New Round, the ± counters, the Complex button)
-  // always work regardless, since those are the player doing their own
-  // bookkeeping rather than the buttons doing it for them.
-  card.append(el("label", { class: "opt", style: "margin-top:4px" },
+  // manual controls above (New Round, the ± counters, the Complex button,
+  // Stabilize) always work regardless, since those are the player doing
+  // their own bookkeeping rather than the buttons doing it for them.
+  card.append(el("label", { class: "opt", style: "margin-top:4px",
+      title: "Governs what the loadout's Cast / Fire / Aimed Fire / Attack / "
+        + "Reload buttons spend on their own: the round's actions, and the "
+        + "recoil a shot builds up." },
     el("input", { type: "checkbox", ...(play.action_costs ? { checked: 1 } : {}),
       disabled: ro ? "1" : null,
       onchange: e => { play.action_costs = e.target.checked; playChanged(); } }),
@@ -4742,6 +4775,54 @@ function spendActionUnits(kind, n, why) {
   const fromSimple = n - fromExploit;
   if (fromSimple) used.simple = (used.simple || 0) + fromSimple;
   return true;
+}
+
+/* ---- recoil -----------------------------------------------------------------
+ * Recoil the shooter has soaked up since their last Stabilize. Play state,
+ * shown and hand-adjustable on Actions This Round.
+ *
+ * Deliberately NOT cleared by New Round: "Stabilize a gun (if not fired this
+ * round)" is a Free Action in the reference, and spending a Free Action on it
+ * is only a decision worth making if recoil outlives the round that caused
+ * it. Stabilize is what clears it. */
+function recoilTracked() { return Math.max(0, toIntSafe((CHAR.play || {}).recoil)); }
+
+/* How much recoil one gun can soak before its shooter has to stabilize.
+ *
+ * `calcRow.Recoil` is the engine's per-weapon figure — the character's own
+ * capacity plus whatever is bolted to that gun (rules.js sets it for every
+ * non-melee, non-thrown weapon). Guns the engine doesn't rate individually
+ * fall back to the character's bare capacity, which is exactly what an
+ * unmodded gun's rating would have been. Gun-Kata 3's "Ignore Recoil" gives
+ * Infinity: that gun never needs steadying. */
+function recoilCapacityOf(calcRow) {
+  const c = calcRow || {};
+  if (c.recoil_ignored) return Infinity;
+  if (c.Recoil != null) return toIntSafe(c.Recoil);
+  return toIntSafe((CALC.combat || {}).recoil_capacity);
+}
+
+/* True when this gun is too unsteady to fire again — checked BEFORE any
+ * action is spent or any round leaves the magazine, so a refused shot costs
+ * nothing. A null `calcRow` means the weapon doesn't feed the character's
+ * tracker at all (drone/vehicle mounts brace against the unit, not a
+ * shoulder), so it never blocks. */
+function recoilBlocked(label, calcRow) {
+  if (!CHAR.play.action_costs || !calcRow) return false;
+  const cap = recoilCapacityOf(calcRow);
+  const cur = recoilTracked();
+  if (cur < cap) return false;
+  alert(`${label} is unsteady — recoil ${cur} has reached this gun's Recoil ${cap}.\n\n`
+    + "Stabilize (a Free Action) before firing again.");
+  return true;
+}
+
+/* Firing adds recoil: Full Auto shakes loose two, everything else one.
+ * Called only after the shot is committed, so it pairs with recoilBlocked's
+ * check-first ordering. */
+function addRecoil(mode, calcRow) {
+  if (!CHAR.play.action_costs || !calcRow) return;
+  CHAR.play.recoil = recoilTracked() + (mode === "FA" ? 2 : 1);
 }
 
 /* Spend `n` Simple Actions outright, warning and refusing if there aren't

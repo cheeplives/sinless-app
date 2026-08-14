@@ -4708,8 +4708,10 @@ function actionsCard() {
           : null),
       el("span", { style: "text-align:right;display:inline-flex;align-items:center;gap:8px" },
         el("b", { style: left ? "" : "color:var(--dim)" }, `${left} / ${r.total}`),
+        // No middle number here: it would show "used", running opposite the
+        // "left" bold text right next to it. See miniCounter's showValue doc.
         ro ? null : miniCounter("", () => used[r.key] || 0,
-          v => { used[r.key] = v; }, 0, r.total))));
+          v => { used[r.key] = v; }, 0, r.total, false))));
   }
   // Recoil sits with the actions rather than on a card of its own: it's the
   // other thing firing costs you, and Stabilize is a Free Action spent from
@@ -4872,10 +4874,19 @@ function spendMeleeAttack() {
   return spendActionUnits("Melee", 1, "a melee attack");
 }
 
-function miniCounter(label, get, set, min = 0, max = 9999) {
+/* `showValue: false` drops the click-to-type number and leaves just −/+.
+ * Use it wherever the counter sits beside its own bold readout computed the
+ * OTHER way round from what get()/set() store (Actions This Round shows
+ * "left", but the counter has to read/write the raw "used" field so New
+ * Round and the loadout's auto-spend keep touching the same number) — two
+ * numbers stepping in opposite directions next to each other reads as a
+ * bug, so don't print the second one. */
+function miniCounter(label, get, set, min = 0, max = 9999, showValue = true) {
   const clamp = n => Math.max(min, Math.min(max, n));
-  const val = el("b", { title: "Click to type a value", style: "cursor:text" }, String(get()));
-  val.addEventListener("click", () => {
+  const val = showValue
+    ? el("b", { title: "Click to type a value", style: "cursor:text" }, String(get()))
+    : null;
+  if (val) val.addEventListener("click", () => {
     const input = el("input", { type: "number", value: String(get()),
       min: String(min), max: String(max), class: "sv-edit", style: "width:56px" });
     val.replaceWith(input); input.focus(); input.select();

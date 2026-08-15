@@ -400,10 +400,31 @@ function ordinalish(n) { return n + (n === 2 ? "nd" : n === 3 ? "rd" : "th"); }
 function undoKismetSpend(entry) {
   const play = CHAR.play;
   const idx = play.kismet_log.indexOf(entry);
-  if (idx < 0 || entry.delta >= 0 || !entry.undo) return;
+  // Boons cost no Kismet (delta: 0) but still consume a boons_spent /
+  // major_boons_spent slot, so only a strictly POSITIVE (gained) entry is
+  // blocked here -- a zero-cost boon redemption is still undoable.
+  if (idx < 0 || entry.delta > 0 || !entry.undo) return;
   const u = entry.undo;
   const dec = (obj, key) => { obj[key] = Math.max(0, (obj[key] || 0) - 1); };
-  if (u.kind === "attribute") dec(play.attribute_advances, u.name);
+  // Boons: redeeming one consumed a milestone slot (regular or major) and,
+  // for the two that grant a specific rank/pool bonus, that too -- both are
+  // rolled back together so an undone boon is available to redeem again.
+  if (u.kind === "boon") {
+    if (u.major) dec(play, "major_boons_spent"); else dec(play, "boons_spent");
+  }
+  else if (u.kind === "boon_rank") {
+    if (u.major) dec(play, "major_boons_spent"); else dec(play, "boons_spent");
+    if (u.rankKind === "etiquette") dec(play.etiquette_advances = play.etiquette_advances || {}, u.name);
+    else if (u.rankKind === "knowledge") {
+      const k = allKnowledgeSkills().find(k => k.name === u.name);
+      if (k) k.points = Math.max(0, (k.points || 0) - 1);
+    } else dec(play.skill_advances, u.name);
+  }
+  else if (u.kind === "boon_pool") {
+    dec(play, "major_boons_spent");
+    dec(play.pool_kismet = play.pool_kismet || {}, u.pool);
+  }
+  else if (u.kind === "attribute") dec(play.attribute_advances, u.name);
   else if (u.kind === "skill") dec(play.skill_advances, u.name);
   else if (u.kind === "martial_art") dec(play.martial_art_advances = play.martial_art_advances || {}, u.name);
   else if (u.kind === "ritual") dec(play.ritual_advances, u.name);
@@ -6170,19 +6191,22 @@ function shKismet(body) {
     counterBtn("Redeem: Windfall (roll below)", () => {
       if (econ.regularsAvail < 1) { alert("No regular boons available."); return; }
       play.boons_spent++;
-      play.kismet_log.unshift({ label: "Boon redeemed: financial windfall (Agonarch rolls)", delta: 0 });
+      play.kismet_log.unshift({ label: "Boon redeemed: financial windfall (Agonarch rolls)",
+        delta: 0, undo: { kind: "boon" } });
       playChanged();
     }, econ.regularsAvail ? "accent" : ""),
     counterBtn("Redeem: Free asset", () => {
       if (econ.regularsAvail < 1) { alert("No regular boons available."); return; }
       play.boons_spent++;
-      play.kismet_log.unshift({ label: "Boon redeemed: new free random asset (old friend)", delta: 0 });
+      play.kismet_log.unshift({ label: "Boon redeemed: new free random asset (old friend)",
+        delta: 0, undo: { kind: "boon" } });
       playChanged();
     }, econ.regularsAvail ? "accent" : ""),
     counterBtn("Redeem: Major boon", () => {
       if (econ.majorsAvail < 1) { alert("No major boons available."); return; }
       play.major_boons_spent++;
-      play.kismet_log.unshift({ label: "MAJOR boon redeemed (see Agonarch)", delta: 0 });
+      play.kismet_log.unshift({ label: "MAJOR boon redeemed (see Agonarch)",
+        delta: 0, undo: { kind: "boon", major: true } });
       playChanged();
     }, econ.majorsAvail ? "accent" : "")));
   boons.append(el("div", { class: "add-row" }, masterSel,
@@ -6192,7 +6216,8 @@ function shKismet(body) {
       const [kind, name] = sel.split(/:(.+)/);
       if (econ.regularsAvail < 1) { alert("No regular boons available."); return; }
       play.boons_spent++;
-      play.kismet_log.unshift({ label: `Boon redeemed: skill mastery — ${name} 6→7`, delta: 0 });
+      play.kismet_log.unshift({ label: `Boon redeemed: skill mastery — ${name} 6→7`,
+        delta: 0, undo: { kind: "boon_rank", rankKind: kind, name } });
       applyRankAdvance(kind, name);
       await playChangedRecalc();
     } }, "Mastery 6→7 (boon)")));
@@ -6200,16 +6225,18 @@ function shKismet(body) {
   // --- specific MAJOR boon options
   play.pool_kismet = play.pool_kismet || {};
   boons.append(el("h4", { class: "sh-h4" }, "Major Boons"));
-  const spendMajor = label => {
+  const spendMajor = (label, undo) => {
     if (econ.majorsAvail < 1) { alert("No major boons available."); return false; }
     play.major_boons_spent++;
-    play.kismet_log.unshift({ label: `MAJOR boon: ${label}`, delta: 0 });
+    play.kismet_log.unshift({ label: `MAJOR boon: ${label}`, delta: 0,
+      undo: { major: true, ...undo } });
     return true;
   };
   // 1) magic item / experimental tech
   boons.append(el("div", { class: "sh-tagrow" },
     counterBtn("Gain magic item / experimental tech", () => {
-      if (spendMajor("gained a magic item / experimental tech (see Agonarch)")) playChanged();
+      if (spendMajor("gained a magic item / experimental tech (see Agonarch)",
+                      { kind: "boon" })) playChanged();
     }, econ.majorsAvail ? "accent" : "")));
   // 2) raise a rank-7 skill (or Etiquette / Knowledge) to 8
   const skill7 = masterableAt(7);
@@ -6220,7 +6247,7 @@ function shKismet(body) {
       const sel = skill7Sel.value;
       if (!sel) return;
       const [kind, name] = sel.split(/:(.+)/);
-      if (!spendMajor(`raised ${name} 7→8`)) return;
+      if (!spendMajor(`raised ${name} 7→8`, { kind: "boon_rank", rankKind: kind, name })) return;
       applyRankAdvance(kind, name);
       await playChangedRecalc();
     } }, "Skill 7→8 (major)")));
@@ -6231,7 +6258,7 @@ function shKismet(body) {
     el("button", { class: "btn-add", onclick: async () => {
       const pool = poolSel.value;
       if (!pool) return;
-      if (!spendMajor(`+1 Kismet die to ${pool} pool`)) return;
+      if (!spendMajor(`+1 Kismet die to ${pool} pool`, { kind: "boon_pool", pool })) return;
       play.pool_kismet[pool] = (play.pool_kismet[pool] || 0) + 1;
       await playChangedRecalc();
     } }, "+1 Kismet die to pool (major)")));
@@ -6265,8 +6292,10 @@ function shKismet(body) {
         el("td", {}, entry.label),
         el("td", { class: "num", style: entry.delta > 0 ? "color:var(--ok)" : entry.delta < 0 ? "color:var(--bad)" : "" },
           entry.delta > 0 ? `+${entry.delta}` : String(entry.delta)),
-        el("td", {}, entry.delta < 0 && entry.undo
-          ? el("button", { class: "btn small", title: "Refund the Kismet and reverse this spend",
+        el("td", {}, entry.delta <= 0 && entry.undo
+          ? el("button", { class: "btn small",
+              title: entry.delta < 0 ? "Refund the Kismet and reverse this spend"
+                                     : "Reverse this and free up the boon slot it spent",
               onclick: async () => { undoKismetSpend(entry); await playChangedRecalc(); } }, "Undo")
           : null))));
     ledger.append(t);

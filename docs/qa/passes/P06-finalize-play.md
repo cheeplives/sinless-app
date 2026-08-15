@@ -1125,6 +1125,58 @@ path by which play could reach into the creation record.
   itself the next time it's opened — no manual repair needed.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-044: Every boon redemption gets an Undo, not just Kismet purchases
+- **Type:** correctness
+- **Steps:** finalized character (any magic type — boons aren't Speaker-specific).
+  Kismet tab. Set up enough lifetime Kismet to have both a regular and a major
+  boon available:
+
+      (() => { CHAR.play.kismet_earned = 20; CHAR.play.boons_spent = 0; CHAR.play.major_boons_spent = 0; CHAR.play.kismet_log = []; playChanged(); return kismetEcon(); })()
+
+  Expected `regularsAvail`/`majorsAvail` both `>= 1`.
+- **Check — redeem a regular boon (Free asset), then read the ledger row:**
+
+      (() => { document.querySelector("#sheet"); const card = [...document.querySelectorAll(".card.sh-card")].find(c => c.querySelector("h3")?.textContent === "Boons"); [...card.querySelectorAll("button")].find(b => b.textContent.trim() === "Redeem: Free asset").click(); const row = document.querySelector(".card.sh-card table tr:nth-child(2)"); return { boonsSpentAfterRedeem: CHAR.play.boons_spent, rowHasUndo: row.textContent.includes("Undo"), logEntry: CHAR.play.kismet_log[0] }; })()
+
+- **Expected:** `boonsSpentAfterRedeem` is `1`, `rowHasUndo` is `true`, and
+  `logEntry` carries `{ delta: 0, undo: { kind: "boon" } }` alongside its label.
+- **Then click that Undo button** and re-check: `CHAR.play.boons_spent` back to
+  `0`, the ledger row gone, and `kismetEcon().regularsAvail` back up by one —
+  the boon is available to redeem again, not lost.
+- **Repeat for a rank boon** (Mastery 6→7, or the major Skill 7→8) with a
+  skill/etiquette/knowledge at the matching rank: Undo must roll back **both**
+  the `boons_spent`/`major_boons_spent` counter **and** the rank
+  (`play.skill_advances` / `etiquette_advances` / the knowledge's own
+  `points`) — check the rank specifically, not just the counter, since a boon
+  that un-spends but leaves the rank raised is still a bug.
+- **Repeat for the pool-die major boon** (+1 Kismet die to a pool): Undo must
+  roll back `major_boons_spent` **and** `play.pool_kismet[pool]`.
+- **Note:** Before this case, no boon redemption of any kind could be undone —
+  not a partial gap, all seven redeem buttons (Windfall, Free asset, generic
+  Major boon, Mastery 6→7, magic item, Skill 7→8, +1 Kismet die to pool) wrote
+  `kismet_log.unshift({ label, delta: 0 })` with no `undo` descriptor at all.
+  Two independent gates were blocking it, and both had to give for any of them
+  to work:
+
+  1. The ledger only rendered an Undo button when `entry.delta < 0` — a boon's
+     `delta` is always `0` (it costs no Kismet, just a milestone slot), so the
+     button never rendered regardless of `undo`.
+  2. `undoKismetSpend()` itself returned early on `entry.delta >= 0` — even a
+     hand-added `undo` descriptor wouldn't have done anything.
+
+  Both were loosened from "delta is negative" to "delta is not positive"
+  (`<= 0`), which is safe: a **gained** entry (`awardKismet`, positive delta —
+  e.g. "Custom award") never carries an `undo` field regardless, so it still
+  renders no button. Confirm that stays true:
+
+      (() => { awardKismet("Custom award", 1); const row = document.querySelector(".card.sh-card table tr:nth-child(2)"); const ok = !row.textContent.includes("Undo"); CHAR.play.kismet = Math.max(0, CHAR.play.kismet - 1); CHAR.play.kismet_earned -= 1; CHAR.play.kismet_log.shift(); playChanged(); return ok; })()
+
+  Expected `true`. Also confirm the "🎲 Roll windfall" button (which just logs
+  a dice result — it doesn't spend a boon, "Redeem: Windfall" does that
+  separately) still shows no Undo: it carries no `undo` field by design, since
+  there's nothing to roll back.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

@@ -1364,6 +1364,55 @@ path by which play could reach into the creation record.
   elsewhere for Extra Arm/Extra Leg's armor surcharge.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-050: The M31-a1 / M31-a1G is a named one-off exception to "2H claims both hands"
+- **Type:** correctness
+- **Steps:** a character carrying both the Militech M31-a1 Advanced Combat
+  Weapon (Rifle, two-handed) and the Militech M31-a1G (its own grenade
+  launcher, one-handed) equipped:
+
+      (async () => { const raw = RULES.mergeDefaults(RULES.defaultCharacter()); raw.name = "QA-Companion"; raw.heritage.type = "Human"; raw.attributes = { Strength: 5, Body: 5, Reaction: 5, Intelligence: 5, Willpower: 5, Charisma: 5 }; raw.skills = { "Firearms": 4, "Heavy Weapons": 3 }; raw.weapons = [{ name: "Militech M31-a1 Advanced Combat Weapon", equipped: true }, { name: "Militech M31-a1G", equipped: true }, { name: "Sword", equipped: true }]; raw.finalized = true; raw.lifestyles = [{ name: "Low", months: 1 }]; await openCharacter(RULES.mergeDefaults(raw)); return "loaded"; })()
+
+- **Check — put the M31-a1 in Hand 1, then read Hand 2 before touching it:**
+
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === "Militech M31-a1 Advanced Combat Weapon").value; sel1.dispatchEvent(new Event("change", { bubbles: true })); const card2 = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card2.querySelectorAll(".sh-hand-card")[1].querySelector("select"); return { tile2Disabled: sel2.disabled, tile2Options: [...sel2.options].map(o => o.textContent) }; })()
+
+  Expected `tile2Disabled` is `false` (a REAL picker, not the usual disabled
+  "needs both hands" placeholder every other two-handed weapon gets — see
+  P06-046) and `tile2Options` is `["— empty —", "Militech M31-a1G"]` — the
+  Sword is carried too but is deliberately excluded here; this slot is still
+  "spoken for" by the M31-a1, just with one named weapon let through.
+- **Then assign the M31-a1G into Hand 2 and confirm both hold together:**
+
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card.querySelectorAll(".sh-hand-card")[1].querySelector("select"); sel2.value = [...sel2.options].find(o => o.textContent === "Militech M31-a1G").value; sel2.dispatchEvent(new Event("change", { bubbles: true })); return { rifleHand: CHAR.play.kit.weapons.find(w => w.name === "Militech M31-a1 Advanced Combat Weapon").hand, launcherHand: CHAR.play.kit.weapons.find(w => w.name === "Militech M31-a1G").hand }; })()
+
+  Expected `rifleHand` is `0` and `launcherHand` is `1` — both persist
+  simultaneously, unlike the normal rule where a second hand near a
+  two-handed weapon can never hold its own primary assignment.
+- **Then confirm re-picking the M31-a1 into Hand 1 doesn't bump the M31-a1G**
+  out of Hand 2 (the general two-handed eviction rule in `assignHand` skips
+  exactly this one pairing):
+
+      (() => { CHAR.play.kit.weapons.find(w => w.name === "Militech M31-a1 Advanced Combat Weapon").hand = null; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === "Militech M31-a1 Advanced Combat Weapon").value; sel1.dispatchEvent(new Event("change", { bubbles: true })); return { rifleHand: CHAR.play.kit.weapons.find(w => w.name === "Militech M31-a1 Advanced Combat Weapon").hand, launcherHand: CHAR.play.kit.weapons.find(w => w.name === "Militech M31-a1G").hand }; })()
+
+  Expected `rifleHand` is `0`, `launcherHand` is still `1`.
+- **Then confirm the exception is named, not general** — a different
+  two-handed weapon paired with the M31-a1G gets the ordinary disabled
+  placeholder, not an open picker:
+
+      (async () => { const raw = RULES.mergeDefaults(RULES.defaultCharacter()); raw.name = "QA-Companion2"; raw.heritage.type = "Human"; raw.attributes = { Strength: 5, Body: 5, Reaction: 5, Intelligence: 5, Willpower: 5, Charisma: 5 }; raw.skills = { Firearms: 4 }; raw.weapons = [{ name: "Militech Whisper 1000", equipped: true }, { name: "Militech M31-a1G", equipped: true }]; raw.finalized = true; raw.lifestyles = [{ name: "Low", months: 1 }]; await openCharacter(RULES.mergeDefaults(raw)); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === "Militech Whisper 1000").value; sel1.dispatchEvent(new Event("change", { bubbles: true })); const card2 = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card2.querySelectorAll(".sh-hand-card")[1].querySelector("select"); return sel2.disabled; })()
+
+  Expected `true` — Militech Whisper 1000 is an unrelated two-handed rifle,
+  so Hand 2 falls back to the ordinary "needs both hands" placeholder even
+  though the M31-a1G happens to be carried.
+- **Note:** `TWO_HANDED_COMPANION` in `sheet.js` is a small hardcoded map, one
+  entry, added on request as a one-off exception — not a data column, not a
+  general "these two weapons pair" system. The M31-a1G represents the M31-a1's
+  own under-mounted grenade launcher, so holding it in the second hand while
+  the base rifle occupies the first is the same weapon system, not genuine
+  two-weapon fighting. No other weapon gets this; extending it to another
+  pairing means adding another named entry, not changing the rule.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

@@ -3844,6 +3844,17 @@ function weaponSkillDice(name, type, accuracy, bonuses = [], reach = null) {
         + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
 }
 
+/* One-time special case (player request, not a general homebrew mechanic):
+ * the M31-a1G is the under-mounted grenade launcher that belongs to the
+ * M31-a1 Advanced Combat Weapon itself -- so even though the M31-a1 is
+ * two-handed, holding the G in the second hand while the base rifle is in
+ * the first is allowed. No other weapon pairing gets this; it isn't data
+ * driven (no Hands="2H+companion" column) on purpose -- it's one named
+ * exception to the general rule, not a system. */
+const TWO_HANDED_COMPANION = {
+  "Militech M31-a1 Advanced Combat Weapon": "Militech M31-a1G",
+};
+
 function shOverview(body) {
   const play = CHAR.play;
   const econ = kismetEcon();
@@ -4539,7 +4550,11 @@ function shOverview(body) {
           const row = DATA.tables.weapons.find(x => x.Weapon === newEntry.name) || {};
           if (RULES.weaponHands(row) === 2) {
             const bumped = primaryAt(slotIndex + 1);
-            if (bumped) bumped.hand = null;
+            // The one named exception (see TWO_HANDED_COMPANION): its
+            // companion weapon is allowed to keep riding the second hand
+            // rather than being bumped by its own two-handed host.
+            const companion = TWO_HANDED_COMPANION[newEntry.name];
+            if (bumped && bumped.name !== companion) bumped.hand = null;
           }
         }
         stabilizeRecoil({});
@@ -4550,8 +4565,13 @@ function shOverview(body) {
       for (let i = 0; i < handCountEff; i++) {
         const held = primaryAt(i);
         const claimedBy = !held ? secondaryOf(i) : null;
+        // TWO_HANDED_COMPANION's one named exception: this slot is normally
+        // the disabled "needs both hands" placeholder, but when the weapon
+        // claiming it has a registered companion, it opens as a real
+        // (restricted) picker instead.
+        const companionName = claimedBy && TWO_HANDED_COMPANION[claimedBy.name];
 
-        if (claimedBy) {
+        if (claimedBy && !companionName) {
           // The second half of a two-handed weapon: nothing to choose here,
           // just say what's using it. Kept as a real (disabled) control, not
           // a plain string, so the row still reads as "a hand" at a glance.
@@ -4570,8 +4590,14 @@ function shOverview(body) {
         // Speaker bond/infusion pickers. Disabled-with-a-title in the last
         // slot rather than simply absent, so the option doesn't look like it
         // was never there (same idiom as reorderHandle and a sealed Reload).
+        // A companion-claimed slot narrows the pool to just that one weapon —
+        // this hand is still "spoken for" by the two-handed host, with one
+        // named exception let through.
+        const candidatePool = companionName
+          ? equippedWeapons.filter(cand => cand.name === companionName)
+          : equippedWeapons;
         const canPlace2H = (i + 1) < handCountEff && !primaryAt(i + 1);
-        const opts = equippedWeapons.map(cand => {
+        const opts = candidatePool.map(cand => {
           const row = DATA.tables.weapons.find(x => x.Weapon === cand.name) || {};
           const needsTwo = RULES.weaponHands(row) === 2;
           const isHere = cand === held;
@@ -4598,7 +4624,12 @@ function shOverview(body) {
 
         const tile = el("div", { class: "sh-hand-card" + (held ? " active" : "") },
           el("div", { class: "k" }, `Hand ${i + 1}`),
-          ro ? el("div", {}, held ? held.name : "— empty —") : sel);
+          ro ? el("div", {}, held ? held.name : "— empty —") : sel,
+          (companionName && !held)
+            ? el("div", { class: "sub" },
+                `Only ${companionName} can go here while ${claimedBy.name} is in Hand ${i} — `
+                + "it's the same weapon's own grenade launcher.")
+            : null);
 
         if (held) {
           const r = DATA.tables.weapons.find(x => x.Weapon === held.name) || {};

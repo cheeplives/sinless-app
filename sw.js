@@ -15,7 +15,7 @@
 
 // Bump RULES.APP_VERSION in static/rules.js alongside this — it stamps the
 // build into every character and export, and the two are meant to match.
-const CACHE_VERSION = "sinless-v283";
+const CACHE_VERSION = "sinless-v284";
 
 const PRECACHE = [
   "./",

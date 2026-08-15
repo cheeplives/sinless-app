@@ -195,10 +195,19 @@ function ensurePlay() {
   CHAR.play = CHAR.play || {};
   for (const [k, v] of Object.entries(d)) {
     if (CHAR.play[k] == null) CHAR.play[k] = v;
-    else if (v && typeof v === "object" && !Array.isArray(v)
-             && CHAR.play[k] && typeof CHAR.play[k] === "object")
-      for (const [k2, v2] of Object.entries(v))
-        if (CHAR.play[k][k2] == null) CHAR.play[k][k2] = v2;
+    else if (v && typeof v === "object" && !Array.isArray(v)) {
+      // Default expects a keyed object here (same protection mergeDefaults
+      // gives its own fields, and for the same reason — a legacy/corrupt
+      // value that isn't a plain object, e.g. infusion_spirits saved as [],
+      // silently drops any named prop on JSON.stringify, so a placement made
+      // on it would render fine this session and then vanish on save).
+      if (CHAR.play[k] && typeof CHAR.play[k] === "object" && !Array.isArray(CHAR.play[k])) {
+        for (const [k2, v2] of Object.entries(v))
+          if (CHAR.play[k][k2] == null) CHAR.play[k][k2] = v2;
+      } else {
+        CHAR.play[k] = v;
+      }
+    }
   }
   // The Wildling shift had its own boolean for exactly one release before the
   // generic conditional-effect store existed. Fold it in and clear it.
@@ -7861,6 +7870,24 @@ function shMagic(body) {
     const card = el("div", { class: "card sh-card" },
       el("h3", {}, "Speaker — Spirits, Infusions & Bonds"));
 
+    // Bond count and slot array grown up front — not just in the Bonds
+    // section below — so the Infusions section, which renders first, already
+    // sees every live bond occupant for the exclusivity rule both use.
+    // Grow to the bought count, never shrink. Dropping Bonds in chargen and
+    // raising it again must hand the spirit back, so slots past the count are
+    // kept dormant and simply not rendered — the array is play state, and the
+    // count alone decides how much of it is live (see speakerBondCount).
+    const bondCount = RULES.speakerBondCount(CALC);
+    while (play.bond_slots.length < bondCount) play.bond_slots.push({ spirit: "", force: 0, favors: 0 });
+    // A spirit slotted into a bond or an infusion is committed there and can't
+    // ALSO fill a different bond or infusion — one spirit, one job at a time.
+    // Fixed for this render: nothing in the Infusions loop touches bond_slots
+    // and nothing in the Bonds loop touches infusion_spirits, so a snapshot
+    // here is exact for both.
+    const liveBondSpirits = new Set(play.bond_slots.slice(0, bondCount)
+      .filter(b => b && b.spirit).map(b => b.spirit));
+    const infusedSpirits = new Set(Object.values(play.infusion_spirits));
+
     if (s.relationships.length) {
       const row = el("div", { class: "sh-tagrow" });
       for (const name of s.relationships) {
@@ -7885,11 +7912,13 @@ function shMagic(body) {
           else delete play.infusion_spirits[slot];
           playChanged();
         } }, el("option", { value: "" }, "— empty —"),
-          // A spirit can only be invoked once, so one already placed in another
-          // slot isn't offered here (the engine dedupes too, as a safety net).
+          // A spirit can only do one job at a time: one already placed in
+          // another infusion slot, or already bonded, isn't offered here (the
+          // engine dedupes too, as a safety net).
           ...s.relationships
             .filter(n => n === placed
-              || !Object.entries(play.infusion_spirits).some(([k, v]) => k !== slot && v === n))
+              || (!liveBondSpirits.has(n)
+                  && !Object.entries(play.infusion_spirits).some(([k, v]) => k !== slot && v === n)))
             .map(n => el("option", { value: n }, n)));
         sel.value = placed;
         const benefit = placed ? (spiritRow(placed)[col] || "no listed benefit") : "";
@@ -7924,20 +7953,20 @@ function shMagic(body) {
     }
 
     // --- Bonds (#27): place spirits in bond slots and track favors
-    const bondCount = RULES.speakerBondCount(CALC);
     card.append(el("h4", { class: "sh-h4" }, `Bonds — ${bondCount} slot(s), track favors owed`));
     if (!bondCount) card.append(el("p", { class: "hint" }, "No spirit bonds yet."));
-    // Grow to the bought count, never shrink. Dropping Bonds in chargen and
-    // raising it again must hand the spirit back, so slots past the count are
-    // kept dormant and simply not rendered — the array is play state, and the
-    // count alone decides how much of it is live (see speakerBondCount).
-    while (play.bond_slots.length < bondCount) play.bond_slots.push({ spirit: "", force: 0, favors: 0 });
     const dormant = play.bond_slots.slice(bondCount).filter(b => b && b.spirit);
     const bondTiles = el("div", { class: "sh-bond-tiles" });
     play.bond_slots.slice(0, bondCount).forEach((bond, bi) => {
+      // Same exclusivity as the infusion picker above, plus every OTHER live
+      // bond slot — a spirit already holding one bond can't fill a second.
+      const otherBonds = new Set(play.bond_slots.slice(0, bondCount)
+        .filter((b, j) => j !== bi && b && b.spirit).map(b => b.spirit));
       const sel = el("select", { onchange: e => { bond.spirit = e.target.value; playChanged(); } },
         el("option", { value: "" }, "— empty —"),
-        ...s.relationships.map(n => el("option", { value: n }, n)));
+        ...s.relationships
+          .filter(n => n === bond.spirit || (!otherBonds.has(n) && !infusedSpirits.has(n)))
+          .map(n => el("option", { value: n }, n)));
       sel.value = bond.spirit || "";
       const row = bond.spirit ? spiritRow(bond.spirit) : {};
       // Each slot keeps one identity colour (see --bond-N in style.css) so four

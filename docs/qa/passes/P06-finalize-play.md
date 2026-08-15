@@ -1059,6 +1059,72 @@ path by which play could reach into the creation record.
   Applies equally to the markdown export, which shares the same source.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-042: A spirit bonded or infused is unavailable for every other slot
+- **Type:** correctness
+- **Steps:** finalized **Speaker** (or Archmage) with **2+ bond slots** and
+  **2+ known relationships**. Magic tab. Place one relationship in Bond 1.
+- **Check:**
+
+      (() => { const card = [...document.querySelectorAll("#sheet h3")].find(h => /Speaker/.test(h.textContent)).closest(".card"); const opts = sel => [...sel.options].map(o => o.value || "(empty)"); const infSel = [...card.querySelectorAll(".sh-advrow select")][0]; const bondSels = [...card.querySelectorAll(".sh-bond-tile select")]; return { placedInBond1: bondSels[0] && bondSels[0].value, infusionOptions: infSel ? opts(infSel) : "(no infusion slots)", bond2Options: bondSels[1] ? opts(bondSels[1]) : "(no 2nd bond)" }; })()
+
+- **Expected:** the spirit placed in Bond 1 does **not** appear in
+  `infusionOptions` or `bond2Options` — each list holds only `(empty)` plus
+  relationships not already committed elsewhere. It still appears as Bond 1's
+  own selected value (a slot always offers its current occupant).
+- **Then place a different relationship in the infusion slot** and re-run: that
+  name drops out of both bond pickers' option lists the same way.
+- **Note:** One spirit, one job — a spirit bonded or infused is committed there
+  and can't simultaneously fill a different bond or infusion. Before this case
+  existed, the bond picker offered every known relationship unfiltered (no
+  bond-vs-bond or bond-vs-infusion exclusion at all), and the infusion picker
+  only excluded other infusion slots, not bonds. Confirmed on a 2-bond Archmage
+  with Bacchanal bonded first: Bacchanal was offered again in both the 2nd bond
+  slot and the infusion slot before the fix, and excluded from both after.
+
+  `rules.js` carries the same rule as a safety net for stale or hand-edited
+  data that predates this case: `RULES.boundSpiritNames` seeds
+  `resolveInfusions`'s dedup set, so a spirit saved as both bonded and infused
+  only counts once (as bonded) —
+
+      (() => { const raw = RULES.mergeDefaults(JSON.parse(JSON.stringify(CHAR))); raw.play.bond_slots = [{ spirit: "Bacchanal", force: 3, favors: 0 }]; raw.speaker.bonds = 1; raw.play.infusion_spirits = { Protection: "Bacchanal" }; raw.speaker.infusions = ["Protection"]; return RULES.calculate(raw).infusions.map(e => e.spirit); })()
+
+  Expected `[]` — Bacchanal's stale Protection placement is dropped, not
+  double-counted alongside its bond. The same file has an analogous safety net
+  for two BOND slots holding the same spirit (Control exploits and Bound
+  Services etiquette effects each count that spirit once, not per slot) — not
+  independently cased here since the UI now prevents the state that would
+  exercise it.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-043: A legacy `infusion_spirits: []` self-heals instead of eating placements
+- **Type:** correctness
+- **Steps:** any finalized Speaker/Archmage. Console only, no fixture needed.
+- **Check:**
+
+      (() => { CHAR.play.infusion_spirits = []; CHAR.play.infusion_spirits.Protection = "Test Spirit"; const before = { isArray: Array.isArray(CHAR.play.infusion_spirits), json: JSON.stringify(CHAR.play.infusion_spirits) }; ensurePlay(); const after = { isArray: Array.isArray(CHAR.play.infusion_spirits), json: JSON.stringify(CHAR.play.infusion_spirits) }; return { before, after }; })()
+
+- **Expected:** `before` is `{ isArray: true, json: "[]" }` — an Array with a
+  string-keyed prop JSON.stringify silently drops. `after` is
+  `{ isArray: false, json: "{}" }` — `ensurePlay()` resets it to a clean plain
+  object rather than leaving the wrong-typed value in place.
+- **Note:** This is a real shape some exported/saved characters carry — not a
+  synthetic edge case. `JSON.stringify` on an Array only serialises integer
+  indices, so a spirit placed into an infusion slot on a character whose
+  `play.infusion_spirits` was ever persisted as `[]` would render correctly
+  for the rest of that session and then silently disappear on the next
+  save/reload/export — charged nowhere, logged nowhere, just gone, and nothing
+  would report an error.
+
+  `mergeDefaults` in rules.js already guards this exact failure mode for its
+  own default fields (see its comment on `isPlainObject`), but
+  `infusion_spirits`/`bond_slots` aren't declared in `RULES.defaultCharacter()`
+  — they're topped up separately by `ensurePlay()` in sheet.js, which used a
+  weaker `== null` check that left a non-null wrong-typed value alone. Fixed by
+  giving `ensurePlay()` the same reset-if-wrong-type guard. `ensurePlay()` runs
+  on every character open and tab switch, so an already-corrupted save heals
+  itself the next time it's opened — no manual repair needed.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

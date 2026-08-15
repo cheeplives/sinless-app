@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "279";
+const APP_VERSION = "280";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -234,6 +234,16 @@ const SPEAKER_BOND_MAX = 4;
 function speakerBondCount(character) {
   return Math.max(0, Math.min(SPEAKER_BOND_MAX,
     toInt(asNumber(((character || {}).speaker || {}).bonds))));
+}
+// Spirits currently occupying a LIVE bond slot — bounded by speakerBondCount,
+// since a dormant slot past that count is retained state (see above), not an
+// active bond. A spirit bonded here is committed and can't ALSO be infused;
+// resolveInfusions seeds its own dedup set from this as a safety net for a
+// stale save, on top of what the picker in sheet.js already prevents.
+function boundSpiritNames(character) {
+  return new Set((((character || {}).play || {}).bond_slots || [])
+    .slice(0, speakerBondCount(character))
+    .filter(b => b && b.spirit).map(b => b.spirit));
 }
 const COVERT_SYNTHSKIN_DODGE_BONUS = 1;
 const PERFECT_SITUATIONAL_AWARENESS_BONUS = 3;   // +3d dodge AND soak (amp power)
@@ -4207,9 +4217,16 @@ function deriveExploitActions(character, data, magicType, augments, amp) {
   if (magicType === "Speaker" || magicType === "Archmage") {
     const slots = ((character.play || {}).bond_slots || [])
       .slice(0, speakerBondCount(character));
+    // Safety net for a stale save with the same spirit in two slots (the
+    // picker prevents it going forward) — one spirit is one Control source,
+    // not two.
+    const seen = new Set();
     for (const bond of slots) {
-      if (bond && bond.spirit) actions.push({ kind: "Control",
-        count: SPEAKER_BOND_CONTROL_EXPLOITS, source: bond.spirit });
+      if (bond && bond.spirit && !seen.has(bond.spirit)) {
+        seen.add(bond.spirit);
+        actions.push({ kind: "Control",
+          count: SPEAKER_BOND_CONTROL_EXPLOITS, source: bond.spirit });
+      }
     }
   }
 
@@ -4672,10 +4689,14 @@ function etiquetteModifiers(character, data) {
   for (const entry of resolveInfusions(character, data).list) {
     apply(entry.effect, `${entry.spirit} (infused: ${entry.slot})`);
   }
+  // Same stale-save safety net as the Control exploits above: a spirit in two
+  // bond slots grants its Bound Services rider once, not twice.
+  const boundApplied = new Set();
   for (const bond of ((character.play || {}).bond_slots || [])
                        .slice(0, speakerBondCount(character))) {
     const name = bond && bond.spirit;
-    if (!name) continue;
+    if (!name || boundApplied.has(name)) continue;
+    boundApplied.add(name);
     const row = findRow(data.speaker_spirits, "Spirit", name) || {};
     apply(row["Bound Services"], `${name} (bonded)`);
   }
@@ -5128,8 +5149,10 @@ function resolveInfusions(character, data) {
   const entries = [];
   // A spirit can only be invoked once, so it can never occupy two slots — the
   // picker enforces it, and this is the safety net that stops a stale save from
-  // double-counting a bonus. Different spirits DO stack.
-  const invoked = new Set();
+  // double-counting a bonus. Different spirits DO stack. A spirit already
+  // bonded is committed there and can't ALSO be infused, so it's seeded in
+  // up front rather than merely excluded slot-by-slot below.
+  const invoked = boundSpiritNames(character);
   for (const [slot, spirit] of Object.entries(placed).sort((a, b) => a[0].localeCompare(b[0]))) {
     // Ignore a placement whose slot the character no longer owns.
     if (!spirit || (owned.size && !owned.has(slot))) continue;

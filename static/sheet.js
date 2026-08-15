@@ -3230,7 +3230,11 @@ function underbarrelWeapons() {
       const store = (host.ub_state = host.ub_state || {});
       const state = (store[modName] = store[modName] || {});
       state.name = grants;                       // firingModeControls labels from this
-      out.push({ name: grants, row, host: host.name, mod: modName, state });
+      // hostRef is the entry OBJECT (identity), host.name is display text only --
+      // two owned weapons can share a name (reconcileKit pairs same-named entries
+      // positionally), and only the object tells which one this underbarrel gun
+      // actually rides on.
+      out.push({ name: grants, row, host: host.name, hostRef: host, mod: modName, state });
     }
   }
   return out;
@@ -3258,6 +3262,20 @@ function equippedCyberguns() {
   return out.sort((a, b) =>
     (typeof a.src.cgOrder === "number" ? a.src.cgOrder : 1e6 + a._ins)
     - (typeof b.src.cgOrder === "number" ? b.src.cgOrder : 1e6 + b._ins));
+}
+
+/* CALC.weapons is index-aligned to the character's owned weapons in order
+ * (rules.js resolveWeapons pushes one item per entry, skipping only a row it
+ * can't resolve), so a plain name-`find` returns the FIRST match and two
+ * identical guns both read the first one's numbers — cosmetic on the Gear tab,
+ * but on a hand card it's the wrong Recoil feeding the Fire button's gate.
+ * This resolves by POSITION among same-named entries instead: the Nth "Militech
+ * M31" entry gets the Nth "Militech M31" CALC row. `entries` must be the same
+ * array `entry` came from (equippedWeapons), so the position lines up. */
+function calcRowFor(entry, entries) {
+  const nth = entries.filter(e => e.name === entry.name).indexOf(entry);
+  const rows = (CALC.weapons || []).filter(x => x.Weapon === entry.name);
+  return rows[nth] || rows[0] || {};
 }
 
 /* Ammo the character actually owns, by name -- chargen kit plus anything bought
@@ -4233,12 +4251,19 @@ function shOverview(body) {
     // always on you, can't be dropped or taken off you, and are what you're
     // left holding when everything else is gone. Damage and Reach are
     // Strength-derived, so they're computed rather than read off a row.
-    if (grantedWeapons.length) {
+    //
+    // Cyberguns join this table rather than the carried-weapon Hands section
+    // below: an implanted gun isn't picked up or put down, so it doesn't
+    // compete for a hand slot either. Column 4 is polymorphic -- a bare
+    // Attack button for a claw or blade, full firingModeControls (magazine,
+    // mode select, Gun-Kata) for a cybergun -- which is why this table now
+    // carries an Ammo column the natural-weapon rows simply leave blank.
+    if (grantedWeapons.length || cyberguns.length) {
       const gt = el("table");
       const gro = ro;
       gt.append(el("tr", {}, el("th", {}, "Natural / cyber weapon"),
         el("th", {}, "Stats"), el("th", {}, "Source"),
-        gro ? null : el("th", {}, "")));
+        gro ? null : el("th", {}, ""), gro ? null : el("th", {}, "Ammo")));
       // These are attacks made with the body, so they resolve against the
       // "Natural" pseudo-type (Unarmed Combat) unless weaponSkillName knows the
       // name -- the bladed implants roll Cybertech Combat instead.
@@ -4276,7 +4301,57 @@ function shOverview(body) {
             : el("td", { class: "sub" }, gw.kind || "Melee", dice,
                 ` · DMG ${gw.damage}` + (gw.note ? ` · ${gw.note}` : ` · Reach ${gw.reach}`)),
           el("td", { class: "sub" }, gw.source),
-          attack));
+          attack, gro ? null : el("td", { class: "sub" }, "—")));
+      });
+      cyberguns.forEach(cg => {
+        const g = cg.gun;
+        // A cybergun loads ammo and runs a magazine like any other firearm —
+        // the implant states its own Ammo and Modes. Both the choice and the
+        // round count live on the source augment entry, since the gun row
+        // itself is shared data.
+        const cgRow = { Type: "Cybergun", Weapon: cg.name, Damage: g.Dmg, Ammo: g.Ammo,
+          Reloadable: cg.reloadable };
+        const ammo = loadedAmmoFor(cg.src, cgRow);
+        const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen, bar: g.Bar ?? "" };
+        const shot = RULES.applyAmmoStats(base, ammo.mods);
+        const cgModes = RULES.weaponFiringModes(g);
+        const cgMode = cgModes.includes(cg.src.mode) ? cg.src.mode : (cgModes[0] || "");
+        const cgMd = cgMode ? RULES.firingMode(cgMode) : { dice: 0, ammo: 0 };
+        const cgMag = Math.max(0, parseInt(g.Ammo, 10) || 0);
+        // Cybergun Types are prose ("Palm Pistol", "Forearm SMG"), which the
+        // same test reads — a Shotgun cybergun is correctly left out.
+        const cgKataOffered = gunKataRank() >= 2 && cgMag > 0 && cgModes.length > 0
+          && gunKataFitsWeapon(g.Type);
+        const cgBonuses = [];
+        if (cgMd.dice) cgBonuses.push({ label: cgMode, dice: cgMd.dice });
+        if (cgKataOffered && cg.src.kata) cgBonuses.push({ label: "Gun-Kata", dice: 1 });
+        const bit = (label, key) => el("span",
+          (ammo.row && String(shot[key]) !== String(base[key]))
+            ? { class: "wpn-ammo-mod", title: `${ammo.name} ammo` } : {},
+          `${label} ${shot[key]}`);
+        // Braced against the arm it's built into, so its recoil rating is
+        // its own (doubled) figure rather than the character's bare one.
+        // Passed as the calcRow so the Fire button's recoil check reads the
+        // same number the stat line prints.
+        const cgRecoil = RULES.cybergunRecoil(g, CALC.combat);
+        gt.append(el("tr", {},
+          el("td", {}, el("b", {}, cg.name + " (smart)")),
+          el("td", { class: "sub" },
+            "Cybergun", weaponSkillDice(cg.name, "Cybergun", shot.acc, cgBonuses),
+            " · ", bit("Acc", "acc"), " · ", bit("DMG", "damage"), " · ", bit("Pen", "pen"),
+            base.bar ? " · " : null, base.bar ? bit("Barrier", "bar") : null,
+            ` · Mag ${g.Ammo}`
+            + ` · Hardening ${RULES.hardeningOf(g)}`
+            + recoilBit(cgRecoil),
+            el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab"),
+            ammo.notes.length
+              ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
+          el("td", { class: "sub" }, "Cyberware"),
+          gro ? null : el("td", { class: "sub" }, cgModes.length
+            ? firingModeControls(cg.src, cgRow, cgRecoil, cgModes, cgMode, cgKataOffered,
+                weaponRollSpec(cg.name, "Cybergun", shot.acc, cgBonuses), cg.name)
+            : "—"),
+          gro ? null : el("td", { class: "sub" }, munitionPicker(cg.src, cgRow))));
       });
       loadout.append(gt);
     }
@@ -4350,38 +4425,193 @@ function shOverview(body) {
       loadout.append(tt);
     }
 
-    if (equippedWeapons.length || cyberguns.length) {
-      const wt = el("table", { class: "sh-loadout" });
-      // Mods are listed by name inside the stat line rather than getting a
-      // column of their own -- their full effect text is on the Gear tab -- so
-      // the freed columns can carry the firing mode and the loaded ammo.
-      wt.append(el("tr", {}, el("th", {}, "Equipped weapon"), el("th", {}, "Stats"),
-        el("th", {}, "Fire mode"), el("th", {}, "Ammo")));
-      // Weapons and cyberguns share ONE ordered list so a cybergun can sit
-      // anywhere among the weapons (order stored as `lo` on each backing object).
-      const items = [];
-      equippedWeapons.forEach((w, idx) => items.push({
-        ins: idx, getOrder: () => w.lo, setOrder: v => { w.lo = v; },
-        cells: () => {
-          const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
-          const calcRow = (CALC.weapons || []).find(x => x.Weapon === w.name) || {};
-          // Names only -- the full effect text lives on the Gear tab.
-          // Built-in mods lead the list and say so — they're fitted and working,
-          // and a player who can't see them will go looking for the slot.
+    // --- Hands: which carried weapon is actually in which hand.
+    //
+    // Assignment lives on the weapon entry itself (w.hand = slot index), the
+    // same way w.lo / w.mode / w.loaded already do -- NOT a play.hands array
+    // keyed by name, because two identical pistols is a designed-for case
+    // (reconcileKit pairs same-named entries positionally) and name-keying
+    // would collapse them. Only the PRIMARY slot is stored; a two-handed
+    // weapon's second slot is derived from RULES.weaponHands() every render,
+    // never stored, so it can't desync from a data change.
+    if (equippedWeapons.length) {
+      const handCountEff = RULES.handCount(CALC, CHAR.play.hand_override);
+      const primaryAt = i => equippedWeapons.find(w => w.hand === i);
+      // A slot past its own primary is claimed by the PREVIOUS slot's weapon
+      // when that weapon is two-handed -- unless something is genuinely
+      // primary there itself, which wins (defensive, for a hand-edited file;
+      // the picker below never lets this conflict arise on its own).
+      const secondaryOf = i => {
+        if (i <= 0 || primaryAt(i)) return null;
+        const prev = primaryAt(i - 1);
+        if (!prev) return null;
+        const row = DATA.tables.weapons.find(x => x.Weapon === prev.name) || {};
+        return RULES.weaponHands(row) === 2 ? prev : null;
+      };
+      const slotFilled = i => !!(primaryAt(i) || secondaryOf(i));
+
+      loadout.append(el("h4", { class: "sh-h4" }, "Hands"));
+      // Manual override: heritage (Extra Arm, a Heavy Torso Cyberarm mount)
+      // derives a count automatically, but nothing here models every way a
+      // table might grant or cost a hand, so the derived number can be
+      // hand-adjusted. Cleared back to "derived" rather than left wrong.
+      const derivedHands = CALC.combat.hand_count || RULES.HAND_COUNT_BASE;
+      const handRow = el("div", { class: "sh-advrow" },
+        el("span", {}, el("b", {}, "Hand count"),
+          el("span", { class: "sub" }, ` ${handCountEff} (derived ${derivedHands})`)));
+      if (!ro) {
+        handRow.append(miniCounter("Hands",
+          () => handCountEff,
+          v => { CHAR.play.hand_override = v; },
+          1, RULES.HAND_COUNT_MAX));
+        if (CHAR.play.hand_override != null && CHAR.play.hand_override !== "")
+          handRow.append(el("button", { class: "btn small",
+              title: "Clear the override and go back to the derived count",
+              onclick: () => { CHAR.play.hand_override = null; playChanged(); } }, "↺ derived"));
+      }
+      loadout.append(handRow);
+
+      // Underbarrel weapons, grouped by the exact host ENTRY they ride on
+      // (identity, not name -- see hostRef on underbarrelWeapons()) so two
+      // same-named hosts each show only their own underbarrel gun.
+      const ubByHost = new Map();
+      for (const ub of underbarrelWeapons()) {
+        (ubByHost.get(ub.hostRef) || ubByHost.set(ub.hostRef, []).get(ub.hostRef)).push(ub);
+      }
+
+      const renderUnderbarrel = ub => {
+        const r = ub.row;
+        const st = ub.state;
+        const ubModes = RULES.weaponFiringModes(r);
+        const ubMode = ubModes.includes(st.mode) ? st.mode : (ubModes[0] || "");
+        const rs = weaponRollSpec(ub.name, r.Type, r.Accuracy || 0, [], r.Reach);
+        // An underslung launcher chambers a grenade and runs a magazine
+        // exactly like the M31-a1G does — it is the same kind of weapon, and
+        // the only thing that made it different was having no entry to keep
+        // the round count on. Its damage comes from whatever is loaded.
+        const gren = loadedGrenadeFor(st);
+        const dmg = gren.row ? (gren.row.Damage || r.Damage) : (r.Damage || "—");
+        return el("div", { class: "sh-hand-underbarrel" },
+          el("div", {}, el("b", {}, ub.name), " ",
+            el("span", { class: "sh-tag" }, "Underbarrel")),
+          el("div", { class: "sub" },
+            `${r.Type || ""}`,
+            weaponSkillDice(ub.name, r.Type, r.Accuracy || 0, [], r.Reach),
+            ` · Acc ${r.Accuracy || 0} · `,
+            el("span", gren.row ? { class: "wpn-ammo-mod", title: `${gren.name} chambered` } : {},
+              `DMG ${dmg}`),
+            ` · Pen ${r.Pen || 0}`
+            + barrierBit(r, r.Bar)
+            + (r.Ammo ? ` · Mag ${r.Ammo}` : "")
+            + ` · Hardening ${RULES.hardeningOf(r)}`,
+            el("div", { class: "sub wpn-mods" }, `via the ${ub.mod} mod`),
+            gren.notes.length
+              ? el("div", { class: "sub wpn-ammo-note" }, `${gren.name}: ${gren.notes.join(" · ")}`)
+              : null),
+          ro ? null : el("div", { class: "sh-fire" },
+            ubModes.length
+              ? firingModeControls(st, r, {}, ubModes, ubMode, false, rs, ub.name)
+              : attackButton(ub.name, rs, { melee: r.Type === "Melee" })),
+          ro ? null : munitionPicker(st, r));
+      };
+
+      // Reassigning a hand: filling it costs a Simple Action (switching what
+      // you hold), gated the same way every other loadout action-cost is;
+      // clearing it to empty is free (stowing a weapon costs nothing). Either
+      // way clears accumulated recoil -- your STANCE changed, and recoil is
+      // one character-wide tracker, not per-weapon (see recoilTracked). A
+      // failed spend leaves state untouched and just re-renders, which snaps
+      // the <select> back to what it actually holds.
+      const assignHand = (slotIndex, newEntry) => {
+        if (newEntry && CHAR.play.action_costs
+            && !spendSimpleActions(1, "switching weapons")) { renderSheet(); return; }
+        const prev = primaryAt(slotIndex);
+        if (prev) prev.hand = null;
+        if (newEntry) {
+          newEntry.hand = slotIndex;
+          // A two-handed weapon takes the next slot too. The picker already
+          // only offers one when that slot is free -- this is the function's
+          // OWN guarantee of the same rule, not just the picker's, since state
+          // can also arrive here from a stale save or a bypassed <select>
+          // (a disabled <option> stops mouse/keyboard use, not a script
+          // setting .value directly). Evicting rather than refusing keeps
+          // this simple: whatever was there is freed, not silently dropped.
+          const row = DATA.tables.weapons.find(x => x.Weapon === newEntry.name) || {};
+          if (RULES.weaponHands(row) === 2) {
+            const bumped = primaryAt(slotIndex + 1);
+            if (bumped) bumped.hand = null;
+          }
+        }
+        stabilizeRecoil({});
+        playChanged();
+      };
+
+      const cards = el("div", { class: "sh-hand-cards" });
+      for (let i = 0; i < handCountEff; i++) {
+        const held = primaryAt(i);
+        const claimedBy = !held ? secondaryOf(i) : null;
+
+        if (claimedBy) {
+          // The second half of a two-handed weapon: nothing to choose here,
+          // just say what's using it. Kept as a real (disabled) control, not
+          // a plain string, so the row still reads as "a hand" at a glance.
+          cards.append(el("div", { class: "sh-hand-card" },
+            el("div", { class: "k" }, `Hand ${i + 1}`),
+            el("select", { disabled: "1",
+                title: `Held by ${claimedBy.name} — it needs both hands` },
+              el("option", {}, `— ${claimedBy.name} (two-handed) —`))));
+          continue;
+        }
+
+        // Options: every carried weapon, always including whatever already
+        // occupies THIS slot (so the select can show it selected) — a
+        // two-handed weapon is only offered where slot i+1 exists and isn't
+        // independently held, matching the exclusivity idiom used for the
+        // Speaker bond/infusion pickers. Disabled-with-a-title in the last
+        // slot rather than simply absent, so the option doesn't look like it
+        // was never there (same idiom as reorderHandle and a sealed Reload).
+        const canPlace2H = (i + 1) < handCountEff && !primaryAt(i + 1);
+        const opts = equippedWeapons.map(cand => {
+          const row = DATA.tables.weapons.find(x => x.Weapon === cand.name) || {};
+          const needsTwo = RULES.weaponHands(row) === 2;
+          const isHere = cand === held;
+          const disabled = needsTwo && !canPlace2H && !isHere;
+          return { cand, disabled,
+            title: disabled
+              ? (i === handCountEff - 1
+                  ? "Needs a second hand — there's no slot after this one"
+                  : "Needs a second hand — the next hand is already holding something")
+              : null };
+        });
+        const idxOf = cand => equippedWeapons.indexOf(cand);
+        const sel = el("select", { title: "Weapon held in this hand",
+          onchange: e => {
+            const v = e.target.value;
+            assignHand(i, v === "" ? null : equippedWeapons[+v]);
+          } },
+          el("option", { value: "" }, "— empty —"),
+          ...opts.map(o => el("option",
+            { value: String(idxOf(o.cand)), ...(o.disabled ? { disabled: "1" } : {}),
+              ...(o.title ? { title: o.title } : {}) },
+            o.cand.name)));
+        sel.value = held ? String(idxOf(held)) : "";
+
+        const tile = el("div", { class: "sh-hand-card" + (held ? " active" : "") },
+          el("div", { class: "k" }, `Hand ${i + 1}`),
+          ro ? el("div", {}, held ? held.name : "— empty —") : sel);
+
+        if (held) {
+          const r = DATA.tables.weapons.find(x => x.Weapon === held.name) || {};
+          const calcRow = calcRowFor(held, equippedWeapons);
           const modNames = [
             ...RULES.weaponIntegratedMods(r, DATA.tables.weapon_mods)
               .map(m => `${m} (built in)`),
-            ...(w.mods || [])];
-          if (w.upgr1 && r.Upgr1_Eff) modNames.push("Upgrade 1");
-          if (w.upgr2 && r.Upgr2_Eff) modNames.push("Upgrade 2");
+            ...(held.mods || [])];
+          if (held.upgr1 && r.Upgr1_Eff) modNames.push("Upgrade 1");
+          if (held.upgr2 && r.Upgr2_Eff) modNames.push("Upgrade 2");
           const modes = RULES.weaponFiringModes(r);
-          const mode = modes.includes(w.mode) ? w.mode : (modes[0] || "");
+          const mode = modes.includes(held.mode) ? held.mode : (modes[0] || "");
           const md = mode ? RULES.firingMode(mode) : { dice: 0, ammo: 0, name: "" };
-          // What's loaded shifts the numbers the line reports, so resolve it
-          // before building the stats rather than annotating afterwards. A
-          // grenade launcher takes its Damage, Pen and Barrier wholesale from
-          // the chambered grenade -- its own Damage column just says "By
-          // Grenade" and it carries no Barrier rating of its own.
           const baseAcc = calcRow.Accuracy ?? r.Accuracy ?? 0;
           // Thrown weapons skip the melee damage pass, so a Knife would print
           // "½ Str" rather than the number it resolves to.
@@ -4391,12 +4621,10 @@ function shOverview(body) {
           const isLauncher = r.Type === "GrenadeLauncher";
           const base = { acc: baseAcc, damage: baseDmg, pen: r.Pen || 0,
                          bar: String(calcRow.Bar ?? r.Bar ?? "") || (isLauncher ? "—" : "") };
-          // Melee, thrown and energy weapons load nothing, so they must not pick
-          // up the default Standard round.
           const canLoad = !["Melee", "Thrown", "Energy"].includes(r.Type);
-          const gren = isLauncher ? loadedGrenadeFor(w) : null;
+          const gren = isLauncher ? loadedGrenadeFor(held) : null;
           const ammo = (isLauncher || !canLoad)
-            ? { row: null, name: "", notes: [] } : loadedAmmoFor(w, r);
+            ? { row: null, name: "", notes: [] } : loadedAmmoFor(held, r);
           const munName = isLauncher ? gren.name : ammo.name;
           const munNotes = isLauncher ? gren.notes : ammo.notes;
           const shot = isLauncher
@@ -4404,12 +4632,10 @@ function shOverview(body) {
                             bar: String(gren.row.Bar ?? "") || "—" }
                         : { ...base })
             : (ammo.row ? RULES.applyAmmoStats(base, ammo.mods) : { ...base });
-          // Gun-Kata 2 buys an extra bullet: +1 die for 1 more round. Opt-in per
-          // weapon, offered only to a pistol or SMG that feeds from a magazine.
           const magSize = Math.max(0, parseInt(calcRow.Ammo ?? r.Ammo, 10) || 0);
           const kataOffered = gunKataRank() >= 2 && magSize > 0 && modes.length > 0
             && gunKataFitsWeapon(r.Type);
-          const kataOn = kataOffered && !!w.kata;
+          const kataOn = kataOffered && !!held.kata;
           const bonuses = [];
           if (md.dice) bonuses.push({ label: mode, dice: md.dice });
           if (kataOn) bonuses.push({ label: "Gun-Kata", dice: 1 });
@@ -4417,155 +4643,77 @@ function shOverview(body) {
             (munName && String(shot[key]) !== String(base[key]))
               ? { class: "wpn-ammo-mod", title: `${munName} loaded` } : {},
             `${label} ${shot[key]}`);
-          return {
-            name: el("b", {}, w.name + ((calcRow.smart ?? w.smart) ? " (smart)" : "")),
-            stats: el("td", { class: "sub" },
-              // Mirror the full Gear-tab stat line (issue #15): rate of fire /
-              // Reach, ZR, Weight, Hardening, Rarity all included.
-              `${r.Type || ""}`,
-              weaponSkillDice(w.name, r.Type, shot.acc, bonuses, r.Reach),
-              " · ",
-              r.Type === "Melee" ? `Reach ${r.Reach || 0}` : statBit("Acc", "acc"),
-              " · ", statBit("DMG", "damage"), " · ", statBit("Pen", "pen"),
-              // Omitted where the weapon has no Barrier rating at all, so a
-              // melee line doesn't gain a meaningless "Barrier 0".
-              base.bar ? " · " : null, base.bar ? statBit("Barrier", "bar") : null,
-              ` · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
-              + ((calcRow.Ammo ?? r.Ammo) ? ` · Mag ${calcRow.Ammo ?? r.Ammo}` : "")
-              + ` · Hardening ${RULES.hardeningOf(r)}`
-              // Recoil belongs on the line you actually shoot from. It shipped
-              // on the Gear tab and in chargen but never here, which is the one
-              // place a firing mode is chosen (#56).
-              + recoilBit(calcRow)
-              + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : "")
-              + (RULES.weaponIsOneshot(r) ? ` · ${RULES.ONESHOT_NOTE}` : ""),
-              modNames.length
-                ? el("div", { class: "sub wpn-mods" }, "Mods: " + modNames.join(" · ")) : null,
-              munNotes.length
-                ? el("div", { class: "sub wpn-ammo-note" }, `${munName}: ${munNotes.join(" · ")}`) : null),
-            fire: el("td", { class: "sub" }, (() => {
-              const rs = weaponRollSpec(w.name, r.Type, shot.acc, bonuses, r.Reach);
-              if (modes.length)
-                return firingModeControls(w, r, calcRow, modes, mode, kataOffered, rs);
-              // Melee, thrown and anything else without a firing mode: no
-              // magazine to track, but the same attack test to roll. Only
-              // actual Melee-type rows spend a Melee Exploit/Simple Action —
-              // a thrown weapon isn't a melee/unarmed swing.
-              const ro = !!(activeTabObj() && activeTabObj().readonly);
-              return ro ? "—" : attackButton(w.name, rs, { melee: r.Type === "Melee" });
-            })()),
-            ammo: el("td", { class: "sub" }, munitionPicker(w, r)),
-          };
-        },
-      }));
-      cyberguns.forEach((cg, idx) => items.push({
-        ins: 1000 + idx, getOrder: () => cg.src.lo, setOrder: v => { cg.src.lo = v; },
-        cells: () => {
-          const g = cg.gun;
-          // A cybergun loads ammo and runs a magazine like any other firearm —
-          // the implant states its own Ammo and Modes. Both the choice and the
-          // round count live on the source augment entry, since the gun row
-          // itself is shared data.
-          const cgRow = { Type: "Cybergun", Weapon: cg.name, Damage: g.Dmg, Ammo: g.Ammo,
-            Reloadable: cg.reloadable };
-          const ammo = loadedAmmoFor(cg.src, cgRow);
-          const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen, bar: g.Bar ?? "" };
-          const shot = RULES.applyAmmoStats(base, ammo.mods);
-          const cgModes = RULES.weaponFiringModes(g);
-          const cgMode = cgModes.includes(cg.src.mode) ? cg.src.mode : (cgModes[0] || "");
-          const cgMd = cgMode ? RULES.firingMode(cgMode) : { dice: 0, ammo: 0 };
-          const cgMag = Math.max(0, parseInt(g.Ammo, 10) || 0);
-          // Cybergun Types are prose ("Palm Pistol", "Forearm SMG"), which the
-          // same test reads — a Shotgun cybergun is correctly left out.
-          const cgKataOffered = gunKataRank() >= 2 && cgMag > 0 && cgModes.length > 0
-            && gunKataFitsWeapon(g.Type);
-          const cgBonuses = [];
-          if (cgMd.dice) cgBonuses.push({ label: cgMode, dice: cgMd.dice });
-          if (cgKataOffered && cg.src.kata) cgBonuses.push({ label: "Gun-Kata", dice: 1 });
-          const bit = (label, key) => el("span",
-            (ammo.row && String(shot[key]) !== String(base[key]))
-              ? { class: "wpn-ammo-mod", title: `${ammo.name} ammo` } : {},
-            `${label} ${shot[key]}`);
-          // Braced against the arm it's built into, so its recoil rating is
-          // its own (doubled) figure rather than the character's bare one.
-          // Passed as the calcRow so the Fire button's recoil check reads the
-          // same number the stat line prints.
-          const cgRecoil = RULES.cybergunRecoil(g, CALC.combat);
-          return {
-            name: el("b", {}, cg.name + " (smart)"),
-            stats: el("td", { class: "sub" },
-              "Cybergun", weaponSkillDice(cg.name, "Cybergun", shot.acc, cgBonuses),
-              " · ", bit("Acc", "acc"), " · ", bit("DMG", "damage"), " · ", bit("Pen", "pen"),
-              base.bar ? " · " : null, base.bar ? bit("Barrier", "bar") : null,
-              ` · Mag ${g.Ammo}`
-              + ` · Hardening ${RULES.hardeningOf(g)}`
-              + recoilBit(cgRecoil),
-              el("div", { class: "sub wpn-mods" }, "Implanted — configured on the Augments tab"),
-              ammo.notes.length
-                ? el("div", { class: "sub wpn-ammo-note" }, `${ammo.name}: ${ammo.notes.join(" · ")}`) : null),
-            fire: el("td", { class: "sub" }, cgModes.length
-              ? firingModeControls(cg.src, cgRow, cgRecoil, cgModes, cgMode, cgKataOffered,
-                  weaponRollSpec(cg.name, "Cybergun", shot.acc, cgBonuses), cg.name)
-              : "—"),
-            ammo: el("td", { class: "sub" }, munitionPicker(cg.src, cgRow)),
-          };
-        },
-      }));
-      // Underbarrel weapons granted by a mod. They sort after the cyberguns and
-      // carry no reorder identity of their own — they belong to their host, so
-      // moving the host moves them.
-      underbarrelWeapons().forEach((ub, idx) => items.push({
-        ins: 2000 + idx, getOrder: () => undefined, setOrder: () => {},
-        cells: () => {
-          const r = ub.row;
-          const st = ub.state;
-          const ubModes = RULES.weaponFiringModes(r);
-          const ubMode = ubModes.includes(st.mode) ? st.mode : (ubModes[0] || "");
-          const rs = weaponRollSpec(ub.name, r.Type, r.Accuracy || 0, [], r.Reach);
-          // An underslung launcher chambers a grenade and runs a magazine
-          // exactly like the M31-a1G does — it is the same kind of weapon, and
-          // the only thing that made it different was having no entry to keep
-          // the round count on. Its damage comes from whatever is loaded.
-          const gren = loadedGrenadeFor(st);
-          const dmg = gren.row ? (gren.row.Damage || r.Damage) : (r.Damage || "—");
-          return {
-            name: el("b", {}, ub.name, " ", el("span", { class: "sh-tag" }, "Underbarrel")),
-            stats: el("td", { class: "sub" },
-              `${r.Type || ""}`,
-              weaponSkillDice(ub.name, r.Type, r.Accuracy || 0, [], r.Reach),
-              ` · Acc ${r.Accuracy || 0} · `,
-              el("span", gren.row ? { class: "wpn-ammo-mod", title: `${gren.name} chambered` } : {},
-                `DMG ${dmg}`),
-              ` · Pen ${r.Pen || 0}`
-              + barrierBit(r, r.Bar)
-              + (r.Ammo ? ` · Mag ${r.Ammo}` : "")
-              + ` · Hardening ${RULES.hardeningOf(r)}`,
-              el("div", { class: "sub wpn-mods" }, `Under ${ub.host} — via the ${ub.mod} mod`),
-              gren.notes.length
-                ? el("div", { class: "sub wpn-ammo-note" }, `${gren.name}: ${gren.notes.join(" · ")}`)
-                : null),
-            fire: el("td", { class: "sub" }, ubModes.length
-              ? firingModeControls(st, r, {}, ubModes, ubMode, false, rs, ub.name)
-              : ((activeTabObj() && activeTabObj().readonly) ? "—"
-                  : attackButton(ub.name, rs, { melee: r.Type === "Melee" }))),
-            ammo: el("td", { class: "sub" }, munitionPicker(st, r)),
-          };
-        },
-      }));
-      loadoutSort(items);
-      items.forEach((it, i) => {
-        const c = it.cells();
-        const handle = reorderHandle(() => loadoutMove(items, i, -1), () => loadoutMove(items, i, 1),
-          i > 0, i < items.length - 1);
-        wt.append(el("tr", {}, el("td", {}, handle, c.name), c.stats, c.fire, c.ammo));
-      });
-      loadout.append(wt);
-      // A weapon you own but haven't equipped is absent from this table, which
+          // A free OTHER hand steadies a one-handed weapon: +1 Recoil
+          // capacity, the same shape a bipod's +1 already takes (added onto
+          // recoil_mod, never replacing it; melee/thrown carry no Recoil key
+          // at all and must stay that way, or every unarmed card would grow
+          // a phantom "Recoil 1"). See RULES.weaponHands / the plan's Recoil
+          // section for the four traps this threads.
+          const braced = RULES.weaponHands(r) === 1 && calcRow.Recoil != null
+            && Array.from({ length: handCountEff }, (_, j) => j)
+                 .some(j => j !== i && !slotFilled(j));
+          const effRow = braced ? {
+            ...calcRow,
+            Recoil: toInt(calcRow.Recoil) + 1,
+            recoil_mod: toInt(calcRow.recoil_mod) + 1,
+            recoil_mod_label: calcRow.recoil_mod ? "mods + free hand" : "free hand",
+          } : calcRow;
+          tile.append(el("div", { class: "sub" },
+            `${r.Type || ""}`,
+            weaponSkillDice(held.name, r.Type, shot.acc, bonuses, r.Reach),
+            (calcRow.smart ?? held.smart) ? " (smart)" : "",
+            " · ",
+            r.Type === "Melee" ? `Reach ${r.Reach || 0}` : statBit("Acc", "acc"),
+            " · ", statBit("DMG", "damage"), " · ", statBit("Pen", "pen"),
+            base.bar ? " · " : null, base.bar ? statBit("Barrier", "bar") : null,
+            ` · Conceal ${concealBit(r, calcRow)} · ZR ${r.ZR || 0} · Weight ${r.Weight || 0}`
+            + ((calcRow.Ammo ?? r.Ammo) ? ` · Mag ${calcRow.Ammo ?? r.Ammo}` : "")
+            + ` · Hardening ${RULES.hardeningOf(r)}`
+            + recoilBit(effRow)
+            + (r.Rarity && r.Rarity !== "-" ? ` · Rarity ${r.Rarity}` : "")
+            + (RULES.weaponIsOneshot(r) ? ` · ${RULES.ONESHOT_NOTE}` : "")));
+          if (modNames.length)
+            tile.append(el("div", { class: "sub wpn-mods" }, "Mods: " + modNames.join(" · ")));
+          if (munNotes.length)
+            tile.append(el("div", { class: "sub wpn-ammo-note" }, `${munName}: ${munNotes.join(" · ")}`));
+          if (!ro) {
+            const rs = weaponRollSpec(held.name, r.Type, shot.acc, bonuses, r.Reach);
+            tile.append(el("div", { class: "sh-fire" }, modes.length
+              ? firingModeControls(held, r, effRow, modes, mode, kataOffered, rs)
+              : attackButton(held.name, rs, { melee: r.Type === "Melee" })));
+            tile.append(munitionPicker(held, r));
+          }
+          for (const ub of (ubByHost.get(held) || [])) tile.append(renderUnderbarrel(ub));
+        }
+        cards.append(tile);
+      }
+      loadout.append(cards);
+
+      // Carried but not in a hand right now -- names only; press the select
+      // above to actually wield one. Distinct from "dormant" below: this
+      // weapon was never assigned, that one was and the hand it was in is
+      // gone (fewer hands now than when it was picked up).
+      const carried = equippedWeapons.filter(w => w.hand == null);
+      if (carried.length) {
+        loadout.append(el("p", { class: "hint" },
+          `Carried, not in hand: ${carried.map(w => w.name).join(" · ")}.`));
+      }
+      // Never cleared on a shrink (fewer hands than before) -- same ruling as
+      // play.bond_slots: raising the count back hands the weapon back, so the
+      // assignment is kept rather than lost. Named here so it doesn't read as
+      // the sheet having silently dropped a weapon.
+      const dormant = equippedWeapons.filter(w => Number.isInteger(w.hand) && w.hand >= handCountEff);
+      if (dormant.length) {
+        loadout.append(el("p", { class: "hint" },
+          `Held in a hand you no longer have: ${dormant.map(w => w.name).join(" · ")} — `
+          + "nothing has been deleted; more hands will bring it back."));
+      }
+      // A weapon you own but haven't equipped is absent above entirely, which
       // reads as the sheet having lost it. Name them, and say where to fix it.
       const stowed = weaponsAll.filter(w => w.equipped === false);
       if (stowed.length) {
         loadout.append(el("p", { class: "hint" },
-          `Not equipped, so not listed above: ${stowed.map(w => w.name).join(" · ")}. `
+          `Not equipped, so not carried: ${stowed.map(w => w.name).join(" · ")}. `
           + `Tick Equip on the Gear tab to carry ${stowed.length > 1 ? "them" : "it"}.`));
       }
     }

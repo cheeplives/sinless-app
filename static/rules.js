@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "282";
+const APP_VERSION = "283";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -244,6 +244,17 @@ function boundSpiritNames(character) {
   return new Set((((character || {}).play || {}).bond_slots || [])
     .slice(0, speakerBondCount(character))
     .filter(b => b && b.spirit).map(b => b.spirit));
+}
+/* How many hands a character has to hold weapons in, same bound-reader shape as
+ * speakerBondCount: every consumer (the Loadout hand cards, the free-hand recoil
+ * bonus) goes through this rather than reading either source directly. A
+ * play.hand_override, when set to a non-blank value, takes priority over the
+ * heritage-derived combat.hand_count -- see applyHeritage. Both are clamped the
+ * same way, so an override can't produce a count the UI has no room for. */
+function handCount(calc, override) {
+  const base = toInt(asNumber(((calc || {}).combat || {}).hand_count, HAND_COUNT_BASE));
+  const ov = (override == null || override === "") ? null : toInt(asNumber(override));
+  return Math.max(1, Math.min(HAND_COUNT_MAX, ov == null ? base : ov));
 }
 const COVERT_SYNTHSKIN_DODGE_BONUS = 1;
 const PERFECT_SITUATIONAL_AWARENESS_BONUS = 3;   // +3d dodge AND soak (amp power)
@@ -621,6 +632,12 @@ const MOVEMENT_ENHANCEMENT_METERS_PER_RATING = 2;
 // --- gear & money --------------------------------------------------------------
 const SMART_WEAPON_COST_MULTIPLIER = 2;
 const EXTRA_LIMB_ARMOR_COST_MULTIPLIER = 1.5;   // Extra Arm / Extra Leg: +50% armor
+// Everyone starts with two hands to hold a weapon in. An "Extra Arm" heritage
+// trait or a Heavy Torso mount picked as "Cyberarm" adds one apiece -- see
+// applyHeritage's hand_count below, and handCount() for the bound reader every
+// consumer of it goes through (same shape as speakerBondCount).
+const HAND_COUNT_BASE = 2;
+const HAND_COUNT_MAX = 6;
 const HACKING_RATING_COST = 5000;
 const HACKING_RATING_MAX = 6;
 
@@ -1543,6 +1560,15 @@ function applyHeritage(character, data, warnings, errors) {
     if (w) traitGear.push({ source: "No Head", kind: "weapon", label: heritage.no_head_mount, weapon: w });
   }
 
+  // Hands to hold a weapon in: the baseline two, plus one per Extra Arm trait
+  // (heritage features are a checkbox list, so this is 0 or 1 in practice —
+  // counted rather than assumed, in case a hand-edited or imported file
+  // carries more) and one per Heavy Torso mount actually picked as a Cyberarm.
+  // A Right/Left Arm Replacement augment REPLACES a hand's arm rather than
+  // adding one (see AUGMENT_LIMB_TYPES), so it is deliberately not counted here.
+  const extraHands = traits.filter(row => row.Name === "Extra Arm").length
+    + traitGear.filter(g => g.kind === "limb" && g.label === "Cyberarm").length;
+
   return {
     type: heritageType,
     traits,
@@ -1576,6 +1602,7 @@ function applyHeritage(character, data, warnings, errors) {
     has_antlers: traits.some(row => row.Name === "Antlers"),
     gear_cost_multiplier: gearCostMult,
     armor_cost_multiplier: armorCostMult,
+    hand_count: Math.max(HAND_COUNT_BASE, Math.min(HAND_COUNT_MAX, HAND_COUNT_BASE + extraHands)),
   };
 }
 
@@ -3408,6 +3435,13 @@ function weaponIsOneshot(row) {
   return String((row && row.Oneshot) || "").trim() === "1";
 }
 const ONESHOT_NOTE = "Polymer Oneshot, cannot be reloaded";
+
+/* How many hands a weapon needs to wield. Blank/missing is 1H, the safe
+ * default -- an unlabelled homebrew weapon stays wieldable rather than
+ * becoming unassignable the moment this column exists. */
+function weaponHands(row) {
+  return String((row && row.Hands) || "").trim().toUpperCase() === "2H" ? 2 : 1;
+}
 
 function assignWeaponModSlots(modNames, modsTable) {
   const order = ["Overbarrel", "Underbarrel", "Chassis"];
@@ -5759,6 +5793,10 @@ function calculate(character) {
   ];
   // Heavy Torso / No Head free-mount gear (weapons + extra limbs) for the loadout.
   combatOut.trait_gear = heritage.trait_gear || [];
+  // Hands to hold a weapon in -- see applyHeritage's hand_count. A play-mode
+  // manual override (play.hand_override) takes priority when set; read it
+  // through handCount() rather than this field directly.
+  combatOut.hand_count = heritage.hand_count || HAND_COUNT_BASE;
 
   // Per-source breakdowns so the Combat box can show where each Soak/Dodge die
   // comes from — every contributing source in one place (the sweep).
@@ -5909,7 +5947,7 @@ return {
   MAGIC_TYPE_BY_PRIORITY, MAGIC_TYPES_ALLOWED_BY_PRIORITY,
   SPELL_FORCE_MAX, SKILL_RANK_CAP, HACKING_RATING_COST, HACKING_RATING_MAX,
   GHOST_RATING_DICE,
-  weaponIntegratedMods, weaponIsOneshot, ONESHOT_NOTE,
+  weaponIntegratedMods, weaponIsOneshot, ONESHOT_NOTE, weaponHands,
   BASE_RECOIL_CAPACITY, recoilStrengthBonus, recoilIgnoredForType, cybergunRecoil,
   gearIsDose, gearMaxDoses, liveDoseRows,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
@@ -5935,6 +5973,7 @@ return {
   spellDrain, drainIsLethal, DRAIN_SPECIAL,
   equippedDeckName,
   SPEAKER_BOND_MAX, speakerBondCount,
+  HAND_COUNT_BASE, HAND_COUNT_MAX, handCount,
   KIT_CATEGORIES, applyPlayAdvances,
   VEHICLE_CONDITIONS, VEHICLE_CONDITION_FACTORS, VEHICLE_CONDITION_EFFECTS,
   surchargeFor,

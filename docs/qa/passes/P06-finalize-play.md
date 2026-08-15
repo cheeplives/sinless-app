@@ -1209,6 +1209,161 @@ path by which play could reach into the creation record.
   by `noDieMax` above).
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-046: Hand assignment persists, and a two-handed weapon claims its neighbour
+- **Type:** correctness
+- **Steps:** open this purpose-built character (a real one-handed pistol, a
+  real two-handed rifle, and a melee weapon, so the exclusivity rule has
+  something to bite on):
+
+      (async () => { const raw = RULES.mergeDefaults(RULES.defaultCharacter()); raw.name = "QA-Hands"; raw.heritage.type = "Human"; raw.attributes = { Strength: 5, Body: 5, Reaction: 5, Intelligence: 5, Willpower: 5, Charisma: 5 }; raw.skills = { "Firearms": 4, "Melee Weapons": 3 }; raw.weapons = [{ name: "KL-89 \"Klaw\"", equipped: true }, { name: "Militech Whisper 1000", equipped: true }, { name: "Sword", equipped: true }]; raw.finalized = true; raw.lifestyles = [{ name: "Low", months: 1 }]; await openCharacter(RULES.mergeDefaults(raw)); return { name: CHAR.name, handsRifle: RULES.weaponHands(DATA.tables.weapons.find(w=>w.Weapon==="Militech Whisper 1000")), handsPistol: RULES.weaponHands(DATA.tables.weapons.find(w=>w.Weapon==='KL-89 "Klaw"')) }; })()
+
+  Expected `handsRifle` is `2`, `handsPistol` is `1`.
+- **Check — assign the pistol to Hand 1, then read both cards:**
+
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === 'KL-89 "Klaw"').value; sel1.dispatchEvent(new Event("change", { bubbles: true })); return CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand; })()
+
+  Expected `0`.
+- **Then assign the rifle (two-handed) into Hand 1** — the same slot the
+  pistol already holds, so placing it must evict the pistol AND claim Hand 2:
+
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === "Militech Whisper 1000").value; sel1.dispatchEvent(new Event("change", { bubbles: true })); const card2 = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const tiles = [...card2.querySelectorAll(".sh-hand-card")]; const sel2 = tiles[1].querySelector("select"); return { pistolHand: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand, rifleHand: CHAR.play.kit.weapons.find(w => w.name === "Militech Whisper 1000").hand, tile1HasRifleStats: tiles[0].innerText.includes("Rifle"), tile2SelectDisabled: sel2.disabled, tile2Text: tiles[1].innerText }; })()
+
+  Expected `pistolHand` is `null` (evicted — the rifle needed its slot too),
+  `rifleHand` is `0`, `tile1HasRifleStats` is `true` (Hand 1 now shows the
+  rifle's full stat/fire card), `tile2SelectDisabled` is `true`, and
+  `tile2Text` is `"HAND 2\n— Militech Whisper 1000 (two-handed) —"`.
+- **Then try the bypass directly** — assign the rifle into Hand 2 (the LAST
+  slot) by setting `.value` on the `<select>` past its `disabled` option,
+  the way a stray script or an accessibility tool could (a real click can't:
+  the option is disabled). The assignment function has to hold the same rule
+  a browser's own input handling won't enforce for it here:
+
+      (() => { CHAR.play.kit.weapons.forEach(w => { w.hand = null; }); CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand = 0; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card.querySelectorAll(".sh-hand-card")[1].querySelector("select"); const wasDisabled = [...sel2.options].find(o => o.textContent === "Militech Whisper 1000").disabled; sel2.value = [...sel2.options].find(o => o.textContent === "Militech Whisper 1000").value; sel2.dispatchEvent(new Event("change", { bubbles: true })); return { rifleOptionWasDisabled: wasDisabled, pistolHandAfter: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand, rifleHandAfter: CHAR.play.kit.weapons.find(w => w.name === "Militech Whisper 1000").hand }; })()
+
+  Expected `rifleOptionWasDisabled` is `true` (confirming the picker itself
+  refused this) and `rifleHandAfter` is `1` — the assignment still went
+  through since nothing stops a raw `.value` set, landing the rifle in the
+  LAST hand with no slot after it to claim. This is a known, accepted gap in
+  a bypass scenario the UI doesn't allow through normal interaction; not
+  something a future change should treat as license to loosen the picker.
+- **Note:** Hand assignment lives on the weapon entry (`w.hand`), the same way
+  `w.lo`/`w.mode` already do — never a `play.hands` array keyed by name, since
+  two identically-named weapons is a designed-for case elsewhere in this app
+  (`reconcileKit`) that name-keying would collapse. Only the PRIMARY slot is
+  ever stored; a two-handed weapon's second slot is derived from
+  `RULES.weaponHands()` on every render and is never written down, so it can't
+  drift from a data change.
+
+  In the picker itself, a two-handed weapon offered in the LAST hand slot is
+  rendered `disabled` with a title explaining why, not omitted — the same
+  "stays but says why it can't be pressed" idiom the Reload button and the
+  reorder handles already use elsewhere on this tab.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-047: A free other hand steadies a one-handed weapon — melee gets nothing
+- **Type:** correctness
+- **Steps:** continue on `QA-Hands` from P06-046 (or rebuild it). Clear the
+  rifle out of both hands and put the pistol back in Hand 1 alone:
+
+      (() => { CHAR.play.kit.weapons.forEach(w => { w.hand = null; }); CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand = 0; playChanged(); return "ready"; })()
+
+- **Check:**
+
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const tile1 = [...card.querySelectorAll(".sh-hand-card")][0]; return tile1.innerText; })()
+
+  Expected the stat line reads `Recoil 2 (+1 free hand)` — one more than the
+  pistol's bare `Recoil 1` (confirm the bare figure by reading the Gear tab or
+  temporarily filling Hand 2, per the next step) — because Hand 2 is empty.
+- **Then put the Sword in Hand 2** and re-run the same check:
+
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card.querySelectorAll(".sh-hand-card")[1].querySelector("select"); sel2.value = [...sel2.options].find(o => o.textContent === "Sword").value; sel2.dispatchEvent(new Event("change", { bubbles: true })); const card2 = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const tiles = [...card2.querySelectorAll(".sh-hand-card")]; return { pistolLine: tiles[0].innerText, swordLine: tiles[1].innerText }; })()
+
+  Expected `pistolLine` now reads plain `Recoil 1` (both hands full, no
+  bonus), and `swordLine` — a Melee weapon — carries **no `Recoil` figure at
+  all**, not `Recoil 1 (+1 free hand)`.
+- **Note:** Recoil in this app is a *capacity*, not a penalty — higher is
+  better (a gyromount gives `+2`; a cybergun doubles it), so "+1 free hand" is
+  a bonus for having a hand free to steady the gun with, the same shape a
+  bolted-on mod's `+N` already takes (added onto `recoil_mod`, never replacing
+  it, so a bipod's own `+N` isn't erased by this).
+
+  The melee guard is the trap that would have shipped broken without it: the
+  engine deliberately gives Melee and Thrown **no** `Recoil` key at all (a
+  Katana reading "Recoil 3" would be noise on every unarmed character's
+  sheet), so the bonus is computed only when `calcRow.Recoil != null` — a
+  blind `{...calcRow, Recoil: +1}` would have printed a phantom Recoil line on
+  every one-handed melee card with an empty other hand.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-048: Switching a hand costs a Simple Action and clears recoil; refused when broke
+- **Type:** correctness
+- **Steps:** `QA-Hands`, both hands empty, `play.action_costs` on, a little
+  recoil already on the books:
+
+      (() => { CHAR.play.kit.weapons.forEach(w => { w.hand = null; }); CHAR.play.action_costs = true; CHAR.play.recoil = 5; CHAR.play.actions_used = {}; playChanged(); return { simpleAvail: CALC.combat.simple_actions }; })()
+
+- **Check — assign a weapon, spending one of them:**
+
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === 'KL-89 "Klaw"').value; sel1.dispatchEvent(new Event("change", { bubbles: true })); return { actionsUsed: CHAR.play.actions_used, recoil: CHAR.play.recoil }; })()
+
+  Expected `actionsUsed.simple` is `1` and `recoil` is `0` — filling a hand
+  costs a Simple Action and resets the tracker (your stance changed; recoil is
+  one character-wide counter, not per-weapon — `CHAR.play.recoil`, read by
+  every gun via `recoilTracked()`).
+- **Then exhaust the remaining Simple Actions and try to fill Hand 2** (an
+  `alert` fires — this stubs it rather than skipping the case, per P00 §3):
+
+      (() => { CHAR.play.actions_used.simple = CALC.combat.simple_actions; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card.querySelectorAll(".sh-hand-card")[1].querySelector("select"); const orig = window.alert; let msg = null; window.alert = m => { msg = m; }; sel2.value = [...sel2.options].find(o => o.textContent === "Sword").value; sel2.dispatchEvent(new Event("change", { bubbles: true })); window.alert = orig; const card2 = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2After = card2.querySelectorAll(".sh-hand-card")[1].querySelector("select"); return { alertFired: !!msg, swordHand: CHAR.play.kit.weapons.find(w => w.name === "Sword").hand, selectValueAfterRerender: sel2After.value }; })()
+
+  Expected `alertFired` is `true`, `swordHand` is `null` (unchanged from the
+  setup step — the refusal touched no state), and `selectValueAfterRerender`
+  is `""` — the refused pick did not stick, and the re-render (triggered on
+  refusal specifically so the `<select>` doesn't keep showing an uncommitted
+  choice) put the control back to what it actually holds.
+- **Then confirm clearing a hand to empty is free** — put the pistol back with
+  a Simple Action to spare, then take it out again with none:
+
+      (() => { CHAR.play.actions_used.simple = 0; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = ""; sel1.dispatchEvent(new Event("change", { bubbles: true })); return { pistolHand: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand, actionsUsed: CHAR.play.actions_used.simple || 0 }; })()
+
+  Expected `pistolHand` is `null` and `actionsUsed` unchanged at `0` — taking
+  a weapon OUT of a hand spends nothing, only putting one IN does.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-049: Shrinking the hand count preserves assignments, same ruling as bond slots
+- **Type:** correctness
+- **Steps:** `QA-Hands`. Put the pistol in Hand 1, the Sword in Hand 2:
+
+      (() => { CHAR.play.action_costs = false; const w = CHAR.play.kit.weapons; w.find(x => x.name === 'KL-89 "Klaw"').hand = 0; w.find(x => x.name === "Sword").hand = 1; w.find(x => x.name === "Militech Whisper 1000").hand = null; CHAR.play.hand_override = null; playChanged(); return { handCount: RULES.handCount(CALC, CHAR.play.hand_override) }; })()
+
+  Expected `handCount` is `2`.
+- **Check — override down to 1 hand:**
+
+      (() => { CHAR.play.hand_override = 1; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); return { tileCount: card.querySelectorAll(".sh-hand-card").length, hints: [...card.querySelectorAll("p.hint")].map(p => p.textContent), swordHandStillStored: CHAR.play.kit.weapons.find(w => w.name === "Sword").hand }; })()
+
+  Expected `tileCount` is `1`, `hints` includes a line naming the Sword as
+  *"Held in a hand you no longer have"* (not deleted, just not rendered), and
+  `swordHandStillStored` is still `1` — unchanged in the data.
+- **Then clear the override** and confirm the Sword's card comes back with no
+  further action:
+
+      (() => { CHAR.play.hand_override = null; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card.querySelectorAll(".sh-hand-card")[1].querySelector("select"); return { tileCount: card.querySelectorAll(".sh-hand-card").length, hand2Selected: sel2.options[sel2.selectedIndex].textContent }; })()
+
+  Expected `tileCount` is `2` and `hand2Selected` is `"Sword"`.
+- **Note:** This is the identical ruling already applied to `play.bond_slots`
+  (Speaker bonds): dropping the count and raising it again hands the
+  assignment back rather than losing it, because the count alone decides how
+  much of the stored state is *live*, not how much *exists*. Confirmed here by
+  never clearing `w.hand` on a shrink — only `handCount()`-bounded rendering
+  changes.
+
+  Also worth a manual look while here: `CALC.combat.hand_count` is 2 by
+  default and grows with an "Extra Arm" heritage trait or a Heavy Torso mount
+  picked as a Cyberarm (`RULES.handCount(CALC, override)` layers a
+  `play.hand_override` on top, clamped `1..RULES.HAND_COUNT_MAX`). Not cased
+  here since it rides the same `applyHeritage` machinery P06 already exercises
+  elsewhere for Extra Arm/Extra Leg's armor surcharge.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

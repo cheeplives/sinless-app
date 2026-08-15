@@ -905,8 +905,21 @@ label.opt input{margin-top:3px}
    the weapon names. The width it gives up is handed to the weapon column, where
    "Militech M31-a1 Advanced Combat Weapon" was wrapping to three lines. */
 .sh-ammo-sel{max-width:150px}
-.sh-loadout th:first-child{width:25%}
-.sh-loadout th:last-child{width:12%}
+/* hand cards — one per hand, pool-tile grid like the spirit bond tiles, but
+   without their per-slot identity colour: a hand isn't a persistent character
+   the way a bound spirit is, so every card reads the same until it holds
+   something. auto-fit so 2 hands sit side by side and 3+ reflow by width. */
+.sh-hand-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:12px;margin-top:6px;align-items:start}
+.sh-hand-card{border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0;
+  display:flex;flex-direction:column;gap:6px;background:var(--panel);overflow-wrap:anywhere}
+.sh-hand-card.active{border-color:var(--manon-dim)}
+.sh-hand-card .k{font-family:var(--disp);font-size:12px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--manon)}
+.sh-hand-card select{width:100%}
+/* An underbarrel weapon nested inside its host's hand card, set apart with a
+   left rule so it still reads as "part of this card" rather than a sibling. */
+.sh-hand-underbarrel{border-left:2px solid var(--line);padding-left:10px;margin-top:4px}
 /* Fire and Reload are the pair you reach between mid-fight, so they get their
    own line under the mode select rather than trailing off the end of it. A
    weapon with no firing mode carries a lone Attack button in the same slot. */

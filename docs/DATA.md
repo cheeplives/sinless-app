@@ -214,7 +214,7 @@ call graphs.
 | `vehicle_mods` | 6 | `Vehicle Mod` | Vehicle modifications | rules, app, sheet |
 | `vehicles` | 23 | `Vehicle` | Vehicles; `Body`, `Handling`, `Cargo` | rules, app, sheet |
 | `weapon_mods` | 18 | `Modification` | Weapon mods by `Slot` | rules, app, sheet, homebrew |
-| `weapons` | 106 | `Weapon` | Weapons by `Type`; `Accuracy`, `Damage`, `Pen`, `Bar` | rules, app, sheet, homebrew |
+| `weapons` | 110 | `Weapon` | Weapons by `Type`; `Accuracy`, `Damage`, `Pen`, `Bar`, `Hands` | rules, app, sheet, homebrew |
 
 16 of these are **homebrew-eligible** (users can add rows, and packs can be
 promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
@@ -294,6 +294,18 @@ promoted): `rituals`, `spells`, `speaker_spirits`, `misc_gear`, `augments`,
   *Barrier* (`AP` is `"Pen +1, Barrier +1"`) while the column says `Bar`, and
   `AMMO_STAT_KEYS` in `rules.js` maps both spellings to the same key. Formatting
   for every stat line goes through `barrierBit()` in `app.js`.
+- **`weapons` — `Hands`** is `1H` or `2H`, read by `RULES.weaponHands()` (blank
+  or any other value is treated as `1H`, so an unlabelled homebrew row stays
+  wieldable rather than becoming unassignable the moment this column exists).
+  Drives the Overview Loadout's per-hand cards: a `2H` weapon claims its own
+  hand slot and the next one. On every row (including row 0) for the same
+  `promote_homebrew.base_columns()` reason as `Bar` above. The five
+  `GrenadeLauncher` rows are all `1H` even though none of them is realistically
+  wielded alone — four are underbarrel-granted (no hand of their own to begin
+  with) and the fifth, `Militech M31-a1G`, is a directly-purchasable weapon
+  gated by `Requires`, so marking it anything but `1H` would have made it
+  vanish from the Loadout with no card to appear under. Revisit once mount-only
+  weapons have a home of their own.
 - **`cyberguns`** — carries the same `Bar` column, set to the mean Barrier of the
   weapons-table `Type` each frame corresponds to (Palm Pistol → `PistolLt`,
   Forearm SMG → `SMG`, Heavy Pistol → `PistolHvy`, Shotgun → `Shotgun`), rounding

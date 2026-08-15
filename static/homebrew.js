@@ -205,6 +205,9 @@ const HOMEBREW_CONFIG = {
     { key: "Cost", hint: "number" },
     { key: "Accuracy", hint: "number" },
     { key: "Reach", hint: "Melee reach or “Ranged”" },
+    { key: "Hands", select: () => ["", "1H", "2H"],
+      optionLabel: v => v === "2H" ? "2H (needs both hands)"
+                      : v === "1H" ? "1H (one-handed)" : "(unspecified — treated as 1H)" },
     { key: "Damage", hint: "e.g. 8; for Melee this is the base added to a share of Strength" },
     { key: "STR Mult", hint: "Melee only, share of Strength added — default 0.5, e.g. 1 for full STR" },
     { key: "StrCost", hint: "Bows only — cost per point of Minimum Strength. Setting it makes the weapon STR-rated: leave Cost, Damage and Rarity blank" },

@@ -973,7 +973,7 @@ path by which play could reach into the creation record.
   tab's infusion and relationship meters before you start.
 - **Check:**
 
-      (() => { const play = CHAR.play, sp = CHAR.speaker || {}; const before = { kismet: play.kismet, inf: `${CALC.magic.infusion_pts.spent}/${CALC.magic.infusion_pts.budget}`, rel: `${CALC.magic.relationship_pts.spent}/${CALC.magic.relationship_pts.budget}` }; const ladder = (DATA.tables.speaker_bond_costs || []).map(r => `${r.Bond}=${r.Cost}`); const bonds = RULES.speakerBondCount({ speaker: { bonds: (+sp.bonds || 0) + (play.bond_advances || 0) } }); const row = [...document.querySelectorAll("#sheet .sh-advrow")].find(r => /Spirit bonds/.test(r.textContent)); const btn = row && row.querySelector("button"); return { ladder, bondsNow: bonds, max: RULES.SPEAKER_BOND_MAX, rowText: row ? row.textContent.replace(/\s+/g, " ").trim() : null, buttonLabel: btn ? btn.textContent : "(at maximum)", before }; })()
+      (() => { const play = CHAR.play, sp = CHAR.speaker || {}; const before = { kismet: play.kismet, inf: `${CALC.magic.infusion_pts.spent}/${CALC.magic.infusion_pts.budget}`, rel: `${CALC.magic.relationship_pts.spent}/${CALC.magic.relationship_pts.budget}` }; const ladder = (DATA.tables.speaker_bond_costs || []).map(r => `${r.Bond}=${r.Cost}`); const bonds = RULES.speakerBondCount(CALC); const row = [...document.querySelectorAll("#sheet .sh-advrow")].find(r => /Spirit bonds/.test(r.textContent)); const btn = row && row.querySelector("button"); return { ladder, bondsNow: bonds, max: RULES.SPEAKER_BOND_MAX, rowText: row ? row.textContent.replace(/\s+/g, " ").trim() : null, buttonLabel: btn ? btn.textContent : "(at maximum)", before }; })()
 
 - **Expected:** `ladder` is `["1=0","2=3","3=8","4=13"]`, `max` is `4`, and
   `buttonLabel` is `+1 (N)` where **N is the cost of the NEXT rung** — 3 for a
@@ -1024,6 +1024,39 @@ path by which play could reach into the creation record.
   priority when testing this: setting `chosen_type` to a type the priority
   doesn't allow resolves to a different one, so a "Mage" at priority 2 is really
   an Amp or Speaker and proves nothing.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-041: What Kismet bought reaches the Speaker card, not just the ledger
+- **Type:** correctness
+- **Steps:** finalized **Speaker** (or Archmage) who has bought at least one
+  bond, infusion and relationship with Kismet. Magic tab.
+- **Check:**
+
+      (() => { const card = [...document.querySelectorAll("#sheet h3")].find(h => /Speaker/.test(h.textContent)); const txt = card ? card.closest(".card").innerText : ""; return { chargen: CHAR.speaker, folded: CALC.speaker, bondSlotsShown: (txt.match(/BOND \d+/gi) || []).length, cardMentions: (CALC.speaker.relationships || []).map(n => [n, txt.includes(n)]), infusionSlots: (CALC.speaker.infusions || []).map(n => [n, txt.includes(n)]) }; })()
+
+- **Expected:** `folded` is a **superset** of `chargen` — bonds raised by
+  `play.bond_advances`, and `play.speaker_infusions` / `play.speaker_relationships`
+  appended to their lists. Every name in `cardMentions` and `infusionSlots` is
+  `true`, and `bondSlotsShown` equals `folded.bonds`.
+- **Observed** on a finalized Archmage carrying one chargen bond and relationship
+  who then bought a 2nd bond, the Protection infusion and Mound of Skulls:
+  `chargen` `{bonds: 1, infusions: [], relationships: ["Bacchanal"]}` against
+  `folded` `{bonds: 2, infusions: ["Protection"], relationships: ["Bacchanal",
+  "Mound of Skulls"]}`, with two bond slots and a Protection row on the card.
+- **Note:** The regression this guards is a card that reads `CHAR.speaker`.
+  Kismet purchases never land there — `character.speaker` is chargen-owned, so
+  `applyPlayAdvances` merges them onto the **deep copy** that only `calculate()`
+  sees, published as `CALC.speaker`. Read the raw character instead and every
+  purchase is charged for, logged in the ledger, undoable — and invisible on the
+  sheet, which is the worst shape a bug can take: the money is gone and nothing
+  looks broken.
+
+  P06-039 and P06-040 both pass while this fails. They watch the ledger and the
+  buy panel, and those are correct in exactly the case where the card is wrong —
+  which is why the assertion here is on rendered card text rather than on
+  `play.*` state.
+
+  Applies equally to the markdown export, which shares the same source.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

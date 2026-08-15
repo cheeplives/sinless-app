@@ -322,7 +322,8 @@ function speakerKismetSection(spend) {
   const type = CALC.magic.type;
   if (type !== "Speaker" && type !== "Archmage") return;
   const play = CHAR.play;
-  const sp = CHAR.speaker || {};
+  // Chargen practice plus everything Kismet has already bought — see CALC.speaker.
+  const sp = CALC.speaker;
   const cost = (rows, key, name) => {
     const row = (DATA.tables[rows] || []).find(r => r[key] === name);
     return row ? (parseInt(row.Cost, 10) || 0) : 0;
@@ -331,8 +332,7 @@ function speakerKismetSection(spend) {
   spend.append(el("h4", { class: "sh-h4" }, "Speaker practice"));
 
   // --- bonds: the next rung of the ladder, priced by its index
-  const bondsNow = RULES.speakerBondCount({ speaker: {
-    bonds: (parseInt(sp.bonds, 10) || 0) + (play.bond_advances || 0) } });
+  const bondsNow = RULES.speakerBondCount(CALC);
   const nextBond = bondsNow + 1;
   const bondRow = (DATA.tables.speaker_bond_costs || [])
     .find(r => (parseInt(r.Bond, 10) || 0) === nextBond);
@@ -356,11 +356,8 @@ function speakerKismetSection(spend) {
         }, `+1 (${bondCost})`)));
 
   // --- infusions and relationships: pick an unowned one, pay its listed cost
-  const owned = field => [...(sp[field] || []),
-                          ...(play[field === "infusions" ? "speaker_infusions"
-                                                         : "speaker_relationships"] || [])];
   const buyer = (label, table, key, field, undoKind, playKey) => {
-    const have = owned(field);
+    const have = sp[field] || [];
     const rows = (DATA.tables[table] || [])
       .filter(r => r[key] && !have.includes(r[key]))
       .sort((a, b) => (parseInt(a.Cost, 10) || 0) - (parseInt(b.Cost, 10) || 0));
@@ -7850,7 +7847,9 @@ function shMagic(body) {
   }
 
   if (type === "Speaker" || type === "Archmage") {
-    const s = CHAR.speaker;
+    // CALC, not CHAR: the folded-in view, so bonds/infusions/relationships
+    // bought with Kismet in play show up here alongside the chargen ones.
+    const s = CALC.speaker;
     play.infusion_spirits = play.infusion_spirits || {};
     play.bond_slots = play.bond_slots || [];
     // Infusion slot base name -> the spirit column that holds its benefit.
@@ -7871,7 +7870,8 @@ function shMagic(body) {
       }
       card.append(el("h4", { class: "sh-h4" }, "Relationships"), row);
     } else {
-      card.append(el("p", { class: "hint" }, "No spirit relationships — add them in chargen."));
+      card.append(el("p", { class: "hint" },
+        "No spirit relationships — add them in chargen, or buy one with Kismet."));
     }
 
     // --- Infusions (#26): place a spirit into each infusion slot; show benefit
@@ -7924,9 +7924,9 @@ function shMagic(body) {
     }
 
     // --- Bonds (#27): place spirits in bond slots and track favors
-    const bondCount = RULES.speakerBondCount(CHAR);
+    const bondCount = RULES.speakerBondCount(CALC);
     card.append(el("h4", { class: "sh-h4" }, `Bonds — ${bondCount} slot(s), track favors owed`));
-    if (!bondCount) card.append(el("p", { class: "hint" }, "No spirit bonds purchased in chargen."));
+    if (!bondCount) card.append(el("p", { class: "hint" }, "No spirit bonds yet."));
     // Grow to the bought count, never shrink. Dropping Bonds in chargen and
     // raising it again must hand the spirit back, so slots past the count are
     // kept dormant and simply not rendered — the array is play state, and the
@@ -9646,16 +9646,16 @@ function buildMarkdown() {
     if (allPowers.length)
       L.push("**Amp powers:** " + allPowers.map(p =>
         p.name + (p.target ? ` → ${p.target}` : "") + ((p.times || 1) > 1 ? ` ×${p.times}` : "")).join(" · "));
-    if (CHAR.speaker.relationships.length)
-      L.push("**Spirit relationships:** " + CHAR.speaker.relationships.join(" · ")
-        + ` (bonds: ${CHAR.speaker.bonds || 0})`);
-    if (CHAR.speaker.infusions.length)
-      L.push("**Infusions:** " + CHAR.speaker.infusions.join(" · "));
+    if (CALC.speaker.relationships.length)
+      L.push("**Spirit relationships:** " + CALC.speaker.relationships.join(" · ")
+        + ` (bonds: ${CALC.speaker.bonds || 0})`);
+    if (CALC.speaker.infusions.length)
+      L.push("**Infusions:** " + CALC.speaker.infusions.join(" · "));
     // Bound spirits carry their Force and the services they're currently owed
     // for; the full writeup stays in the app rather than bloating the export.
     // Only the bonds actually bought — dormant slots past the count are held
     // for a restore, not bonds this character has.
-    const liveBonds = (play.bond_slots || []).slice(0, RULES.speakerBondCount(CHAR));
+    const liveBonds = (play.bond_slots || []).slice(0, RULES.speakerBondCount(CALC));
     for (const [bi, bond] of liveBonds.entries()) {
       if (!bond.spirit) continue;
       const row = DATA.tables.speaker_spirits.find(x => x.Spirit === bond.spirit) || {};

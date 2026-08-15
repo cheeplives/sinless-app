@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "278";
+const APP_VERSION = "279";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -5820,6 +5820,13 @@ function calculate(character) {
       infusion_pts: magicBudget.infusion_pts,
       relationship_pts: magicBudget.relationship_pts,
     },
+    /* Speaker practice AFTER applyPlayAdvances has folded in what Kismet
+     * bought. character.speaker is chargen-owned, so a play purchase never
+     * reaches it — it accumulates in play.bond_advances / speaker_infusions /
+     * speaker_relationships and is merged onto this copy. Anything displaying
+     * a finalized character's bonds, infusions or relationships must read this
+     * and never CHAR.speaker, or play purchases go invisible. */
+    speaker: character.speaker,
     zoetics: { zp: heritage.zoetic_potential,
                ghost_rating: (character.play && character.play.ghost_rating) || GHOST_RATING_DICE,
                zp_remaining: zpRemaining,

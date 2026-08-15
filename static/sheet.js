@@ -1986,7 +1986,11 @@ function poolState(pool) {
   // several times a session, and they have to leave the player's own temp dice
   // alone so switching one off doesn't eat them (issue #31).
   const beast = poolEffectMod(pool);          // 0 when nothing is switched on
-  const max = Math.max(0, base + boost + beast);   // effective pool never drops below 0
+  // A permanent Kismet die from a major boon "cannot be removed" (see the
+  // header tile's own tooltip below) -- no stack of temporary penalty dice,
+  // however large, may shrink the pool under that floor. Everyday 0 still
+  // applies to a pool with no such die.
+  const max = Math.max(kismetDice, base + boost + beast);
   // Spent dice are clamped for reading but never written down, so a shift that
   // shrinks Focus/Resolve doesn't destroy dice you get back on shifting out.
   const used = Math.max(0, Math.min(play.pool_used[pool] || 0, max));

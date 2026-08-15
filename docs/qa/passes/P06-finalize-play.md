@@ -1177,6 +1177,38 @@ path by which play could reach into the creation record.
   there's nothing to roll back.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-045: A pool's permanent Kismet die is a floor no penalty can dig under
+- **Type:** correctness
+- **Steps:** any finalized character. Console only.
+- **Check:**
+
+      (() => { const play = CHAR.play; const snap = JSON.stringify([play.pool_kismet, play.pool_boost]); play.pool_kismet = { Resolve: 2 }; play.pool_boost = { Resolve: -50 }; playChanged(); const withDie = poolState("Resolve"); play.pool_kismet = {}; const noDie = poolState("Resolve"); const [pk, pb] = JSON.parse(snap); play.pool_kismet = pk; play.pool_boost = pb; playChanged(); return { base: CALC.pools.Resolve, withDieMax: withDie.max, noDieMax: noDie.max }; })()
+
+- **Expected:** with a base Resolve pool of `20` and a `-50` temporary penalty,
+  `withDieMax` is `2` (the permanent-die floor, not `0` and not negative) while
+  `noDieMax` — same penalty, no Kismet die — is `0`. The floor applies only to
+  the pool actually holding the die.
+- **Then check the boundary**, where the natural total lands strictly between
+  `0` and the die count rather than deeply negative:
+
+      (() => { const play = CHAR.play; const snap = JSON.stringify([play.pool_kismet, play.pool_boost]); play.pool_kismet = { Resolve: 2 }; play.pool_boost = { Resolve: -19 }; playChanged(); const max = poolState("Resolve").max; const [pk, pb] = JSON.parse(snap); play.pool_kismet = pk; play.pool_boost = pb; playChanged(); return { base: CALC.pools.Resolve, naturalTotal: CALC.pools.Resolve - 19, max }; })()
+
+- **Expected:** `naturalTotal` is `1` (below the 2-die floor) and `max` is
+  still `2`, not `1` — the floor isn't "clamp to 0 unless deeply negative", it
+  holds at exactly the die count.
+- **Note:** `poolState()` in `sheet.js` is the single function every pool
+  reader goes through (header tiles, sticky-bar pills, the die roller, "Reset
+  pool to full") — before this fix it clamped the effective max at `Math.max(0,
+  base + boost + beast)`, floored at zero like a pool with no boon at all. A
+  permanent Kismet die from a major boon is explicitly "cannot be removed" —
+  the header tile's own tooltip already said so — but nothing enforced that
+  once temporary penalty dice (the manual "Reduce temporary dice" control, a
+  drug, a tracked negative Effect/Modifier) stacked deep enough. Fixed by
+  flooring at `kismetDice` instead of `0`; `kismetDice` defaults to `0` for
+  every pool without a boon die, so the ordinary case is unchanged (confirmed
+  by `noDieMax` above).
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

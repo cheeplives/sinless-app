@@ -1101,6 +1101,7 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-sense{padding:4px 0;font-size:12px}
 .sh-sense + .sh-sense{border-top:1px dashed var(--line-dash)}
 .sh-sense .sub{font-size:11px;margin-top:1px}
+.sh-sense .sub.smaller{font-size:10px}
 /* A limit the character is currently on the wrong side of. */
 .sh-sense.bad > div:first-child{color:var(--bad)}
 /* Active Spells: what's up right now, above the list of what could be. Uses the

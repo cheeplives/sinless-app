@@ -2128,7 +2128,7 @@ function openMovePopover() {
       const body = [popoverHead("🏃 Movement", close),
         el("div", { class: "sh-sense" },
           el("div", {}, `Ground ${metres} m`),
-          el("div", { class: "sub" }, "Per turn, walking or running"))];
+          el("div", { class: "sub smaller" }, "Per simple action"))];
       for (const m of modes) {
         body.push(el("div", { class: "sh-sense" },
           el("div", {}, `${m.mode} ${m.meters} m`),

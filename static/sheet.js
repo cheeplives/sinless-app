@@ -2132,7 +2132,7 @@ function openMovePopover() {
       for (const m of modes) {
         body.push(el("div", { class: "sh-sense" },
           el("div", {}, `${m.mode} ${m.meters} m`),
-          el("div", { class: "sub" }, m.name)));
+          el("div", { class: "sub smaller" }, `${m.name} · Per simple action`)));
       }
       // Heritage quirks are prose and stay prose — they qualify how the numbers
       // above are used ("cannot run"), so flattening them into a figure would

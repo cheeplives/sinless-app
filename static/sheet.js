@@ -8021,7 +8021,7 @@ function shMagic(body) {
             `ZP remaining ${zo.zp_remaining}`))));
     if (zo.amp_offline)
       wrap.append(el("div", { class: "sh-callout" },
-        "⚠ AMP POWERS OFFLINE — ZP is negative. Shed carried ZR or the powers stay dark."));
+        "⚠ AMP POWERS OFFLINE — ZP is 0 or less. Shed carried ZR or the powers stay dark."));
     for (const p of allPowers) {
       const r = DATA.tables.amp_powers.find(x => x.Name === p.name) || {};
       // Targeted powers bought in play still need their target picked here —

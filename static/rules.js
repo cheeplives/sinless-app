@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "286";
+const APP_VERSION = "287";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -5621,17 +5621,18 @@ function calculate(character) {
     - (houseZr ? augmentZr : (hasAmpPowers ? zrTotal : 0)));
   // House rule: ZP ≤ 0 takes all magic offline except Rituals.
   const magicOffline = houseZr && magicType !== "Hedge" && zpRemaining <= 0;
-  // House rule: Amp powers have no offline state of their own. Cyber ZR/Amp
-  // overspend zeroing ZP already shuts everything down through magicOffline
-  // above (its warning says so), and gear ZR is a casting penalty only (below)
-  // -- it was never part of zpRemaining here, so it never touched Amp powers.
-  // Classic keeps the distinct Amp-offline state, driven by total carried ZR.
-  const ampOffline = houseZr ? false : (hasAmpPowers && zpRemaining < 0);
+  // Classic: Amp powers go offline at ZP ≤ 0, driven by total carried ZR (gear
+  // included -- that's the classic rule, gear ZR counts against ZP the same as
+  // cyber ZR does). ZR Casting Penalty house rule: Amp powers have NO offline
+  // state of their own -- gear ZR only ever penalises casting rolls (below),
+  // never ZP, and cyber ZR/Amp overspend zeroing ZP already shuts everything
+  // down through the shared magicOffline banner above.
+  const ampOffline = houseZr ? false : (hasAmpPowers && zpRemaining <= 0);
   if (magicOffline) {
     warnings.push("Magic OFFLINE: Zoetic Potential is 0 or less (cyber ZR + Amp "
       + "spending). Spells, Amps and Summoning are unavailable — only Rituals remain.");
   } else if (ampOffline) {
-    warnings.push("Amp powers OFFLINE: ZP is negative — Amp ZP spent plus "
+    warnings.push("Amp powers OFFLINE: ZP is 0 or less — Amp ZP spent plus "
                   + "carried ZR exceeds Zoetic Potential.");
   }
   // House rule: each full point of gear/weapon ZR is a −1d penalty on casting

@@ -214,6 +214,45 @@ lifestyle, which P05-008 fixes.
   gone with it, which is worth knowing when a report blames them.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P05-014: The buying list shows what the item has, and Polymer Oneshot pistols say so in their name
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (async () => { CHAR = RULES.defaultCharacter(); CHAR.name = "QA Buying List"; CHAR.priorities = { heritage: 2, magic: 0, attributes: 3, skills: 2, resources: 3 }; CHAR.heritage.type = "Human"; activeTab = "weapons"; await recalc(); renderTabs(); renderPanel(); document.querySelectorAll(".cat-head").forEach(h => h.click()); const items = [...document.querySelectorAll(".cat-item")]; const findItem = name => { const it = items.find(x => x.querySelector("b").textContent === name); return it ? it.querySelector(".sub").textContent : null; }; const posSub = findItem("Teen Dreem (POS)"); const armorSub = findItem("Battle Armor"); const oldNamed = RULES.mergeDefaults({ name: "x", weapons: [{ name: "Teen Dreem", equipped: true }] }); return { posSub, armorHasZR: /ZR 2/.test(armorSub || ""), armorHasRarity: /Rarity 4/.test(armorSub || ""), migratedName: oldNamed.weapons[0].name }; })()
+
+- **Expected:**
+
+      { "posSub": "Rarity 2 · ZR 1 · Acc 0 · SS, BF · Weight 1 · Pen 2 · Barrier 0 · Conceal 1 · Damage 2 · Polymer Oneshot, cannot be reloaded",
+        "armorHasZR": true, "armorHasRarity": true, "migratedName": "Teen Dreem (POS)" }
+
+- **Note:** Reported bug (issue #63), two parts. Part 1: the buying list
+  didn't say what an item actually had — a weapon's Oneshot flag ("Polymer
+  Oneshot, cannot be reloaded") and integrated mods were only shown on the
+  OWNED row (`weaponTraitBits` was already wired into `tabWeapons`'s owned
+  render and `sheet.js`'s play-mode row, just never into the picker's `sub`
+  line), and armor's picker line was thinner than everything else on the tab
+  — Ballistic/Impact/weight only, no ZR or Rarity, when both were sitting
+  right there on the row. `posSub` and the two `armorHas*` flags are the
+  regression guard: pull the picker's stat line for a known Oneshot pistol and
+  a known armor piece and check the fields are actually in it.
+
+  Part 2: every Polymer Oneshot pistol's row got "(POS)" appended to its
+  `Weapon` name in `data.js`, so it reads unmistakably even without stopping
+  to parse the stat line. A weapon resolves by name everywhere on a saved
+  character (`RULES.RENAMED_WEAPONS`'s own doc comment explains why), so the
+  rename ships with seven new entries there — old name in, new name out,
+  forever, the same contract `RENAMED_AUGMENTS`/`RENAMED_SPIRITS`/
+  `RENAMED_SPELLS` already keep. `migratedName` is that guard: build a
+  character with the OLD "Teen Dreem" name and confirm `mergeDefaults` hands
+  back "Teen Dreem (POS)", not an orphaned weapon pricing at ㄓ0. P06-046
+  through P06-049 (the Loadout hand-assignment suite) already exercised the
+  renamed `KL-89 "Klaw" (POS)` end to end — picker option text, `.name ===`
+  lookups on `play.kit.weapons`, all updated and re-verified against a real
+  headless-Chromium run before this landed, so this case doesn't repeat that
+  ground.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Clean up

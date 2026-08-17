@@ -2263,13 +2263,19 @@ function tabWeapons(p) {
         disabled: Boolean(r.Requires) && !CHAR.weapons.some(
           w => w.name === r.Requires && w.equipped !== false),
         reason: r.Requires ? `Requires an equipped ${r.Requires}.` : null,
+        // weaponTraitBits carries integrated mods and the Oneshot ("Polymer
+        // Oneshot, cannot be reloaded") note -- both intrinsic to the row, so
+        // they cost nothing to show before the weapon is ever bought. Every
+        // other stat here already came off the row too; only Recoil doesn't,
+        // since it depends on the buying character's Strength and isn't
+        // computed for something not yet owned.
         sub: (RULES.bowRating(r, {})
           ? `${fmt(+r.StrCost)} per point of Min STR · Damage = Min STR +${r.StrDmg} · `
             + `Rarity = Min STR ÷ 2 · ZR ${r.ZR || 0} · Acc ${r.Accuracy || 0} · `
-            + `Weight ${r.Weight || 0} · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0}`
+            + `Weight ${r.Weight || 0} · Pen ${r.Pen || 0} · Conceal ${r.Conceal || 0}${weaponTraitBits(r)}`
           : r.Type === "Melee"
-          ? `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Reach ${r.Reach || 0} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${RULES.meleeDamage(r, CALC.attributes.Strength.final)}`
-          : `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Acc ${r.Accuracy || 0} \u00b7 ${r["Firing modes"] || ""} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${r.Damage}`),
+          ? `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Reach ${r.Reach || 0} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${RULES.meleeDamage(r, CALC.attributes.Strength.final)}${weaponTraitBits(r)}`
+          : `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 Acc ${r.Accuracy || 0} \u00b7 ${r["Firing modes"] || ""} \u00b7 Weight ${r.Weight || 0} \u00b7 Pen ${r.Pen || 0}${barrierBit(r, r.Bar)} \u00b7 Conceal ${r.Conceal || 0} \u00b7 Damage ${r.Damage}${weaponTraitBits(r)}`),
       })),
     }));
   p.append(listEditor({
@@ -2366,8 +2372,10 @@ function tabWeapons(p) {
     "One Outer and one Under piece active at a time. Quality applies to any piece; styleable pieces also take a Style and Extras. Each multiplier surcharges the base cost."));
   const styles = DATA.tables.armor_styles, mats = DATA.tables.armor_materials,
     extras = DATA.tables.armor_extras;
+  // Rarity and ZR are shown here to match the weapons list above -- both were
+  // on the row all along, just missing from the buying list (issue #63).
   const armorItem = r => ({ name: r.Armor, cost: +r.Cost,
-    sub: `${r.Ballistic}B / ${r.Impact}I \u00b7 wt ${r.wt}${r.Style === "Y" ? " \u00b7 styleable" : ""}` });
+    sub: `Rarity ${r.Rarity || "\u2014"} \u00b7 ZR ${r.ZR || 0} \u00b7 ${r.Ballistic}B / ${r.Impact}I \u00b7 wt ${r.wt}${r.Style === "Y" ? " \u00b7 styleable" : ""}` });
   const armorGroups = [
     { label: "Outer Armor",
       items: DATA.tables.armor.filter(r => (r.Slot || "").startsWith("Outer")).map(armorItem) },

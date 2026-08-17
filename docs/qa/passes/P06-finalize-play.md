@@ -1215,18 +1215,18 @@ path by which play could reach into the creation record.
   real two-handed rifle, and a melee weapon, so the exclusivity rule has
   something to bite on):
 
-      (async () => { const raw = RULES.mergeDefaults(RULES.defaultCharacter()); raw.name = "QA-Hands"; raw.heritage.type = "Human"; raw.attributes = { Strength: 5, Body: 5, Reaction: 5, Intelligence: 5, Willpower: 5, Charisma: 5 }; raw.skills = { "Firearms": 4, "Melee Weapons": 3 }; raw.weapons = [{ name: "KL-89 \"Klaw\"", equipped: true }, { name: "Militech Whisper 1000", equipped: true }, { name: "Sword", equipped: true }]; raw.finalized = true; raw.lifestyles = [{ name: "Low", months: 1 }]; await openCharacter(RULES.mergeDefaults(raw)); return { name: CHAR.name, handsRifle: RULES.weaponHands(DATA.tables.weapons.find(w=>w.Weapon==="Militech Whisper 1000")), handsPistol: RULES.weaponHands(DATA.tables.weapons.find(w=>w.Weapon==='KL-89 "Klaw"')) }; })()
+      (async () => { const raw = RULES.mergeDefaults(RULES.defaultCharacter()); raw.name = "QA-Hands"; raw.heritage.type = "Human"; raw.attributes = { Strength: 5, Body: 5, Reaction: 5, Intelligence: 5, Willpower: 5, Charisma: 5 }; raw.skills = { "Firearms": 4, "Melee Weapons": 3 }; raw.weapons = [{ name: "KL-89 \"Klaw\" (POS)", equipped: true }, { name: "Militech Whisper 1000", equipped: true }, { name: "Sword", equipped: true }]; raw.finalized = true; raw.lifestyles = [{ name: "Low", months: 1 }]; await openCharacter(RULES.mergeDefaults(raw)); return { name: CHAR.name, handsRifle: RULES.weaponHands(DATA.tables.weapons.find(w=>w.Weapon==="Militech Whisper 1000")), handsPistol: RULES.weaponHands(DATA.tables.weapons.find(w=>w.Weapon==='KL-89 "Klaw" (POS)')) }; })()
 
   Expected `handsRifle` is `2`, `handsPistol` is `1`.
 - **Check — assign the pistol to Hand 1, then read both cards:**
 
-      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === 'KL-89 "Klaw"').value; sel1.dispatchEvent(new Event("change", { bubbles: true })); return CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand; })()
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === 'KL-89 "Klaw" (POS)').value; sel1.dispatchEvent(new Event("change", { bubbles: true })); return CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw" (POS)').hand; })()
 
   Expected `0`.
 - **Then assign the rifle (two-handed) into Hand 1** — the same slot the
   pistol already holds, so placing it must evict the pistol AND claim Hand 2:
 
-      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === "Militech Whisper 1000").value; sel1.dispatchEvent(new Event("change", { bubbles: true })); const card2 = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const tiles = [...card2.querySelectorAll(".sh-hand-card")]; const sel2 = tiles[1].querySelector("select"); return { pistolHand: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand, rifleHand: CHAR.play.kit.weapons.find(w => w.name === "Militech Whisper 1000").hand, tile1HasRifleStats: tiles[0].innerText.includes("Rifle"), tile2SelectDisabled: sel2.disabled, tile2Text: tiles[1].innerText }; })()
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === "Militech Whisper 1000").value; sel1.dispatchEvent(new Event("change", { bubbles: true })); const card2 = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const tiles = [...card2.querySelectorAll(".sh-hand-card")]; const sel2 = tiles[1].querySelector("select"); return { pistolHand: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw" (POS)').hand, rifleHand: CHAR.play.kit.weapons.find(w => w.name === "Militech Whisper 1000").hand, tile1HasRifleStats: tiles[0].innerText.includes("Rifle"), tile2SelectDisabled: sel2.disabled, tile2Text: tiles[1].innerText }; })()
 
   Expected `pistolHand` is `null` (evicted — the rifle needed its slot too),
   `rifleHand` is `0`, `tile1HasRifleStats` is `true` (Hand 1 now shows the
@@ -1238,7 +1238,7 @@ path by which play could reach into the creation record.
   the option is disabled). The assignment function has to hold the same rule
   a browser's own input handling won't enforce for it here:
 
-      (() => { CHAR.play.kit.weapons.forEach(w => { w.hand = null; }); CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand = 0; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card.querySelectorAll(".sh-hand-card")[1].querySelector("select"); const wasDisabled = [...sel2.options].find(o => o.textContent === "Militech Whisper 1000").disabled; sel2.value = [...sel2.options].find(o => o.textContent === "Militech Whisper 1000").value; sel2.dispatchEvent(new Event("change", { bubbles: true })); return { rifleOptionWasDisabled: wasDisabled, pistolHandAfter: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand, rifleHandAfter: CHAR.play.kit.weapons.find(w => w.name === "Militech Whisper 1000").hand }; })()
+      (() => { CHAR.play.kit.weapons.forEach(w => { w.hand = null; }); CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw" (POS)').hand = 0; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel2 = card.querySelectorAll(".sh-hand-card")[1].querySelector("select"); const wasDisabled = [...sel2.options].find(o => o.textContent === "Militech Whisper 1000").disabled; sel2.value = [...sel2.options].find(o => o.textContent === "Militech Whisper 1000").value; sel2.dispatchEvent(new Event("change", { bubbles: true })); return { rifleOptionWasDisabled: wasDisabled, pistolHandAfter: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw" (POS)').hand, rifleHandAfter: CHAR.play.kit.weapons.find(w => w.name === "Militech Whisper 1000").hand }; })()
 
   Expected `rifleOptionWasDisabled` is `true` (confirming the picker itself
   refused this) and `rifleHandAfter` is `1` — the assignment still went
@@ -1265,7 +1265,7 @@ path by which play could reach into the creation record.
 - **Steps:** continue on `QA-Hands` from P06-046 (or rebuild it). Clear the
   rifle out of both hands and put the pistol back in Hand 1 alone:
 
-      (() => { CHAR.play.kit.weapons.forEach(w => { w.hand = null; }); CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand = 0; playChanged(); return "ready"; })()
+      (() => { CHAR.play.kit.weapons.forEach(w => { w.hand = null; }); CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw" (POS)').hand = 0; playChanged(); return "ready"; })()
 
 - **Check:**
 
@@ -1304,7 +1304,7 @@ path by which play could reach into the creation record.
 
 - **Check — assign a weapon, spending one of them:**
 
-      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === 'KL-89 "Klaw"').value; sel1.dispatchEvent(new Event("change", { bubbles: true })); return { actionsUsed: CHAR.play.actions_used, recoil: CHAR.play.recoil }; })()
+      (() => { const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = [...sel1.options].find(o => o.textContent === 'KL-89 "Klaw" (POS)').value; sel1.dispatchEvent(new Event("change", { bubbles: true })); return { actionsUsed: CHAR.play.actions_used, recoil: CHAR.play.recoil }; })()
 
   Expected `actionsUsed.simple` is `1` and `recoil` is `0` — filling a hand
   costs a Simple Action and resets the tracker (your stance changed; recoil is
@@ -1323,7 +1323,7 @@ path by which play could reach into the creation record.
 - **Then confirm clearing a hand to empty is free** — put the pistol back with
   a Simple Action to spare, then take it out again with none:
 
-      (() => { CHAR.play.actions_used.simple = 0; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = ""; sel1.dispatchEvent(new Event("change", { bubbles: true })); return { pistolHand: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw"').hand, actionsUsed: CHAR.play.actions_used.simple || 0 }; })()
+      (() => { CHAR.play.actions_used.simple = 0; playChanged(); const card = [...document.querySelectorAll("h3")].find(h => h.textContent.includes("Loadout")).closest(".card"); const sel1 = card.querySelectorAll(".sh-hand-card")[0].querySelector("select"); sel1.value = ""; sel1.dispatchEvent(new Event("change", { bubbles: true })); return { pistolHand: CHAR.play.kit.weapons.find(w => w.name === 'KL-89 "Klaw" (POS)').hand, actionsUsed: CHAR.play.actions_used.simple || 0 }; })()
 
   Expected `pistolHand` is `null` and `actionsUsed` unchanged at `0` — taking
   a weapon OUT of a hand spends nothing, only putting one IN does.
@@ -1333,7 +1333,7 @@ path by which play could reach into the creation record.
 - **Type:** correctness
 - **Steps:** `QA-Hands`. Put the pistol in Hand 1, the Sword in Hand 2:
 
-      (() => { CHAR.play.action_costs = false; const w = CHAR.play.kit.weapons; w.find(x => x.name === 'KL-89 "Klaw"').hand = 0; w.find(x => x.name === "Sword").hand = 1; w.find(x => x.name === "Militech Whisper 1000").hand = null; CHAR.play.hand_override = null; playChanged(); return { handCount: RULES.handCount(CALC, CHAR.play.hand_override) }; })()
+      (() => { CHAR.play.action_costs = false; const w = CHAR.play.kit.weapons; w.find(x => x.name === 'KL-89 "Klaw" (POS)').hand = 0; w.find(x => x.name === "Sword").hand = 1; w.find(x => x.name === "Militech Whisper 1000").hand = null; CHAR.play.hand_override = null; playChanged(); return { handCount: RULES.handCount(CALC, CHAR.play.hand_override) }; })()
 
   Expected `handCount` is `2`.
 - **Check — override down to 1 hand:**

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "288";
+const APP_VERSION = "289";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -1050,6 +1050,16 @@ function migrateRenamedSpells(character) {
 const RENAMED_WEAPONS = {
   "Underbarrel mounted grenade launcher (40mm)":
     "Underslung Grenade Launcher (40mm) (Underbarrel slot)",
+  // Issue #63: every Polymer Oneshot pistol got "(POS)" appended to its name
+  // on 2026-08-17 so it's unmistakable in the buying list without reading the
+  // stat line — see weaponIsOneshot/ONESHOT_NOTE. Cosmetic rename, same rows.
+  "KL-89 \"Klaw\"": "KL-89 \"Klaw\" (POS)",
+  "KL-89 \"Klaw\" (Stripped)": "KL-89 \"Klaw\" (Stripped) (POS)",
+  "BudgetArms C-13": "BudgetArms C-13 (POS)",
+  "Dai Lung Cybermag 15": "Dai Lung Cybermag 15 (POS)",
+  "Federated Arms X-22": "Federated Arms X-22 (POS)",
+  "Surprising Stranger": "Surprising Stranger (POS)",
+  "Teen Dreem": "Teen Dreem (POS)",
 };
 
 /* Apply RENAMED_WEAPONS to the three places a personal weapon name is stored:

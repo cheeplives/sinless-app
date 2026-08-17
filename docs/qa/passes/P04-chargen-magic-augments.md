@@ -253,6 +253,38 @@ anywhere in the suite.
   follows the character rather than sticking globally after one is opened.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P04-015: Under the ZR house rule, Amp powers have no offline state of their own
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (() => { const mk = () => { const c = RULES.defaultCharacter(); c.name = "ZR Amp probe"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.priorities = { magic: 4, attributes: 3, skills: 2, resources: 1, heritage: 0 }; c.heritage.type = "Human"; c.house_rules = { ...c.house_rules, zr: "houserule" }; return c; }; const zrRow = DATA.tables.weapons.find(r => (+r.ZR || 0) >= 3); const gearOnly = mk(); gearOnly.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [], archmage_bind: false }; gearOnly.weapons = [{ name: zrRow.Weapon, equipped: true }]; gearOnly.skills = { Sorcery: 3 }; const g = RULES.calculate(gearOnly); const allPowers = DATA.tables.amp_powers.map(r => ({ name: r.Name, target: "", times: 1 })); const overspend = mk(); overspend.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: allPowers, archmage_bind: false }; const o = RULES.calculate(overspend); const classic = mk(); classic.house_rules.zr = "classic"; classic.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: allPowers, archmage_bind: false }; const cl = RULES.calculate(classic); return { gearOnly: { gearZr: g.zoetics.gear_zr, magicOffline: g.zoetics.magic_offline, ampOffline: g.zoetics.amp_offline, castPenalty: g.skills.Sorcery.notes }, overspend: { magicOffline: o.zoetics.magic_offline, ampOffline: o.zoetics.amp_offline }, classicOverspend: { magicOffline: cl.zoetics.magic_offline, ampOffline: cl.zoetics.amp_offline } }; })()
+
+- **Expected:**
+
+      { "gearOnly": { "gearZr": 3, "magicOffline": false, "ampOffline": false,
+                       "castPenalty": ["−3d on casting rolls (gear/weapon ZR 3)"] },
+        "overspend": { "magicOffline": true, "ampOffline": false },
+        "classicOverspend": { "magicOffline": false, "ampOffline": true } }
+
+- **Note:** Reported bug: "gear ZR shouldn't be able to take Amp powers
+  offline under the house rule — it's only supposed to penalise casting."
+  Root cause was in `calculate()` (`static/rules.js`): `zpRemaining` under the
+  house rule already excluded gear ZR (gear ZR was always a casting-penalty-only
+  effect, per `gearOnly.gearZr: 3` still landing a `−3d` Sorcery note with
+  nothing going offline), but `ampOffline` was wired to `houseZr ? magicOffline
+  : ...` — a hard alias, not a "no separate state" removal. So whenever cyber
+  ZR or Amp overspend zeroed ZP (`overspend`), the engine reported **two**
+  offline flags for the same cause: `magic_offline` (the correct "Spells, Amps
+  and Summoning are unavailable" banner) AND `amp_offline` (a second, redundant
+  "AMP POWERS OFFLINE" callout on the Amp Powers card, `sheet.js` ~8022). The
+  fix pins `ampOffline` to `false` outright under the house rule — Amps go
+  dark only through the shared `magicOffline` banner, never through their own
+  flag or callout box. `classicOverspend` proves the classic rule's distinct
+  Amp-offline mechanic (driven by total carried ZR, gear included) is
+  untouched.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

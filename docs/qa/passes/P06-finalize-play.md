@@ -1413,6 +1413,55 @@ path by which play could reach into the creation record.
   pairing means adding another named entry, not changing the rule.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-051: A conditional effect (Wildling's shift) moves the Skills tab, not just the header
+- **Type:** correctness
+- **Check:**
+
+      (async () => { const c = RULES.defaultCharacter(); c.name = "QA Wildling Pools"; c.priorities = { heritage: 4, magic: 0, attributes: 3, skills: 2, resources: 1 }; c.heritage.type = "Green"; c.heritage.features = ["Wildling"]; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.finalized = true; await openCharacter(c); sheetTab = "skills"; renderSheet(); const readSkills = () => [...document.querySelectorAll(".sh-skillcard .colhead")].map(h => `${h.querySelector("span").textContent}=${h.querySelector("b").textContent}`); const skillsOff = readSkills(); sheetTab = "overview"; renderSheet(); const headerTitle = () => { const t = document.querySelector(".sh-pool.resolve"); return t ? t.title : null; }; const headerOff = headerTitle(); setPoolEffect(RULES.WILDLING_EFFECT_ID, true); sheetTab = "skills"; renderSheet(); const skillsOn = readSkills(); const colorOn = document.querySelector(".sh-skillcard.resolve .colhead b").getAttribute("style"); sheetTab = "overview"; renderSheet(); const headerOn = headerTitle(); await closeTabByName("QA Wildling Pools"); return { skillsOff, headerOff, skillsOn, headerOn, colorOn }; })()
+
+- **Expected:**
+
+      { "skillsOff": ["Brawn=2","Finesse=1","Focus=1","Resolve=2"],
+        "headerOff": "Resolve: 2 of 2 dice left — click to show Resolve skills",
+        "skillsOn": ["Brawn=8","Finesse=7","Focus=0","Resolve=0"],
+        "headerOn": "Resolve: 0 of 0 dice left — click to show Resolve skills",
+        "colorOn": "color:var(--bad)" }
+
+- **Note:** This is a real bug that shipped and was reported: switching Beast
+  Form on in Conditional Effects visibly moved the header tile's Resolve pool
+  but left the Skills tab's per-pool card header completely unchanged. Rerunning
+  this exact check against the pre-fix code reproduces it precisely — `skillsOn`
+  comes back **identical to `skillsOff`** (`Resolve=2`, not `0`) while
+  `headerOn` already reads `0 of 0`, the two panels disagreeing about how big
+  your own Resolve pool currently is.
+
+  The cause was one call site. Every other pool total on the sheet —
+  the header tile, the compact sticky strip — reads `poolState(pool).max`,
+  which layers temp boost dice and active conditional effects (Wildling,
+  Adrenal Pump, a drug) on top of the static build number. The Skills tab's
+  card header alone read the raw build number (`CALC.pools[pool]`) straight
+  from the engine, which has no notion of what's currently switched on — that
+  state lives in `play.pool_effects`, one layer up, by design (see the comment
+  above `derivePoolEffects` in rules.js). So the header and the Skills tab were
+  never wired to the same source of truth, and the Skills tab was one `git
+  blame` away from being right the whole time it looked wrong.
+
+  `colorOn` checks the header now flags a live-altered pool rather than just
+  silently changing the number — red for a net reduction (Resolve, Focus),
+  which would be green for Brawn/Finesse if you check those too. A pool that's
+  merely BOOSTED and one that's ACTIVELY SHIFTED both hit this same code path
+  (`ps.beast + ps.boost`), so a temp +2 from `pool_boost` alone should also
+  recolor the header without needing Wildling at all — worth trying by hand if
+  you want to see the boost half of this independently.
+
+  Built inline via `RULES.defaultCharacter()` rather than a fixture because no
+  shipped fixture takes the Green heritage with the Wildling boon, and this bug
+  is specific to that combination having something to switch on. Verified in an
+  actual headless Chromium run against the real app (not just this DOM
+  read-out) before this case was written, including reproducing the failure
+  against the unpatched file.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

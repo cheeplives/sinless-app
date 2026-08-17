@@ -5926,9 +5926,26 @@ function shSkills(body) {
   // so nothing crams into a single wide card at narrow widths.
   const grid = el("div", { class: "sh-skillgrid" });
   for (const pool of POOL_ORDER) {
+    // poolState(), not raw CALC.pools[pool] — the header tile and the compact
+    // strip both show the LIVE total (temp boost dice, a triggered Adrenal
+    // Pump, the Wildling shift), and this header used to be the one place on
+    // the sheet that silently fell back to the static build number. Switching
+    // Beast Form on dropped the header tile's Resolve to 0 while this card
+    // kept reading the untouched build value — the mismatch the bug reported.
+    const ps = poolState(pool);
+    const live = ps.beast + ps.boost;   // net swing from temp dice + active effects
     const card = el("div", { class: `card sh-card sh-skillcard ${pool.toLowerCase()}` },
-      el("div", { class: "colhead" }, el("span", {}, pool),
-        el("b", {}, String(CALC.pools[pool]))));
+      el("div", {
+        class: "colhead",
+        title: live
+          ? `${pool}: ${ps.max} dice right now (base ${CALC.pools[pool]}`
+            + (ps.beast ? `, ${ps.beast > 0 ? "+" : "−"}${Math.abs(ps.beast)} active effect` : "")
+            + (ps.boost ? `, ${ps.boost > 0 ? "+" : "−"}${Math.abs(ps.boost)} temp` : "")
+            + ")"
+          : `${pool}: ${ps.max} dice`,
+      },
+        el("span", {}, pool),
+        el("b", { style: live ? `color:var(--${live > 0 ? "ok" : "bad"})` : "" }, String(ps.max))));
     const trained = Object.entries(DATA.skills)
       .filter(([n, m]) => m.pool === pool && (CALC.skills[n].final > 0 || CALC.skills[n].dice_bonus
         || (CALC.skills[n].notes && CALC.skills[n].notes.length)))

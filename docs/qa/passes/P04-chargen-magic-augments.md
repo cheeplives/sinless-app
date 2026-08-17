@@ -253,47 +253,58 @@ anywhere in the suite.
   follows the character rather than sticking globally after one is opened.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
-### P04-015: Amp-offline is a Classic-only, ZP≤0 state -- the ZR Casting Penalty house rule never has one
+### P04-015: Amp-offline is a Classic-only, ZP≤0 state; the ZR Casting Penalty house rule only shuts down at ZP<0, gear included or not
 - **Type:** correctness
 - **Steps:** none.
 - **Check:**
 
-      (() => { const mk = () => { const c = RULES.defaultCharacter(); c.name = "ZR Amp probe"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.priorities = { magic: 4, attributes: 3, skills: 2, resources: 1, heritage: 0 }; c.heritage.type = "Human"; c.house_rules = { ...c.house_rules, zr: "houserule" }; return c; }; const zrRow = DATA.tables.weapons.find(r => (+r.ZR || 0) >= 3); const gearOnly = mk(); gearOnly.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [], archmage_bind: false }; gearOnly.weapons = [{ name: zrRow.Weapon, equipped: true }]; gearOnly.skills = { Sorcery: 3 }; const g = RULES.calculate(gearOnly); const allPowers = DATA.tables.amp_powers.map(r => ({ name: r.Name, target: "", times: 1 })); const overspend = mk(); overspend.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: allPowers, archmage_bind: false }; const o = RULES.calculate(overspend); const classic = mk(); classic.house_rules.zr = "classic"; classic.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: allPowers, archmage_bind: false }; const cl = RULES.calculate(classic); const zeroOut = mk(); zeroOut.house_rules.zr = "classic"; zeroOut.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [{ name: "Astral Resistance", target: "", times: 6 }], archmage_bind: false }; const cz = RULES.calculate(zeroOut); const oneLeft = mk(); oneLeft.house_rules.zr = "classic"; oneLeft.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [{ name: "Astral Resistance", target: "", times: 5 }], archmage_bind: false }; const co = RULES.calculate(oneLeft); return { gearOnly: { gearZr: g.zoetics.gear_zr, magicOffline: g.zoetics.magic_offline, ampOffline: g.zoetics.amp_offline, castPenalty: g.skills.Sorcery.notes }, overspend: { magicOffline: o.zoetics.magic_offline, ampOffline: o.zoetics.amp_offline }, classicOverspend: { magicOffline: cl.zoetics.magic_offline, ampOffline: cl.zoetics.amp_offline }, classicExactlyZero: { zpRemaining: cz.zoetics.zp_remaining, ampOffline: cz.zoetics.amp_offline }, classicOneLeft: { zpRemaining: co.zoetics.zp_remaining, ampOffline: co.zoetics.amp_offline } }; })()
+      (() => { const mk = () => { const c = RULES.defaultCharacter(); c.name = "ZR Amp probe"; c.lifestyles = [{ name: "Squatter", months: 1 }]; c.priorities = { magic: 4, attributes: 3, skills: 2, resources: 1, heritage: 0 }; c.heritage.type = "Human"; c.house_rules = { ...c.house_rules, zr: "houserule" }; return c; }; const zrRow = DATA.tables.weapons.find(r => (+r.ZR || 0) >= 3); const gearOnly = mk(); gearOnly.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [], archmage_bind: false }; gearOnly.weapons = [{ name: zrRow.Weapon, equipped: true }]; gearOnly.skills = { Sorcery: 3 }; const g = RULES.calculate(gearOnly); const zeroOutHouse = mk(); zeroOutHouse.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [{ name: "Astral Resistance", target: "", times: 6 }], archmage_bind: false }; const zhOff = RULES.calculate(zeroOutHouse); zeroOutHouse.weapons = [{ name: zrRow.Weapon, equipped: true }]; const zhOn = RULES.calculate(zeroOutHouse); const oneNegHouse = mk(); oneNegHouse.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [{ name: "Astral Resistance", target: "", times: 6 }, { name: "Attribute Boost", target: "Strength", times: 1 }], archmage_bind: false }; const onh = RULES.calculate(oneNegHouse); const allPowers = DATA.tables.amp_powers.map(r => ({ name: r.Name, target: "", times: 1 })); const overspend = mk(); overspend.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: allPowers, archmage_bind: false }; const o = RULES.calculate(overspend); const classic = mk(); classic.house_rules.zr = "classic"; classic.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: allPowers, archmage_bind: false }; const cl = RULES.calculate(classic); const zeroOutClassic = mk(); zeroOutClassic.house_rules.zr = "classic"; zeroOutClassic.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [{ name: "Astral Resistance", target: "", times: 6 }], archmage_bind: false }; const cz = RULES.calculate(zeroOutClassic); const oneLeftClassic = mk(); oneLeftClassic.house_rules.zr = "classic"; oneLeftClassic.magic = { chosen_type: "Amp", school: "", spells: [], amp_powers: [{ name: "Astral Resistance", target: "", times: 5 }], archmage_bind: false }; const co = RULES.calculate(oneLeftClassic); return { gearOnly: { gearZr: g.zoetics.gear_zr, magicOffline: g.zoetics.magic_offline, ampOffline: g.zoetics.amp_offline, castPenalty: g.skills.Sorcery.notes }, houseZeroOutGearOff: { zpRemaining: zhOff.zoetics.zp_remaining, magicOffline: zhOff.zoetics.magic_offline }, houseZeroOutGearOn: { zpRemaining: zhOn.zoetics.zp_remaining, gearZr: zhOn.zoetics.gear_zr, magicOffline: zhOn.zoetics.magic_offline }, houseOneNegative: { zpRemaining: onh.zoetics.zp_remaining, magicOffline: onh.zoetics.magic_offline }, overspend: { magicOffline: o.zoetics.magic_offline, ampOffline: o.zoetics.amp_offline }, classicOverspend: { magicOffline: cl.zoetics.magic_offline, ampOffline: cl.zoetics.amp_offline }, classicExactlyZero: { zpRemaining: cz.zoetics.zp_remaining, ampOffline: cz.zoetics.amp_offline }, classicOneLeft: { zpRemaining: co.zoetics.zp_remaining, ampOffline: co.zoetics.amp_offline } }; })()
 
 - **Expected:**
 
       { "gearOnly": { "gearZr": 3, "magicOffline": false, "ampOffline": false,
                        "castPenalty": ["−3d on casting rolls (gear/weapon ZR 3)"] },
+        "houseZeroOutGearOff": { "zpRemaining": 0, "magicOffline": false },
+        "houseZeroOutGearOn": { "zpRemaining": 0, "gearZr": 3, "magicOffline": false },
+        "houseOneNegative": { "zpRemaining": -0.5, "magicOffline": true },
         "overspend": { "magicOffline": true, "ampOffline": false },
         "classicOverspend": { "magicOffline": false, "ampOffline": true },
         "classicExactlyZero": { "zpRemaining": 0, "ampOffline": true },
         "classicOneLeft": { "zpRemaining": 1, "ampOffline": false } }
 
-- **Note:** Reported bug: "gear ZR shouldn't be able to take Amp powers
-  offline under the ZR Casting Penalty house rule — it's only supposed to
-  penalise casting." Root cause was in `calculate()` (`static/rules.js`):
-  `zpRemaining` under the house rule already excluded gear ZR (gear ZR was
-  always a casting-penalty-only effect, per `gearOnly.gearZr: 3` still landing
-  a `−3d` Sorcery note with nothing going offline), but `ampOffline` was wired
-  to `houseZr ? magicOffline : ...` — a hard alias, not a real removal. So
-  whenever cyber ZR or Amp overspend zeroed ZP (`overspend`), the engine
-  reported **two** offline flags for the same cause: `magic_offline` (the
-  correct "Spells, Amps and Summoning are unavailable" banner) AND
-  `amp_offline` (a second, redundant "AMP POWERS OFFLINE" callout on the Amp
-  Powers card, `sheet.js` ~8024).
+- **Note:** Reported bug, in two rounds. Round 1: "gear ZR shouldn't be able
+  to take Amp powers offline under the ZR Casting Penalty house rule — it's
+  only supposed to penalise casting." Root cause was in `calculate()`
+  (`static/rules.js`): `zpRemaining` under the house rule already excluded
+  gear ZR (gear ZR was always a casting-penalty-only effect, per
+  `gearOnly.gearZr: 3` still landing a `−3d` Sorcery note with nothing going
+  offline), but `ampOffline` was wired to `houseZr ? magicOffline : ...` — a
+  hard alias, not a real removal. So whenever cyber ZR or Amp overspend zeroed
+  ZP, the engine reported **two** offline flags for the same cause:
+  `magic_offline` (the correct "Spells, Amps and Summoning are unavailable"
+  banner) AND `amp_offline` (a second, redundant "AMP POWERS OFFLINE" callout
+  on the Amp Powers card, `sheet.js` ~8024). Fixed by pinning `ampOffline` to
+  `false` outright under the house rule.
 
-  The fix pins `ampOffline` to `false` outright under the house rule — Amp
-  powers have no offline state of their own there; they go dark only through
-  the shared `magicOffline` banner (cyber ZR/Amp overspend), never their own
-  flag or callout box, and gear ZR only ever shows up as the casting penalty.
+  Round 2, on the character that surfaced it (a Redcap/Wildling Amp whose Amp
+  ZP spend alone exactly equals their ZP budget): `magicOffline` still used
+  `zpRemaining <= 0`, so a character sitting at **exactly** 0 ZP — perfectly
+  spent, not overspent — read as offline regardless of gear. The reporter's
+  own read was right: "ZP can be 0 and still allow Amp Powers to be online...
+  they only go offline if it's less than 0." Fixed by changing the threshold
+  to `zpRemaining < 0`. `houseZeroOutGearOff`/`houseZeroOutGearOn` are the
+  regression guard for the exact bug reported: the same zeroed-out ZP
+  (`zpRemaining: 0`) reads `magicOffline: false` whether or not `gearZr` (0 vs
+  3) is carried — gear ZR was never the actual cause, only the coincidence the
+  reporter's test happened to change while investigating. `houseOneNegative`
+  confirms one tick past zero (`zpRemaining: -0.5`) still goes offline.
 
   Amp-offline stays a real, distinct mechanic under Classic, though — total
   carried ZR (gear included) reduces ZP there, and `hasAmpPowers && zpRemaining
-  <= 0` is what should flip Amp powers dark. A first pass at this fix left
-  Classic's comparison at the pre-existing `< 0`, one point too strict:
-  `classicExactlyZero` spends exactly the ZP budget (`zpRemaining: 0`) and
-  must read `ampOffline: true`; `classicOneLeft` (`zpRemaining: 1`) proves the
-  case doesn't just trigger on any spend.
+  <= 0` is what should flip Amp powers dark (Classic's own threshold is
+  unchanged by either round above). `classicExactlyZero` spends exactly the ZP
+  budget (`zpRemaining: 0`) and must read `ampOffline: true`; `classicOneLeft`
+  (`zpRemaining: 1`) proves the case doesn't just trigger on any spend.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ---

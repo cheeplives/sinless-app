@@ -5638,8 +5638,12 @@ function shapeshiftPicker(spellName, force) {
             // that's the spell's own wording. Not up: this IS the cast, which
             // is why the spell has no separate Cast button.
             if (up) { play.shapeshift.active = name; save(); return; }
+            // Only the CAST heals. Stepping between forms already held is a
+            // Complex action inside the same spell (the branch above), and
+            // healing on each step would make one cast an unbounded heal.
             castSpell(spellName, st.limit, () => {
               play.shapeshift.active = name;
+              healOnShift("Shapeshift", true);   // 1d6 Stun and 1d6 Physical (#67)
             });
           } }, isActive ? "Revert" : (up ? "Shift" : "Cast & Shift")),
         el("button", { class: "row-del", title: `Forget the ${name} form`,
@@ -9763,6 +9767,29 @@ function trackedPoolMod(pool) {
   return n;
 }
 
+/* Changing shape knits you back together (#67). A Wildling's man-beast form
+ * heals 1d6 Physical; the Shapeshifting spell rebuilds you wholesale and heals
+ * 1d6 of each track. The rolls are announced rather than applied silently: they
+ * ARE dice the player would otherwise have rolled themselves, and damage that
+ * moves with no explanation reads as the sheet having lost track of a wound.
+ *
+ * Nothing is said when there was nothing to heal — a fresh character shifting
+ * shape does not need a popup to be told they are still uninjured. */
+function healOnShift(what, healStun) {
+  const play = CHAR.play;
+  const hadP = play.physical_damage || 0, hadS = play.stun_damage || 0;
+  if (!hadP && !(healStun && hadS)) return;
+  const rp = rollDie(6);
+  play.physical_damage = Math.max(0, hadP - rp);
+  const parts = [`Physical −${hadP - play.physical_damage} (rolled ${rp})`];
+  if (healStun) {
+    const rs = rollDie(6);
+    play.stun_damage = Math.max(0, hadS - rs);
+    parts.push(`Stun −${hadS - play.stun_damage} (rolled ${rs})`);
+  }
+  alert(`${what} heals you. ${parts.join(", ")}.`);
+}
+
 /* One tracked effect/modifier, as a row the player fills in.
  *
  * Prompt chains were the old way in, which made "Cover, Finesse, −2" three
@@ -9826,7 +9853,10 @@ function setPoolEffect(id, on) {
   if (on) CHAR.play.pool_effects[id] = true;
   else delete CHAR.play.pool_effects[id];
   // A fresh shift arrives with a full set of Beast dice.
-  if (on && id === RULES.WILDLING_EFFECT_ID) CHAR.play.beast_dice = BEAST_DICE_MAX;
+  if (on && id === RULES.WILDLING_EFFECT_ID) {
+    CHAR.play.beast_dice = BEAST_DICE_MAX;
+    healOnShift("Beast Form", false);   // 1d6 Physical only (#67)
+  }
   playChanged();
 }
 

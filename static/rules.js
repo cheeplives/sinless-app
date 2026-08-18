@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "301";
+const APP_VERSION = "302";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -278,6 +278,15 @@ const RECOIL_IGNORED_WEAPON_TYPES = ["Pistol", "SMG"];
 const RECOIL_IGNORED_TYPES_LABEL = "pistols and SMGs";
 function recoilIgnoredForType(type) {
   return RECOIL_IGNORED_WEAPON_TYPES.some(t => String(type || "").startsWith(t));
+}
+
+/* Gun-Kata is a ONE-HANDED discipline: a two-handed pistol or SMG gets nothing
+ * from it. Every shipped Pistol/SMG row is already 1H, so this only bites
+ * homebrew -- which is exactly where an unstated assumption would go wrong.
+ * A row with no Hands column counts as 1H (weaponHands' default), which is the
+ * right answer for cyberguns: they are typed in prose and carry no Hands. */
+function recoilIgnoredForWeapon(row) {
+  return recoilIgnoredForType((row || {}).Type) && weaponHands(row) === 1;
 }
 
 /* A cybergun's recoil: DOUBLE the character's own capacity.
@@ -538,7 +547,7 @@ function noRecoilCharacterSources(augments, martialArt) {
  * Returns [{ id, label, dice, when }] — the caller decides which are live,
  * because "nonss" is a fact about the selected mode and "braced" is a
  * declaration only the player can make. Empty under the Classic rule. */
-function noRecoilBonuses(weaponType, modNames, combat) {
+function noRecoilBonuses(weaponType, modNames, combat, hands = 1) {
   if (!noRecoilActive()) return [];
   const fitted = new Set((modNames || []).map(n => String(n || "").trim()));
   const out = [];
@@ -551,7 +560,8 @@ function noRecoilBonuses(weaponType, modNames, combat) {
       }
   }
   for (const src of ((combat || {}).no_recoil_sources) || []) {
-    if (src.types && !src.types.some(t => weaponTypeIs(weaponType, t))) continue;
+    // A typed source is Gun-Kata, which is one-handed pistols and SMGs both.
+    if (src.types && !(hands === 1 && src.types.some(t => weaponTypeIs(weaponType, t)))) continue;
     out.push({ id: src.id, label: src.label, dice: src.dice, when: src.when });
   }
   return out;
@@ -5948,7 +5958,7 @@ function calculate(character) {
   // reading "Recoil 3" would be noise on every melee character's sheet.
   for (const item of weapons.items) {
     if (item.Type === "Melee" || item.Type === "Thrown") continue;
-    item.recoil_ignored = Boolean(maMods.recoil_ignored) && recoilIgnoredForType(item.Type);
+    item.recoil_ignored = Boolean(maMods.recoil_ignored) && recoilIgnoredForWeapon(item);
     item.Recoil = combatOut.recoil_capacity + toInt(item.recoil_mod);
   }
   combatOut.move += maMods.move_bonus;
@@ -6147,6 +6157,7 @@ return {
   ammoFitsUnitWeapon,
   ammoStatMods, applyAmmoStats, ammoFitsWeapon, AMMO_FITS,
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName, currencySymbol,
+  recoilIgnoredForWeapon,
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
   HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
   BASE_HACK_RANGE_METERS, deckHackRange, deckRangeConflict,

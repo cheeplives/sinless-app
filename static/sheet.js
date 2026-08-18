@@ -3696,8 +3696,13 @@ function gunKataRank() {
  * "PistolLt" / "PistolMed" / "PistolHvy" / "SMG", while cyberguns carry prose
  * ("Palm Pistol", "Forearm SMG", "Heavy Pistol"). One test covers both, and
  * homebrew of either shape comes along for free. */
-function gunKataFitsWeapon(type) {
-  return /pistol|smg/i.test(String(type || ""));
+/* Accepts a weapon ROW where the caller has one, so the one-handed half of the
+ * rule can be checked; a bare Type string (cyberguns, whose Hands column does
+ * not exist) still works and counts as one-handed, which is correct for an
+ * implanted gun. */
+function gunKataFitsWeapon(rowOrType) {
+  const row = (rowOrType && typeof rowOrType === "object") ? rowOrType : { Type: rowOrType };
+  return /pistol|smg/i.test(String(row.Type || "")) && RULES.weaponHands(row) === 1;
 }
 
 /* ---- the "No Recoil" house rule's bonus dice (#61) --------------------------
@@ -3713,7 +3718,7 @@ function gunKataFitsWeapon(type) {
 function noRecoilSourcesFor(row, calcRow) {
   const names = [...((calcRow || {}).mods || []), ...((calcRow || {}).integrated_mods || [])]
     .map(m => (m && typeof m === "object") ? m.name : m);
-  return RULES.noRecoilBonuses((row || {}).Type, names, CALC.combat);
+  return RULES.noRecoilBonuses((row || {}).Type, names, CALC.combat, RULES.weaponHands(row));
 }
 
 /* A "nonss" source is live the moment a mode other than SS is selected — that
@@ -4624,7 +4629,7 @@ function shOverview(body) {
         const mMd = mMode ? RULES.firingMode(mMode) : { dice: 0, ammo: 0 };
         const mMag = Math.max(0, parseInt(w && w.Ammo, 10) || 0);
         const mKata = gunKataRank() >= 2 && mMag > 0 && modes.length > 0
-          && gunKataFitsWeapon(w && w.Type);
+          && gunKataFitsWeapon(w);
         const mBonuses = [];
         if (mMd.dice) mBonuses.push({ label: mMode, dice: mMd.dice });
         if (mKata && mount && mount.kata) mBonuses.push({ label: "Gun-Kata", dice: 1 });
@@ -4877,7 +4882,7 @@ function shOverview(body) {
             : (ammo.row ? RULES.applyAmmoStats(base, ammo.mods) : { ...base });
           const magSize = Math.max(0, parseInt(calcRow.Ammo ?? r.Ammo, 10) || 0);
           const kataOffered = gunKataRank() >= 2 && magSize > 0 && modes.length > 0
-            && gunKataFitsWeapon(r.Type);
+            && gunKataFitsWeapon(r);
           const kataOn = kataOffered && !!held.kata;
           // No Recoil (#61): a Bi-pod / Gyro-mount / Gas Vent on this gun, plus
           // the Gyromount augment and Gun-Kata 3, as bonus dice. Distinct from

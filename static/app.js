@@ -2238,6 +2238,9 @@ function concealBit(row, calcRow) {
    Shared with sheet.js so chargen and play agree. */
 function recoilBit(calcRow) {
   const c = calcRow || {};
+  // Under the "No Recoil" house rule recoil isn't a stat, so no weapon carries
+  // one — every gun line in chargen and in play goes through here (#61).
+  if (!RULES.recoilInPlay()) return "";
   if (c.recoil_ignored) return " · Recoil ignored";
   if (c.Recoil == null) return "";
   // A cybergun labels its own contribution "implanted" rather than "mods" —

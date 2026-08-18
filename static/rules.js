@@ -4312,9 +4312,12 @@ function deriveCombatStats(heritage, finalAttributes, augments, amp, weaponWeigh
   const simpleActions = amp.powers_taken.has("Adrenaline Boost")
     ? ADRENALINE_BOOST_SIMPLE_ACTIONS : DEFAULT_SIMPLE_ACTIONS;
 
-  const isSynthetic = heritage.type === "Synthetic";
-  let carriedWeight = weaponWeight + armorWeight + gearWeight;
-  if (!isSynthetic) carriedWeight += cyberwareZoeticRating;
+  // Weight is weight (#65). This used to fold cyberware Zoetic Rating into
+  // the same figure, which added a magic-interference number to a pile of
+  // kilograms and produced a total that was neither: chrome is INSIDE you and
+  // weighs nothing you can put down. ZR has its own home in CALC.zoetics
+  // (augment_zr, already exempt for Synthetics) and is reported there.
+  const carriedWeight = weaponWeight + armorWeight + gearWeight;
 
   return {
     physical: physicalCondition,

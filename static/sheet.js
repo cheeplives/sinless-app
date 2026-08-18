@@ -7204,18 +7204,25 @@ function shGear(body) {
     el("div", { class: "sh-advrow" },
       el("span", {}, "Equipped/worn weight vs Strength"),
       el("b", { style: overburdened ? "color:var(--bad)" : "" }, `${load} / ${strength}`)));
-  // The engine's own total, which is a DIFFERENT figure and was the Combat
-  // card's "Carried weight" before that card was retired. It counts everything
-  // owned rather than only what's on you, and adds the burden of your chrome
-  // (cyberware ZR, which Synthetics don't pay). The line above is what presses
-  // on Strength; this one is what you're hauling in total. Shown only when they
-  // disagree — with nothing stashed and no chrome they're the same number, and
-  // two identical rows would just look like a bug.
+  // The engine's own total: everything OWNED rather than only what's on you,
+  // so the gap between the two lines is what you left in the stash. Shown only
+  // when they disagree — with nothing stashed they're the same number, and two
+  // identical rows would just look like a bug.
   if (Math.abs((CALC.combat.carried_weight || 0) - load) > 0.05) {
     loadCard.append(el("div", { class: "sh-advrow" },
-      el("span", { class: "sub" }, "Total owned, including chrome"),
+      el("span", { class: "sub" }, "Total owned weight"),
       el("b", { class: "sub" }, String(CALC.combat.carried_weight))));
   }
+  // Chrome used to be added INTO the weight above, which mixed a Zoetic Rating
+  // into a figure measured in kilograms (#65). It's a real burden and still
+  // worth seeing here beside the gear it competes with, but it is its own unit
+  // and never presses on Strength — so it gets its own line, named for what it
+  // is. Already zero for Synthetics, who don't pay it.
+  const chromeZr = (CALC.zoetics || {}).augment_zr || 0;
+  if (chromeZr)
+    loadCard.append(el("div", { class: "sh-advrow" },
+      el("span", { class: "sub" }, "Chrome — Zoetic Rating (not weight)"),
+      el("b", { class: "sub" }, String(chromeZr))));
   if (overburdened)
     loadCard.append(el("div", { class: "sh-callout", style: "border-color:var(--bad);color:var(--bad)" },
       el("b", {}, "Overburdened — "),

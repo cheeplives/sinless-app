@@ -2175,29 +2175,34 @@ function kismetPoolState() {
  * reveal the −/+ controls, same click-to-reveal idiom as the doses banner and
  * Conditional Effects panel use elsewhere on this tab. */
 function poolBoostRow(pool, boost, setBoost, btn) {
+  const stop = e => e.stopPropagation();
   if (boost === 0 && !poolTempOpen.has(pool)) {
     const open = () => { poolTempOpen.add(pool); renderSheet(); };
-    return el("div", { class: "sh-pool-boost collapsed", role: "button", tabindex: "0",
+    return el("div", { class: "sh-pool-temp collapsed", role: "button", tabindex: "0",
         title: "No temporary dice — click to add some",
-        onclick: e => { e.stopPropagation(); open(); },
-        onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); open(); } } },
-      el("span", { class: "sub" }, "temp +0 ▸"));
+        onclick: e => { stop(e); open(); },
+        onkeydown: e => { if (e.key === "Enter" || e.key === " ") { stop(e); open(); } } },
+      el("span", { class: "sh-pool-temp-lbl" }, "temp"),
+      el("span", { class: "sh-pool-temp-plus" }, "+"));
   }
-  return el("div", { class: "sh-pool-boost", onclick: e => e.stopPropagation() },
-    el("span", { class: "sub" }, "temp"),
-    btn("−", () => setBoost(boost - 1), "Reduce temporary dice (can go negative)"),
-    el("b", { title: "Temporary bonus/penalty dice",
-      style: boost > 0 ? "color:var(--ok)" : boost < 0 ? "color:var(--bad)" : "" },
-      boost > 0 ? `+${boost}` : boost < 0 ? `−${Math.abs(boost)}` : "+0"),
+  // Vertical, and up means more (#78): a spinner read top-to-bottom is the one
+  // shape nobody has to think about, and stacking the two targets along the
+  // tile edge gives each of them the full height to be hit in rather than the
+  // few pixels either side of the number they used to share.
+  return el("div", { class: "sh-pool-temp", onclick: stop },
     btn("+", () => setBoost(boost + 1), "Add temporary dice"),
-    // At 0 there's nothing to reset — that slot folds the row back away
-    // instead, so opening it to add a die and changing your mind isn't a
-    // one-way door. A live boost keeps the reset: folding it away would hide
-    // an active effect, which the row is never allowed to do.
+    el("b", { class: "sh-pool-temp-val", title: "Temporary bonus/penalty dice",
+      style: boost > 0 ? "color:var(--ok)" : boost < 0 ? "color:var(--bad)" : "" },
+      boost > 0 ? `+${boost}` : boost < 0 ? `−${Math.abs(boost)}` : "0"),
+    btn("−", () => setBoost(boost - 1), "Reduce temporary dice (can go negative)"),
+    // At 0 there is nothing to reset — that slot folds the strip away instead,
+    // so opening it to add a die and changing your mind is not a one-way door.
+    // A live boost keeps the reset: folding it would hide an active effect,
+    // which this control is never allowed to do.
     boost
       ? btn("↺", () => setBoost(0), "Reset temporary dice to 0")
-      : el("button", { class: "mini-btn", title: "Fold this row away",
-          onclick: e => { e.stopPropagation(); poolTempOpen.delete(pool); renderSheet(); } },
+      : el("button", { class: "mini-btn", title: "Fold this away",
+          onclick: e => { stop(e); poolTempOpen.delete(pool); renderSheet(); } },
           "▴"));
 }
 
@@ -7250,6 +7255,82 @@ function shUseDoseBtn(entry, row, owned) {
     } }, "Use");
 }
 
+/* A configure-then-buy dialog for anything whose price depends on choices.
+ *
+ * Buying armor or a vehicle in play used to be two disconnected halves: you
+ * paid the base price on the Buy list, and only afterwards found the Quality,
+ * Style, Extras or Condition controls on the owned row, each charging its own
+ * difference as you touched it. That works, but it asks the player to commit
+ * before they can see what the thing actually costs. This collects every
+ * decision first, prices them together, and asks once (#73).
+ *
+ * `fields` are {key, label, type: "select" | "checks", options: [{value, label}],
+ * initial}. `priceOf(state)` returns the total for the current choices -- the
+ * caller owns the arithmetic, because armor surcharges ADD onto the base while
+ * a vehicle Condition SCALES it, and this dialog should not have an opinion.
+ *
+ * Resolves to the chosen state, or null if cancelled. An unaffordable total is
+ * shown and named but not blocked: overdrawing is the player's call everywhere
+ * else in play, and it stays their call here.  */
+function buyDialog({ title, sub, fields, priceOf }) {
+  return new Promise(resolve => {
+    const state = {};
+    for (const f of fields) state[f.key] = f.initial;
+    const backdrop = el("div", { class: "mount-modal-backdrop" });
+    const done = v => { document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") done(null); };
+
+    const totalLine = el("div", { class: "sh-buy-total" });
+    const cashLine = el("div", { class: "sub" });
+    const buyBtn = el("button", { class: "btn-add", onclick: () => done(state) }, "Buy");
+    const refresh = () => {
+      const total = priceOf(state);
+      totalLine.replaceChildren(el("span", { class: "sub" }, "Total "), el("b", {}, fmt(total)));
+      const over = total - CHAR.play.cash;
+      cashLine.textContent = over > 0
+        ? `You have ${fmt(CHAR.play.cash)} — this overdraws by ${fmt(over)}.`
+        : `You have ${fmt(CHAR.play.cash)}, leaving ${fmt(-over)}.`;
+      cashLine.style.color = over > 0 ? "var(--bad)" : "";
+      buyBtn.textContent = over > 0 ? "Buy anyway" : "Buy";
+    };
+
+    const rows = fields.map(f => {
+      if (f.type === "checks") {
+        const box = el("div", { class: "sh-buy-checks" });
+        for (const o of f.options) {
+          box.append(el("label", { class: "opt" },
+            el("input", { type: "checkbox",
+              onchange: e => {
+                const set = new Set(state[f.key]);
+                if (e.target.checked) set.add(o.value); else set.delete(o.value);
+                state[f.key] = [...set];
+                refresh();
+              } }),
+            el("span", {}, o.label)));
+        }
+        return el("div", { class: "sh-buy-field" }, el("b", {}, f.label), box);
+      }
+      const sel = el("select", { onchange: e => { state[f.key] = e.target.value; refresh(); } },
+        ...f.options.map(o => el("option", { value: o.value }, o.label)));
+      sel.value = f.initial ?? "";
+      return el("div", { class: "sh-buy-field" }, el("b", {}, f.label), sel);
+    });
+
+    const modal = el("div", { class: "card mount-modal", style: "max-width:460px" },
+      el("h3", {}, title),
+      sub ? el("p", { class: "hint" }, sub) : null,
+      ...rows,
+      el("div", { class: "sh-buy-foot" }, totalLine, cashLine),
+      el("div", { style: "display:flex;gap:8px;margin-top:12px" },
+        buyBtn,
+        el("button", { class: "btn", onclick: () => done(null) }, "Cancel")));
+    backdrop.append(modal);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) done(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(backdrop);
+    refresh();
+  });
+}
 /* A Quality/Style dropdown on an owned piece of armor, priced like an Extra.
  *
  * The multiplier is on the piece as a whole, so the marginal charge is
@@ -7902,12 +7983,50 @@ function shGear(body) {
     } }));
   buyBlock("Armor", categoryBrowser({ id: "sh-buy-armor", groups: armorBuyGroups,
     rerender: renderSheet, afterAdd: () => playChangedRecalc(),
-    onAdd: name => {
+    onAdd: async name => {
       const r = DATA.tables.armor.find(x => x.Armor === name) || {};
-      const cost = Math.round((+r.Cost || 0) * mult);
-      if (!overdrawOK(name, cost)) return;
-      CHAR.play.purchases.armor.push({ name, style: "", material: "", extras: [], active: true });
-      logCash(`Bought ${name}`, -cost, { kind: "armor", name });
+      const base = +r.Cost || 0;
+      const styleable = r.Style === "Y";
+      // Surcharges ADD onto the base -- base x (multiplier - 1) each, never
+      // compounding -- which is exactly what priceArmor does, so the figure in
+      // the dialog is the figure the engine will price the piece at.
+      const mOf = (table, col, v) => {
+        const row = table.find(x => x[col] === v);
+        return row ? (+row.Multiplier || 1) : 1;
+      };
+      const priceOf = st => Math.round((base
+        + base * (mOf(DATA.tables.armor_materials, "Material", st.material) - 1)
+        + (styleable ? base * (mOf(DATA.tables.armor_styles, "Style", st.style) - 1) : 0)
+        + (styleable ? (st.extras || []).reduce((n, e) =>
+            n + base * (mOf(DATA.tables.armor_extras, "Extra", e) - 1), 0) : 0)) * mult);
+      const opt = (table, col) => [{ value: "", label: "—" },
+        ...table.map(x => ({ value: x[col], label: `${x[col]} ×${x.Multiplier}` }))];
+      const chosen = await buyDialog({
+        title: `Buy ${name}`,
+        sub: `${r.Ballistic}B / ${r.Impact}I · weight ${r.wt}`
+          + (styleable ? " · styleable" : " · fixed design, no Style or Extras"),
+        fields: [
+          { key: "material", label: "Quality", type: "select",
+            options: opt(DATA.tables.armor_materials, "Material"), initial: "" },
+          ...(styleable ? [
+            { key: "style", label: "Style", type: "select",
+              options: opt(DATA.tables.armor_styles, "Style"), initial: "" },
+            { key: "extras", label: "Extras", type: "checks",
+              options: DATA.tables.armor_extras.map(x => ({ value: x.Extra,
+                label: `${x.Extra} ×${x.Multiplier}` })), initial: [] },
+          ] : []),
+        ],
+        priceOf,
+      });
+      if (!chosen) return;
+      const cost = priceOf(chosen);
+      CHAR.play.purchases.armor.push({ name, style: chosen.style || "",
+        material: chosen.material || "", extras: chosen.extras || [], active: true });
+      logCash(`Bought ${name}`
+        + ([chosen.material, chosen.style, ...(chosen.extras || [])].filter(Boolean).length
+            ? ` (${[chosen.material, chosen.style, ...(chosen.extras || [])].filter(Boolean).join(", ")})` : ""),
+        -cost, { kind: "armor", name });
+      await playChangedRecalc();
     } }));
   buyBlock("Gear", categoryBrowser({ id: "sh-buy-gear", groups: gearBuyGroups,
     rerender: renderSheet, afterAdd: () => {},
@@ -9833,13 +9952,29 @@ function shRigging(body) {
     rigBuySection.append(el("div", { class: "sh-unit-add" }, el("b", {}, `Buy new ${cfg.title.toLowerCase().replace(/s$/, "")}`),
       categoryBrowser({ id: `buy-${cfg.table}`, groups: buyGroups,
         rerender: renderSheet, afterAdd: () => playChangedRecalc(),
-        onAdd: name => {
+        onAdd: async name => {
           const row = DATA.tables[cfg.table].find(x => x[cfg.nameKey] === name) || {};
-          const cost = Math.round((+row.Cost || 0) * baseMult);
-          if (CHAR.play.cash < cost
-              && !confirm(`${name} costs ${fmt(cost)} but you have ${fmt(CHAR.play.cash)}. Overdraw?`)) return;
-          CHAR.play.purchases[cfg.table].push({ name, weapons: [], mods: [] });
-          logCash(`Bought ${name}`, -cost, { kind: cfg.table.replace(/s$/, ""), name });
+          const base = +row.Cost || 0;
+          // Condition SCALES the base chassis price (it does not add a
+          // surcharge the way armor Quality does), matching priceFittedVehicle.
+          const priceOf = st => Math.round(
+            base * (RULES.VEHICLE_CONDITION_FACTORS[st.condition] ?? 1) * baseMult);
+          const chosen = await buyDialog({
+            title: `Buy ${name}`,
+            sub: `Body ${row.Body} · Move ${row.Move} · Handling ${row.Handling}`,
+            fields: [{ key: "condition", label: "Condition", type: "select",
+              options: RULES.VEHICLE_CONDITIONS.map(c => ({ value: c,
+                label: `${c} (×${RULES.VEHICLE_CONDITION_FACTORS[c]})`
+                  + (RULES.VEHICLE_CONDITION_EFFECTS[c] ? ` — ${RULES.VEHICLE_CONDITION_EFFECTS[c]}` : "") })),
+              initial: "Pristine" }],
+            priceOf,
+          });
+          if (!chosen) return;
+          CHAR.play.purchases[cfg.table].push({ name, condition: chosen.condition,
+            weapons: [], mods: [] });
+          logCash(`Bought ${name} (${chosen.condition})`, -priceOf(chosen),
+            { kind: cfg.table.replace(/s$/, ""), name });
+          await playChangedRecalc();
         } })));
   };
   unitBlock(RIG_UNIT_CFG.drones, ownedDrones(), CALC.drones);

@@ -863,16 +863,25 @@ label.opt input{margin-top:3px}
 /* line-height:1 so the row hugs its tallest child (the 13px counter) instead
    of inheriting body's 1.45 off a 14px base. Coarse pointers are unaffected —
    the .mini-btn 32px floor still wins there, and it should. */
-.sh-pool-boost{display:flex;gap:4px;justify-content:center;align-items:center;margin-top:2px;
-  line-height:1}
-.sh-pool-boost .sub{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
-.sh-pool-boost b{font-family:var(--mono);font-size:13px;min-width:22px}
-/* Folded state: one plain text line, no buttons -- the mini-btn 32px coarse
-   floor doesn't apply because there's nothing to press yet. Click anywhere on
-   the line to reveal the real row. */
-.sh-pool-boost.collapsed{cursor:pointer}
-.sh-pool-boost.collapsed .sub{letter-spacing:.06em}
-.sh-pool-boost.collapsed:hover .sub{color:var(--text)}
+/* Temporary dice sit in a vertical strip down the tile's LEFT EDGE (#78).
+   Absolutely placed so the pool's own big number stays optically centred in
+   the tile instead of being shoved right by a sibling column; the tile
+   reserves the width with padding-left. Stacking the two targets along the
+   full height gives each of them room to be hit, which the old side-by-side
+   row squeezed into a few pixels either side of the value. */
+.sh-pool{position:relative;padding-left:30px}
+.sh-pool-temp{position:absolute;left:0;top:0;bottom:0;width:26px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  line-height:1;border-right:1px solid var(--line);border-radius:6px 0 0 6px}
+.sh-pool-temp .mini-btn{width:22px;min-width:0;padding:1px 0;line-height:1.1}
+.sh-pool-temp-val{font-family:var(--mono);font-size:12px;line-height:1.1}
+/* Folded: a quiet full-height target rather than a line of text, so the pool
+   keeps its vertical space and the whole edge is the hit area. */
+.sh-pool-temp.collapsed{cursor:pointer;gap:3px;color:var(--dim)}
+.sh-pool-temp.collapsed:hover{color:var(--text);background:var(--panel)}
+.sh-pool-temp-lbl{font-family:var(--disp);font-size:8px;letter-spacing:.08em;
+  text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg)}
+.sh-pool-temp-plus{font-family:var(--mono);font-size:13px;line-height:1}
 .sh-top{align-items:flex-start}
 .sh-pool-note{font-size:9.5px;color:var(--amber);margin-top:2px;max-width:150px;line-height:1.3}
 
@@ -1563,7 +1572,7 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   input[type=checkbox],input[type=radio]{width:20px;height:20px}
   .sh-fire-kata input{width:18px;height:18px}
   .sv-edit{padding:5px 6px}
-  .sh-modslot-label,.sh-pool-boost .sub,.sh-pool-note{font-size:10.5px}
+  .sh-modslot-label,.sh-pool-temp-lbl,.sh-pool-note{font-size:10.5px}
   .sh-modslot-eff,.sh-pool-kismet{font-size:11px}
   th{font-size:11px}
   .sh-skilltable th{font-size:10.5px}
@@ -1625,7 +1634,7 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-ro-actions{display:flex;gap:8px;flex-wrap:wrap}
 /* When viewing read-only, neutralise the sheet's mutation controls (defence in
  * depth — nothing persists anyway, but this makes it clearly non-editable). */
-body.sheet-readonly .sh-pool-btns,body.sheet-readonly .sh-pool-boost,
+body.sheet-readonly .sh-pool-btns,body.sheet-readonly .sh-pool-temp,
 body.sheet-readonly .mini-btn,body.sheet-readonly .stepper,
 body.sheet-readonly .sh-box,body.sheet-readonly .counter,
 body.sheet-readonly .btn-add,body.sheet-readonly .row-del,
@@ -1657,3 +1666,13 @@ body.sheet-readonly .sh-readonly-banner .btn{pointer-events:auto;opacity:1}
    rather than forcing the gear table wider than the viewport. */
 .sh-armor-traits{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
 .sh-armor-traits select{font-size:11px;max-width:100%}
+
+/* Configure-then-buy dialog (#73): fields stacked, then the total set apart so
+   the number you are approving is the last thing read before the button. */
+.sh-buy-field{margin:10px 0}
+.sh-buy-field > b{display:block;font:600 12px/1.3 var(--body);margin-bottom:4px}
+.sh-buy-field select{width:100%}
+.sh-buy-checks{display:grid;gap:2px;max-height:180px;overflow-y:auto;
+  border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--ink)}
+.sh-buy-foot{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.sh-buy-total b{font-family:var(--mono);font-size:18px;color:var(--amber)}

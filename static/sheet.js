@@ -5196,13 +5196,14 @@ function actionRows() {
   }
   return rows;
 }
-/* Fresh round: every pool back to full, every action unspent, Beast dice
- * refreshed. Shared by actionsCard()'s "↻ New Round" button and
+/* Fresh round: every pool back to full, every action unspent, Beast and MCP
+ * dice refreshed. Shared by actionsCard()'s "↻ New Round" button and
  * actionsStrip()'s copy of the same button, so both clear the same things. */
 function newRound() {
   for (const p of POOL_ORDER) poolState(p).setUsed(0);
   CHAR.play.actions_used = {};
   refreshBeastDice();     // Wildling's Beast dice refresh each round too
+  refreshMcpDice();       // ...and a deck's MCP dice, same deal (#79)
   playChanged();
 }
 /* What a round costs you, tracked as it's spent (issue #32).
@@ -8718,6 +8719,129 @@ function shMagic(body) {
   }
 }
 
+/* ---- running programs (#79) -------------------------------------------------
+ * Running a program is a Computer: Hacking test with the program's rating added
+ * to the dice, and the dice have to be paid for. Two things pay: the deck's MCP
+ * — spare cycles the machine itself contributes, sized by its MCP rating — and
+ * then the decker's own Focus pool. MCP goes first, because it is the resource
+ * that exists only for this and refreshes every round anyway; spending Focus
+ * while the deck still had cycles left would be strictly worse for the player
+ * with no decision behind it.
+ *
+ * MCP dice are stored the way Beast dice are (play.mcp_dice, refreshed by New
+ * Round) rather than as a pool: the max is derived from whichever deck is
+ * active, so only the REMAINDER is play state and swapping decks re-reads the
+ * ceiling for free.
+ */
+
+/* The size of the MCP reserve: the MCP rating of the deck the character is
+ * jacked into. Zero with no active deck, which is also the "no MCP dice" case,
+ * so callers need no separate check. Goes through RULES.equippedDeckName so it
+ * agrees with the engine about which deck is the live one. */
+function mcpDiceMax() {
+  const name = RULES.equippedDeckName(CHAR);
+  if (!name) return 0;
+  const row = DATA.tables.decks.find(x => x.Name === name) || {};
+  return Math.max(0, toIntSafe(row.MCP));
+}
+
+/* MCP dice still available. null (never touched) reads as full, and the value
+ * is clamped rather than rewritten, so downgrading decks mid-round can't leave
+ * a stored number above the new ceiling — same lossless clamp poolState uses. */
+function mcpDiceLeft() {
+  const max = mcpDiceMax();
+  const stored = CHAR.play.mcp_dice;
+  return Math.max(0, Math.min(max, stored == null ? max : stored));
+}
+
+/* MCP dice come back with the round, like the pools and Wildling's Beast dice.
+ * Written back as the raw max — a character with no deck stores 0, which is the
+ * honest reading of "you have no MCP dice" rather than "untouched, assume
+ * full". */
+function refreshMcpDice() { CHAR.play.mcp_dice = mcpDiceMax(); }
+
+/* Everything the Run button needs to know before anything is spent: the skill
+ * the program rolls, what the roll costs in dice, and what is actually there to
+ * pay with. Kept separate from the spending so the button can render its
+ * tooltip from the same numbers the click will charge.
+ *
+ * The skill is RULES.programSkill's answer where it has one — under the Classic
+ * EW house rule the EW programs roll Computer: Electronic Warfare, and the tab
+ * already tells the player so on the row itself — falling back to plain
+ * Computer: Hacking for everything else. Both sit in the Focus pool, so #79's
+ * "charges the character's Focus pool" holds either way; the pool is read off
+ * the skill rather than hardcoded so a house rule that moved one wouldn't
+ * silently charge the wrong pool. */
+function programRunSpec(name, row) {
+  const skill = RULES.programSkill(name) || RULES.HACKING_SKILL;
+  const s = (CALC.skills || {})[skill] || {};
+  const skillDice = Math.max(0, toIntSafe(s.final));
+  const rating = RULES.programRating(name);
+  const pool = s.pool || "Focus";
+  const mcp = mcpDiceLeft();
+  const focus = poolState(pool).remaining;
+  return {
+    skill, pool, skillDice, rating,
+    cost: skillDice + rating,
+    // Skill dice bonuses (a Skillsoft, a piece of kit) are free dice the way
+    // they are everywhere else on the sheet: rolled, never paid for.
+    bonusDice: Math.max(0, toIntSafe(s.dice_bonus)),
+    mcp, focus, available: mcp + focus,
+    // A Complex Action is 2 Simple Actions; see RULES.programActionUnits.
+    actionUnits: RULES.programActionUnits(row),
+    actionType: String((row || {})["Action Type"] || "").trim(),
+  };
+}
+
+/* Run a program: charge the action, charge the dice, open the roller loaded.
+ *
+ * The dice are spent HERE rather than handed to the roller as a `pool`, which
+ * is what every other rollable on the sheet does. It has to be: the roller
+ * knows how to bill exactly one pool, and #79 needs two resources drained in a
+ * fixed order (MCP, then Focus). So the cost is settled up front and the roller
+ * is opened pool-less — it would otherwise bill Focus a second time for dice
+ * the MCP already paid for. The note tells the player what moved.
+ *
+ * Short of dice is NOT a refusal (#79): say so, spend everything that is there,
+ * and open the roller with the dice they actually have. Short of ACTIONS is a
+ * refusal, because that is spendActionUnits' contract everywhere else — a
+ * refused action costs nothing, and the dice must not move if the run never
+ * happened. So the action is charged first. */
+function runProgram(name, row) {
+  const spec = programRunSpec(name, row);
+  // Gated on the loadout switch inside spendActionUnits: with action costs off
+  // this is a no-op that succeeds, and only the dice are charged.
+  if (!spendActionUnits("Decking", spec.actionUnits, `running ${name}`)) return;
+
+  const paid = Math.min(spec.cost, spec.available);
+  const fromMcp = Math.min(paid, spec.mcp);
+  const fromPool = paid - fromMcp;
+  CHAR.play.mcp_dice = spec.mcp - fromMcp;
+  if (fromPool) {
+    const ps = poolState(spec.pool);
+    CHAR.play.pool_used = CHAR.play.pool_used || {};
+    CHAR.play.pool_used[spec.pool] = Math.min(ps.max, ps.used + fromPool);
+  }
+
+  if (paid < spec.cost)
+    alert(`Not enough dice to run ${name} — it needs ${spec.cost} `
+      + `(${spec.skillDice} ${spec.skill} + ${spec.rating} rating) and you have `
+      + `${spec.available} (${spec.mcp} MCP + ${spec.focus} ${spec.pool}).\n\n`
+      + `Rolling the ${paid} you have.`);
+
+  const paidBits = [];
+  if (fromMcp) paidBits.push(`${fromMcp} MCP`);
+  if (fromPool) paidBits.push(`${fromPool} ${spec.pool}`);
+  openPoolRoller({
+    dice: paid, bonus: spec.bonusDice, pool: "",
+    label: `Run ${name}`,
+    note: `${spec.skill}: ${spec.skillDice} skill + ${spec.rating} rating`
+      + (spec.bonusDice ? ` + ${spec.bonusDice} bonus` : "")
+      + (paidBits.length ? ` · paid ${paidBits.join(" + ")}` : " · nothing to pay with"),
+  });
+  playChanged();
+}
+
 /* ------------------------------------------------ decking tab */
 function shDecking(body) {
   const dk = CHAR.play.decking;
@@ -8836,11 +8960,28 @@ function shDecking(body) {
       : el("p", { class: "hint" }, "Set a deck active to slot its Hacking program."));
 
   const threads = active ? +active.Threads : 0;
+  // MCP dice (#79) read out beside the thread count because that is where the
+  // player is looking when they pick a program to run, and they are the first
+  // thing a run spends. They refresh on New Round like the pools; the ↻ is here
+  // for the same reason Beast dice have one — a table that runs rounds loosely
+  // still needs a way to top them up.
+  const mcpMax = mcpDiceMax();
+  const mcpLeft = mcpDiceLeft();
   const progCard = el("div", { class: "card sh-card" },
     el("div", { class: "sh-card-head" },
       el("h3", {}, "Programs"),
-      el("span", { class: "chip" + (dk.loaded.length > threads ? " neg" : "") },
-        `Loaded ${dk.loaded.length} / ${threads}`)),
+      el("span", { style: "display:inline-flex;gap:6px;align-items:center" },
+        mcpMax
+          ? el("span", { class: "chip" + (mcpLeft ? " ok" : " neg"),
+              title: `MCP dice from ${dk.active_deck} — spent before the Focus `
+                + "pool when you run a program. Refresh each round." },
+              `MCP dice ${mcpLeft} / ${mcpMax}`)
+          : null,
+        mcpMax
+          ? counterBtn("↻", () => { refreshMcpDice(); playChanged(); }, "good")
+          : null,
+        el("span", { class: "chip" + (dk.loaded.length > threads ? " neg" : "") },
+          `Loaded ${dk.loaded.length} / ${threads}`))),
     hackBox);   // the Hacking program lives at the top of the Programs section
   // Programs whose I/O is N/A or No are never loaded onto threads — they run
   // without occupying a thread slot, so no Load button is shown for them. The
@@ -8854,13 +8995,38 @@ function shDecking(body) {
     const loaded = dk.loaded.includes(name);
     const nodeCtrl = ` · Node Control ${r["Node Control"] || "N"}`;
     const pSkill = RULES.programSkill(name);   // EW programs: EW skill (Classic) or Hacking
+    // Run Program (#79). Not offered on the Hacking family: that is the deck's
+    // operating system, not a tool you run — which is also why its Action Type
+    // is "N/A" — so a Run button there would be an invitation to spend dice on
+    // nothing. Everything else gets one, loaded or not: loading a program is
+    // about threads, not about whether you can point it at something.
+    const runSpec = RULES.isHackingProgram(name) ? null : programRunSpec(name, r);
     progCard.append(el("div", { class: "sh-advrow" },
       el("span", {}, el("b", {}, name),
-        el("span", { class: "sub" }, ` ${r.Attack || ""} · I/O ${io} · Alert ${r.Alert || 0}${nodeCtrl}`),
+        // Action Type is on the face now that Run charges it (#79) — what a
+        // button will cost you shouldn't live only in its tooltip.
+        el("span", { class: "sub" }, ` ${r.Attack || ""} · I/O ${io} · Alert ${r.Alert || 0}${nodeCtrl}`
+          + (runSpec && runSpec.actionType && runSpec.actionType !== "N/A"
+              ? ` · ${runSpec.actionType} Action` : "")),
         pSkill ? el("div", { class: "sub" }, `Skill: ${pSkill}`) : null,
         r.Effect ? el("div", { class: "sub" }, r.Effect) : null,
         descriptionExpander(r.Description, `programs:${name}`)),
       el("span", { style: "display:flex;gap:6px;align-items:center" },
+        runSpec
+          // The dice count is on the face, not just the tooltip: it is the
+          // number the player is deciding on, and at a coarse pointer there is
+          // no hover to read.
+          ? el("button", { class: "btn good",
+              title: `Roll ${runSpec.cost}d6 — ${runSpec.skill} ${runSpec.skillDice}`
+                + ` + ${name} rating ${runSpec.rating}`
+                + (runSpec.bonusDice ? `, bonus ${runSpec.bonusDice}` : "")
+                + `. Costs ${runSpec.cost} dice: ${runSpec.mcp} MCP available,`
+                + ` then ${runSpec.pool}`
+                + (runSpec.actionUnits
+                    ? ` · ${runSpec.actionType} Action (Decking Exploit first, then Simple)`
+                    : ""),
+              onclick: () => runProgram(name, r) }, `Run (${runSpec.cost}d)`)
+          : null,
         loadable
           ? counterBtn(loaded ? "Unload" : "Load", () => {
               if (loaded) dk.loaded = dk.loaded.filter(n => n !== name);

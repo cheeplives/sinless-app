@@ -209,6 +209,7 @@ function ensurePlay() {
   reconcileLifestyles();
   ensureKit();
   migrateHackingProgram();
+  pruneLoadedPrograms();      // after the kit exists — it is what "owned" means
   ensureCreationBudget();     // after the migration, so the freeze prices it
   return CHAR.play;
 }
@@ -458,6 +459,16 @@ const CASH_UNDO = {
     ls.months = Math.max(0, +u.from || 0);
     return true;
   },
+  // Undoing a chargen-side removal puts the lifestyle and its prepaid months
+  // back where they were. It comes back inactive — whatever replaced it is
+  // current now, and picking between them is the player's call.
+  lifestyle_restore: u => {
+    const list = CHAR.play.lifestyles = CHAR.play.lifestyles || [];
+    if (list.some(x => x.name === u.name)) return false;
+    list.splice(Math.max(0, Math.min(list.length, +u.at || 0)),
+      0, { name: u.name, months: Math.max(0, +u.months || 0), active: !list.length });
+    return true;
+  },
 };
 async function undoCashSpend(entry) {
   const log = CHAR.play.cash_log;
@@ -566,6 +577,33 @@ function migrateHackingProgram() {
     logCash(`Hacking rating ${legacy} became ${program}, slotted into `
       + `${(CHAR.decks || []).length || (play.kit ? (play.kit.decks || []).length : 0)} deck(s)`, 0);
   }
+}
+
+/* `decking.loaded` is a list of program NAMES, so it only means anything while
+ * the character still owns those programs — and nothing was keeping the two in
+ * step (issue #74). Selling a program in play unloads it, but a trip back
+ * through chargen doesn't: drop De-rez, or re-rate Crack Encryption 5 up to 6,
+ * and reconcileKit faithfully updates the kit while `loaded` keeps pointing at
+ * names nobody owns. The thread counter reads `loaded.length` and the program
+ * rows read `loaded.includes(name)`, so the header claimed 4 of 7 threads in
+ * use above a list with nothing loaded.
+ *
+ * Fixed here rather than in the header, because the count isn't wrong about the
+ * array — the array is wrong. Programs that never occupy a thread are dropped
+ * too: they have no Load button, so being in here can only ever inflate the
+ * count. Runs on every load and after every re-finalize; it is idempotent, so
+ * the ledger note lands once, when there is actually something to say. */
+function pruneLoadedPrograms() {
+  const dk = CHAR.play.decking;
+  if (!dk || !Array.isArray(dk.loaded) || !dk.loaded.length) return;
+  const owned = new Set(allPrograms());
+  const keep = dk.loaded.filter(name => owned.has(name)
+    && RULES.programNeedsThread(DATA.tables.programs.find(x => x.Name === name)));
+  if (keep.length === dk.loaded.length) return;
+  const dropped = dk.loaded.filter(n => !keep.includes(n));
+  dk.loaded = keep;
+  if (CHAR.play.cash_log)
+    logCash(`Unloaded ${dropped.join(", ")} — no longer owned`, 0);
 }
 
 /* What creation cost, priced from the chargen record — never from the kit, so
@@ -733,6 +771,9 @@ function reconcileKit() {
     }
   }
   play.kit_baseline = kitFromChargen();
+  // A chargen edit can take a loaded program out of the kit; the thread list
+  // holds names, so it has to follow the kit rather than outlive it (#74).
+  pruneLoadedPrograms();
   if (notes.length)
     logCash(`Chargen build edited: ${notes.slice(0, 6).join(", ")}`
       + (notes.length > 6 ? ` +${notes.length - 6} more` : ""), 0);
@@ -882,7 +923,11 @@ function chargenLifestyles() {
 /* Snapshot the chargen months so a later sync can tell "the player burned a
  * month" from "someone corrected the purchase in chargen". */
 function stampLifestyleBaseline(play) {
-  const baseline = play.lifestyles_baseline = play.lifestyles_baseline || {};
+  // Rebuilt, not merged: the baseline is "what chargen said at the last sync",
+  // the same contract as kit_baseline. Merging left names chargen had dropped
+  // in it forever, and the removal pass below keys off exactly this map — so a
+  // stale key would delete a lifestyle bought later in play (issue #75).
+  const baseline = play.lifestyles_baseline = {};
   for (const ls of chargenLifestyles()) baseline[ls.name] = Math.max(0, +ls.months || 0);
   play.lifestyles_reconciled = true;
   return baseline;
@@ -905,12 +950,22 @@ function seedLifestyles() {
  *
  * Months are only overwritten when the chargen record itself changed since the
  * last sync. A re-finalize that didn't touch lifestyles leaves the play balance
- * alone, so months burned in play aren't handed back for an unrelated edit. */
+ * alone, so months burned in play aren't handed back for an unrelated edit.
+ *
+ * Removals are the mirror image, and the half that was missing (issue #75):
+ * swapping Low for Middle in chargen is a delete plus an add, so an insert-only
+ * merge left Low in play — still flagged active, because the new entry could
+ * only ever be pushed inactive — and the sheet went on reporting the lifestyle
+ * the player had just replaced. This is the same baseline-diff reconcileKit
+ * uses for gear: anything the baseline had and chargen no longer does was
+ * removed by the owner, while a lifestyle bought in play was never in the
+ * baseline and is left alone. */
 function syncChargenLifestyles() {
   const play = CHAR.play;
   play.lifestyles = play.lifestyles || [];
   const baseline = play.lifestyles_baseline = play.lifestyles_baseline || {};
-  for (const ls of chargenLifestyles()) {
+  const now = chargenLifestyles();
+  for (const ls of now) {
     const months = Math.max(0, +ls.months || 0);
     const existing = play.lifestyles.find(p => p.name === ls.name);
     if (!existing) {
@@ -922,6 +977,19 @@ function syncChargenLifestyles() {
       existing.months = months;
     }
   }
+  for (const name of Object.keys(baseline)) {           // dropped in chargen
+    if (now.some(ls => ls.name === name)) continue;
+    const at = play.lifestyles.findIndex(p => p.name === name);
+    if (at < 0) continue;
+    const gone = play.lifestyles[at];
+    logCash(`${name} lifestyle dropped in chargen (${gone.months || 0} mo)`, 0,
+      { kind: "lifestyle_restore", name, months: gone.months || 0, at });
+    play.lifestyles.splice(at, 1);
+  }
+  // Dropping the active one leaves nobody current, and the overview reads the
+  // active flag — so hand it to whatever is left rather than showing "none".
+  if (play.lifestyles.length && !play.lifestyles.some(l => l.active))
+    play.lifestyles[0].active = true;
   play.lifestyles_seeded = true;
   stampLifestyleBaseline(play);
 }

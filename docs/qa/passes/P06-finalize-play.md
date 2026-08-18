@@ -1462,6 +1462,70 @@ path by which play could reach into the creation record.
   against the unpatched file.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-052: The action economy is spendable from every tab, agrees with the Overview card, and folds away without losing New Round
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (async () => { const c = RULES.defaultCharacter(); c.name = "QA Actions Strip"; c.priorities = { heritage: 2, magic: 0, attributes: 3, skills: 2, resources: 3 }; c.heritage.type = "Human"; c.augments = [{ name: "Wired Reflexes 2", count: 1 }]; c.decks = [{ name: "MasterDeck", mods: [] }]; c.hacking_rating = 2; c.finalized = true; c.lifestyles = [{ name: "Squatter", months: 1 }]; await openCharacter(c); const tabIds = ["overview", "skills", "kismet", "gear", "augments", "magic", "decking", "rigging", "actions", "notes"]; const presentOnEveryTab = {}; for (const t of tabIds) { sheetTab = t; renderSheet(); presentOnEveryTab[t] = !!document.querySelector(".sh-actions-strip"); } sheetTab = "overview"; renderSheet(); const pillLabels = [...document.querySelectorAll(".sh-apill .k")].map(k => k.textContent); const findPill = label => [...document.querySelectorAll(".sh-apill")].find(p => p.querySelector(".k").textContent === label); const plusBtn = [...findPill("Simple").querySelectorAll("button")].find(b => b.textContent === "+"); plusBtn.click(); const stripSimpleAfter = findPill("Simple").querySelector("b").textContent; const cardSimpleText = [...document.querySelectorAll(".sh-card .stat-line")].find(l => l.textContent.startsWith("Simple")).querySelector("b").textContent; sheetTab = "gear"; renderSheet(); const poolBeforeNewRound = poolState("Brawn").remaining; poolState("Brawn").setUsed(1); playChanged(); const poolAfterSpend = poolState("Brawn").remaining; [...document.querySelectorAll(".sh-actions-strip button")].find(b => b.textContent.includes("New Round")).click(); const afterNewRound = { pool: poolState("Brawn").remaining, actionsUsed: CHAR.play.actions_used, tabStayedOnGear: sheetTab === "gear" }; sheetTab = "overview"; renderSheet(); const startedExpanded = !document.querySelector(".sh-actions-strip").classList.contains("collapsed"); document.querySelector(".sh-strip-toggle").click(); const collapsed = document.querySelector(".sh-actions-strip").classList.contains("collapsed"); const newRoundStillPressableCollapsed = !![...document.querySelectorAll(".sh-actions-strip button")].find(b => b.textContent.includes("New Round")); const persistedToLocalStorage = localStorage.getItem("sinless:actionstrip"); document.querySelector(".sh-strip-toggle").click(); const tab = activeTabObj(); tab.readonly = true; renderSheet(); const roStrip = document.querySelector(".sh-actions-strip"); const readonly = { hasNewRound: !![...roStrip.querySelectorAll("button")].find(b => b.textContent.includes("New Round")), miniCounters: roStrip.querySelectorAll(".mini-btn").length, pillCounts: [...roStrip.querySelectorAll(".sh-apill b")].map(b => b.textContent) }; tab.readonly = false; await closeTabByName("QA Actions Strip"); return { presentOnEveryTab, pillLabels, spendAgreesWithCard: { stripSimpleAfter, cardSimpleText }, afterNewRound, startedExpanded, collapsed, newRoundStillPressableCollapsed, persistedToLocalStorage, readonly }; })()
+
+- **Expected:**
+
+      { "presentOnEveryTab": { "overview": true, "skills": true, "kismet": true, "gear": true,
+                                "augments": true, "magic": true, "decking": true, "rigging": true,
+                                "actions": true, "notes": true },
+        "pillLabels": ["Simple", "Reflex", "Melee exploit", "Decking exploit"],
+        "spendAgreesWithCard": { "stripSimpleAfter": "1/2", "cardSimpleText": "1 / 2" },
+        "afterNewRound": { "pool": 2, "actionsUsed": {}, "tabStayedOnGear": true },
+        "startedExpanded": true, "collapsed": true, "newRoundStillPressableCollapsed": true,
+        "persistedToLocalStorage": "collapsed",
+        "readonly": { "hasNewRound": false, "miniCounters": 0,
+                       "pillCounts": ["2/2", "1/1", "2/2", "1/1"] } }
+
+- **Note:** Reported gap: in real play the action economy is consulted and
+  spent constantly, but `actionsCard()` ("Actions This Round") rendered on
+  Overview only — spending a Simple Action from Gear or Magic meant tabbing
+  away and back, and `↻ New Round` (which also refills every pool) was
+  equally stranded.
+
+  Pools solve the same "visible from every tab" problem with two components —
+  `headerPoolTile()` in `sheetHeader()` plus `compactPoolPill()` in
+  `.sh-compact`, the latter surfacing only once an `IntersectionObserver` sees
+  the header scroll away — because `.sheet-head` scrolls off by design
+  (`style.css` ~590: *"the header no longer eats half a tablet screen"*).
+  Actions doesn't need that split: `.sh-stickybar` is the one piece of chrome
+  genuinely on screen at all times, so `actionsStrip()` mounts there directly,
+  unconditionally — not gated on `.scrolled` the way `.sh-compact` is.
+  `presentOnEveryTab` is the direct guard: every one of the ten `sheetTab`
+  values must find `.sh-actions-strip` in the DOM.
+
+  `actionRows()` and `newRound()` were pulled out of `actionsCard()` so the
+  card and the strip read/write the exact same `CHAR.play.actions_used` keys
+  in the exact same order — never a second source of truth.
+  `spendAgreesWithCard` presses `+` on the strip's Simple pill and confirms
+  the Overview card shows the same `left / total` afterward. `afterNewRound`
+  presses `↻ New Round` from the **Gear** tab and checks both halves of what
+  a fresh round means: every pool refills (`poolState("Brawn").remaining`
+  back to its max) and `actions_used` clears — while `sheetTab` itself stays
+  put (`tabStayedOnGear`), unlike clicking a header pool tile, which forces a
+  jump to Overview.
+
+  Recoil/Stabilize, the exploit source attributions, and the "Enable action
+  costs in loadout" checkbox stay Overview-only by design — settled choices
+  and reference detail, not per-round counters worth a permanent strip of
+  screen on ten tabs. `pillLabels` guards that the strip carries exactly
+  Simple, Reflex and the granted exploit kinds, nothing more.
+
+  The strip is collapsible (`localStorage`, key `sinless:actionstrip` — a
+  screen-real-estate preference, not a fact about the character, so it isn't
+  `CHAR.play.*`) and `↻ New Round` stays pressable while folded
+  (`newRoundStillPressableCollapsed`) — it is the once-a-round button, the one
+  thing folding must never hide. `readonly` confirms a shared read-only
+  character still shows every count (`pillCounts`) with every mutating
+  control gone (`hasNewRound` false, no `.mini-btn`s) — the same gate
+  `actionsCard()` already applies via `activeTabObj().readonly`.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

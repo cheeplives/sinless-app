@@ -174,6 +174,16 @@ let playSaveTimer = null;
 let sheetMenuOpen = false;    // hamburger menu (Back to Chargen / Homebrew / Export / …)
 let sheetHeadObserver = null; // IntersectionObserver toggling the compact sticky strip
 let sheetStickyScrolled = false;  // survives re-renders so the strip doesn't flicker
+// Fold state for the always-on sticky-bar Actions strip. A screen-real-estate
+// preference, not a fact about the character — device/viewport-specific, and
+// still useful on a read-only shared character where CHAR.play can't be
+// written — so it lives in localStorage next to the theme/scheme choices
+// (app.js), not in play state. Defaults EXPANDED: the point of this strip is
+// to be seen without hunting for it.
+let actionsStripCollapsed = (() => {
+  try { return localStorage.getItem("sinless:actionstrip") === "collapsed"; }
+  catch { return false; }
+})();
 
 /* ------------------------------------------------ play-state plumbing */
 /* Top up CHAR.play with whatever is missing, so a character that predates a
@@ -1278,6 +1288,20 @@ function restoreSheetFocus(snap) {
   try { if (snap.start != null) next.setSelectionRange(snap.start, snap.end); } catch { /* not selectable */ }
 }
 
+/* Publishes the sticky bar's live height as --sh-sticky-h so nested sticky
+ * elements (the gear-tab jump submenu) can park directly beneath it. Queries
+ * the DOM fresh each call rather than closing over a captured node, so one
+ * `resize` listener (registered once, below) stays valid across every
+ * renderSheet() rebuild — the same idiom app.js's publishTabsHeight uses for
+ * the chargen tab strip. Without this, resizing the window so .sh-tabs (or,
+ * now, the actions strip) re-wraps to another row left the published height
+ * stale until the next render. */
+function publishStickyBarHeight() {
+  const bar = $("#sheet > .sh-stickybar");
+  if (bar) document.documentElement.style.setProperty("--sh-sticky-h", bar.offsetHeight + "px");
+}
+window.addEventListener("resize", publishStickyBarHeight);
+
 function renderSheet() {
   const keep = captureSheetFocus();
   const root = $("#sheet");
@@ -1298,12 +1322,8 @@ function renderSheet() {
   root.append(scrollTopFab());
   // The full header scrolls away normally; once it leaves the viewport the
   // sticky bar grows a compact summary strip (pools / ZP / cash). The DOM is
-  // rebuilt every render, so the observer is re-attached each time. The bar's
-  // live height is published as --sh-sticky-h so nested sticky elements (the
-  // gear-tab jump submenu) can park directly beneath it.
-  const publishBarHeight = () => document.documentElement.style
-    .setProperty("--sh-sticky-h", bar.offsetHeight + "px");
-  publishBarHeight();
+  // rebuilt every render, so the observer is re-attached each time.
+  publishStickyBarHeight();
   if (sheetHeadObserver) sheetHeadObserver.disconnect();
   // The workspace strip is a fixed bar of height --ws-h at the very top; the
   // sheet's sticky bar parks just below it, so the header counts as "gone" once
@@ -1316,7 +1336,7 @@ function renderSheet() {
     // The back-to-top FAB rides the same threshold as the shrunk header.
     const fab = document.getElementById("sh-scrolltop");
     if (fab) fab.classList.toggle("visible", sheetStickyScrolled);
-    publishBarHeight();
+    publishStickyBarHeight();
   }, { rootMargin: `-${48 + wsH}px 0px 0px 0px` });
   sheetHeadObserver.observe(head);
   restoreSheetFocus(keep);
@@ -1936,8 +1956,12 @@ function sheetStickyBar() {
       title: `Adjust ${RULES.currencyName().toLowerCase()}`, onclick: adjustCash,
       onkeydown: e => { if (e.key === "Enter") adjustCash(); } },
       fmt(CHAR.play.cash)));
+  // The actions strip sits between the pool pills and the tab strip — right
+  // under the pool tiles that "↻ New Round" refills, and it never depends on
+  // .scrolled the way .sh-compact does: it's live from the first render, not
+  // only once the header has scrolled out of view.
   return el("div", { class: "sh-stickybar" + (sheetStickyScrolled ? " scrolled" : "") },
-    compact, nav);
+    compact, actionsStrip(), nav);
 }
 
 /* One pool as a slim pill for the compact strip — same play-state math and
@@ -4934,20 +4958,13 @@ function statLine(label, value, title) {
 // and source attribution that used to live here as exploitLines() moved into
 // actionsCard(), which is where the actions are spent.
 const EXPLOIT_KIND_ORDER = ["Melee", "Move", "Decking", "Rigging", "Control"];
-/* What a round costs you, tracked as it's spent (issue #32).
- *
- * Actions come from the engine — `simple_actions` plus the exploit actions each
- * source grants — so only the SPENT count is play state, keyed by "simple" or
- * the exploit kind. Everything derived stays derived: gain an exploit mid-play
- * and the total moves on its own.
- *
- * New Round (issue #37) is here rather than in the header because it belongs
- * with what it clears: every pool back to full and every action unspent, which
- * between them is what a fresh round actually means. */
-function actionsCard() {
-  const play = CHAR.play;
-  const ro = !!(activeTabObj() && activeTabObj().readonly);
-  const used = (play.actions_used = play.actions_used || {});
+/* The action-economy rows for the current character: Simple (engine-derived),
+ * Reflex (a flat 1 every character gets), then one row per exploit-action kind
+ * actually granted, grouped and ordered by EXPLOIT_KIND_ORDER. Shared by
+ * actionsCard() (the full Overview card) and actionsStrip() (the always-on
+ * sticky-bar strip) so the two never drift out of sync — same rows, same
+ * order, same `key` each `used[key]` is stored under. */
+function actionRows() {
   // Every character gets exactly one Reflex Action a round, same as every
   // build's Simple Actions come from the engine — this one's just a flat 1
   // rather than anything derived, so it's written here instead.
@@ -4971,15 +4988,36 @@ function actionsCard() {
       sources: g.items.map(a =>
         g.items.length > 1 && a.count > 1 ? `${a.source} (+${a.count})` : a.source) });
   }
+  return rows;
+}
+/* Fresh round: every pool back to full, every action unspent, Beast dice
+ * refreshed. Shared by actionsCard()'s "↻ New Round" button and
+ * actionsStrip()'s copy of the same button, so both clear the same things. */
+function newRound() {
+  for (const p of POOL_ORDER) poolState(p).setUsed(0);
+  CHAR.play.actions_used = {};
+  refreshBeastDice();     // Wildling's Beast dice refresh each round too
+  playChanged();
+}
+/* What a round costs you, tracked as it's spent (issue #32).
+ *
+ * Actions come from the engine — `simple_actions` plus the exploit actions each
+ * source grants — so only the SPENT count is play state, keyed by "simple" or
+ * the exploit kind. Everything derived stays derived: gain an exploit mid-play
+ * and the total moves on its own.
+ *
+ * New Round (issue #37) is here rather than in the header because it belongs
+ * with what it clears: every pool back to full and every action unspent, which
+ * between them is what a fresh round actually means. */
+function actionsCard() {
+  const play = CHAR.play;
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const used = (play.actions_used = play.actions_used || {});
+  const rows = actionRows();
 
   const card = el("div", { class: "card sh-card" },
     el("div", { class: "sh-card-head" }, el("h3", {}, "Actions This Round"),
-      ro ? null : counterBtn("↻ New Round", () => {
-        for (const p of POOL_ORDER) poolState(p).setUsed(0);
-        CHAR.play.actions_used = {};
-        refreshBeastDice();     // Wildling's Beast dice refresh each round too
-        playChanged();
-      }, "good")));
+      ro ? null : counterBtn("↻ New Round", newRound, "good")));
   for (const r of rows) {
     const spent = Math.max(0, Math.min(used[r.key] || 0, r.total));
     const left = r.total - spent;
@@ -5045,6 +5083,82 @@ function actionsCard() {
       onchange: e => { play.action_costs = e.target.checked; playChanged(); } }),
     el("span", {}, "Enable action costs in loadout")));
   return card;
+}
+
+/* The action economy, spendable from every tab (issue: Actions This Round was
+ * Overview-only, so spending mid-scene meant tabbing away and back). Lives in
+ * the sticky bar rather than the header band the way pools do: .sheet-head
+ * scrolls away by design (style.css, "the header no longer eats half a tablet
+ * screen"), so the sticky bar is the only chrome that is actually always on
+ * screen. One component instead of pools' two (header tile + compact pill)
+ * because nothing here needs the extra room a header band would cost against
+ * the P13-009 25%-of-viewport budget.
+ *
+ * Same rows (actionRows()) and the same New Round (newRound()) as
+ * actionsCard() — this is a slimmer read on identical state, never a second
+ * source of truth. Recoil/Stabilize, the exploit source attributions, and the
+ * "Enable action costs" checkbox stay Overview-only: settled choices and
+ * reference detail, not per-round counters worth a permanent strip of screen
+ * on ten tabs. */
+function actionsStrip() {
+  const play = CHAR.play;
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const used = (play.actions_used = play.actions_used || {});
+  const rows = actionRows();
+  const toggle = () => {
+    actionsStripCollapsed = !actionsStripCollapsed;
+    try {
+      localStorage.setItem("sinless:actionstrip", actionsStripCollapsed ? "collapsed" : "open");
+    } catch { /* best-effort */ }
+    renderSheet();
+  };
+
+  if (actionsStripCollapsed) {
+    // Folded, this has to answer one question: what's left to spend? So the
+    // summary names every row rather than a bare count — the same reasoning
+    // fxCollapsed's summary uses for Conditional Effects.
+    const summary = rows.map(r => {
+      const spent = Math.max(0, Math.min(used[r.key] || 0, r.total));
+      return `${r.label} ${r.total - spent}/${r.total}`;
+    }).join(" · ");
+    return el("div", { class: "sh-actions-strip collapsed" },
+      ro ? null : counterBtn("↻ New Round", newRound, "good"),
+      el("button", { class: "sh-strip-toggle", title: "Show the action counters",
+        onclick: toggle }, "▸ Actions"),
+      el("span", { class: "sh-apill-summary" }, summary));
+  }
+
+  const strip = el("div", { class: "sh-actions-strip" },
+    ro ? null : counterBtn("↻ New Round", newRound, "good"),
+    el("button", { class: "sh-strip-toggle", title: "Fold the action counters away",
+      onclick: toggle }, "▾ Actions"));
+  for (const r of rows) {
+    const spent = Math.max(0, Math.min(used[r.key] || 0, r.total));
+    const left = r.total - spent;
+    strip.append(el("span", { class: "sh-apill" + (left ? "" : " spent") },
+      el("span", { class: "k" }, r.label), " ",
+      el("b", {}, `${left}/${r.total}`),
+      (!ro && r.key === "simple")
+        ? el("button", { class: "sh-complex-btn",
+            title: "Spend a Complex Action (2 Simple Actions)",
+            onclick: () => {
+              const cur = used.simple || 0;
+              const left2 = r.total - cur;
+              if (left2 < 2) {
+                alert(`Not enough Simple Actions for a Complex Action `
+                  + `(need 2, have ${left2}).`);
+                return;
+              }
+              used.simple = cur + 2;
+              playChanged();
+            } }, "Complex")
+        : null,
+      // Same "used, not left" store as the card — see miniCounter's showValue
+      // doc at actionsCard() for why the middle number is hidden.
+      ro ? null : miniCounter("", () => used[r.key] || 0,
+        v => { used[r.key] = v; }, 0, r.total, false)));
+  }
+  return strip;
 }
 
 /* ---- action economy spends ------------------------------------------------

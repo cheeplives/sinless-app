@@ -203,6 +203,31 @@ Load the fixture and install the measurement helper once:
   eating a third of a short viewport is the classic tablet-landscape complaint.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P13-010: The sticky bar (tab strip + actions strip) stays a fraction of a short viewport
+- **Type:** usability
+- **Check:**
+
+      (() => { const b = document.querySelector("#sheet .sh-stickybar"); if (!b) return "no sticky bar found"; const r = b.getBoundingClientRect(); const strip = document.querySelector(".sh-actions-strip"); return { barHeight: Math.round(r.height), viewportHeight: window.innerHeight, percent: Math.round((r.height / window.innerHeight) * 100), stripPresent: !!strip, stripHeight: strip ? Math.round(strip.getBoundingClientRect().height) : null }; })()
+
+- **Expected:** `percent` is under 15 at the landscape viewports, `stripPresent`
+  is `true`, and `stripHeight` is under 60 (one row of pills — it should not
+  have wrapped to two at these widths).
+- **Note:** `#sheet .sheet-head` — the scroll-away header P13-009 measures — is
+  the only element that case's selector can ever resolve to (`.sheet-head`
+  precedes `.sh-stickybar` in the DOM, and nothing else in `#sheet` matches
+  `header` or `.sticky`), so **the sticky bar's own height sits outside any
+  case's budget**. That gap is what this case closes, and it matters more now
+  that the bar carries a second row (the actions strip, P06-052) on top of the
+  tab strip it always has.
+
+  Measured at `11-landscape` (1194×834) and `13-landscape` (1366×1024) against
+  `kitchen-sink-final.json`: `barHeight` 83px both times — `percent` 10 and 8.
+  15 leaves real headroom above that without being meaningless; a genuine
+  regression (the actions strip wrapping to two rows because a build gained
+  enough exploit-action kinds, or a future addition growing the bar further)
+  would need to roughly double the current height to trip it.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

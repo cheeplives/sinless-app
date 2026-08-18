@@ -724,6 +724,24 @@ label.opt input{margin-top:3px}
 .sh-cmeter.zoetic{color:var(--manon);border-color:var(--manon-dim)}
 .sh-cmeter.cash{color:var(--amber);border-color:var(--amber);cursor:pointer;margin-left:auto}
 
+/* Actions strip: the action economy, live on every tab (not gated on
+ * .scrolled like .sh-compact — this is spent constantly, so it never waits
+ * for the header to leave view). Sits between the compact pool strip and the
+ * tab strip inside .sh-stickybar. Same pill shape as .sh-cpool so the two
+ * rows read as one family. */
+.sh-actions-strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:6px 44px 6px 0;border-bottom:1px solid var(--line)}  /* right gap clears the theme toggle */
+.sh-actions-strip.collapsed{padding-top:5px;padding-bottom:5px}
+.sh-strip-toggle{background:none;border:none;color:var(--dim);cursor:pointer;
+  font-family:var(--disp);font-size:11px;letter-spacing:.06em;padding:0}
+.sh-strip-toggle:hover{color:var(--text)}
+.sh-apill{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:12px;
+  border:1px solid var(--line);border-radius:14px;padding:2px 4px 2px 9px;background:var(--panel-2)}
+.sh-apill .k{font-family:var(--disp);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--dim)}
+.sh-apill.spent{opacity:.55}
+.sh-apill-summary{font-family:var(--mono);font-size:12px;color:var(--dim)}
+
 .sheet-body{display:block}
 .sh-card{margin-bottom:14px}
 .sh-card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}

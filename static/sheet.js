@@ -24,7 +24,7 @@
  * same rules above — same Kismet costs, same rank-6 cap, same boons.
  * Magic in play:
  *   spells cost their listed Cost in woolongs PER FORCE to learn or advance
- *   ZP advances cost Kismet (assumed: same tier costs as attributes) and
+ *   ZP advances cost Kismet (2x current max ZP per point) and
  *   unlock higher-Force casting — drain is lethal when Force > ZP, Stun
  *   when Force <= ZP
  * House rules (not in KISMET.docx):
@@ -5085,10 +5085,11 @@ function actionsCard() {
           : null),
       el("span", { style: "text-align:right;display:inline-flex;align-items:center;gap:8px" },
         el("b", { style: left ? "" : "color:var(--dim)" }, `${left} / ${r.total}`),
-        // No middle number here: it would show "used", running opposite the
-        // "left" bold text right next to it. See miniCounter's showValue doc.
-        ro ? null : miniCounter("", () => used[r.key] || 0,
-          v => { used[r.key] = v; }, 0, r.total, false))));
+        // The counter reads and writes AVAILABLE actions, not spent ones (#77):
+        // - takes an action away, + gives one back, matching the "left" figure
+        // it sits beside. The store stays "used" so the total can move freely.
+        ro ? null : miniCounter("", () => r.total - Math.max(0, Math.min(used[r.key] || 0, r.total)),
+          v => { used[r.key] = r.total - v; }, 0, r.total, false))));
   }
   // Recoil sits with the actions rather than on a card of its own: it's the
   // other thing firing costs you, and Stabilize is a Free Action spent from
@@ -5192,10 +5193,10 @@ function actionsStrip() {
               playChanged();
             } }, "Complex")
         : null,
-      // Same "used, not left" store as the card — see miniCounter's showValue
-      // doc at actionsCard() for why the middle number is hidden.
-      ro ? null : miniCounter("", () => used[r.key] || 0,
-        v => { used[r.key] = v; }, 0, r.total, false)));
+      // Same available-facing counter as the card (#77): - spends an action,
+      // + hands one back. Stored as "used" so the total stays derived.
+      ro ? null : miniCounter("", () => left,
+        v => { used[r.key] = r.total - v; }, 0, r.total, false)));
   }
   return strip;
 }
@@ -6472,14 +6473,15 @@ function shKismet(body) {
 
   // ZP advancement: unlocks higher-Force casting (drain Stun instead of
   // lethal when Force <= ZP) and widens Amp/augment headroom.
-  // Cost rate is an assumption: same tiers as attributes (3 / 4 / 5).
+  // Cost is 2x current MAX ZP per point (#69): it scales off the maximum, not
+  // the effective value left after chrome, so spending never makes ZP cheaper.
   const zp = CALC.zoetics.zp;
   const zpEffective = zpMeterValues();
-  const zpCost = attrRaiseCost(zp + 1);
+  const zpCost = 2 * zp;
   spend.append(el("h4", { class: "sh-h4" }, "Advance Zoetic Potential"),
     el("p", { class: "hint" },
       "ZP gates spell Force: casting a spell with Force above your ZP deals its drain as LETHAL damage; "
-      + "at or below ZP, drain is Stun. Cost per point assumed to match attribute tiers."),
+      + "at or below ZP, drain is Stun. Each point costs 2x your current maximum ZP."),
     el("div", { class: "sh-advrow", style: "max-width:420px" },
       el("span", {}, el("b", {}, "Zoetic Potential"),
         // Effective ZP is what actually gates Force, and it's the number the

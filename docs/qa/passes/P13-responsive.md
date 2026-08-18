@@ -130,6 +130,17 @@ Load the fixture and install the measurement helper once:
 
   The 44 px column stays high and that is expected: 32 px is the floor the
   ruling bought, not 44.
+
+  Two controls turned out to be sitting below the floor and were added to the
+  coarse block on 2026-08-18: `.sh-complex-btn` (the inline **Complex** and
+  **Stabilize** buttons on Actions This Round) and `.sh-strip-toggle` (the
+  Actions strip's fold control). Both are labelled buttons, so they joined the
+  `.btn, .btn-add, …` min-height rule rather than getting sizes of their own.
+  Each already sits in a row held open to 32 px by a neighbouring `.mini-btn`,
+  so the floor cost no extra height anywhere — measured identical with and
+  without it on the strip, the sticky bar and the Actions card. With those in,
+  the class list from the check above is **empty** at every tablet viewport,
+  not just free of non-`sh-reorder-btn` entries.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P13-005: Controls do not overlap

@@ -6574,6 +6574,59 @@ function shKismet(body) {
     }, `Learn (${NEW_SKILL_KISMET_COST})`)));
   spend.append(ritualBox);
 
+  // Martial Arts also live on the Skills tab, in the Brawn card where their
+  // rank is read. They are repeated here because this is where a player comes
+  // to SPEND, and a control that exists only on another tab is what "no way to
+  // buy a style with Kismet" actually looked like (#70). Same store, same costs
+  // and the same two gates as the Skills-tab copy, so the views cannot drift:
+  // a style never outranks Unarmed Combat, and you cannot learn one before you
+  // can throw a punch.
+  const maBox = el("div", {}, el("h4", { class: "sh-h4" }, "Martial Arts"));
+  const maUnarmed = (CALC.skills["Unarmed Combat"] || { points: 0 }).points;
+  const maOwned = CALC.martial_arts || [];
+  const maStyles = [...new Set(DATA.tables.martial_arts.map(r => r.Style))].sort();
+  if (!maOwned.length) maBox.append(el("p", { class: "hint" }, "No styles trained yet."));
+  for (const ma of maOwned) {
+    const maCap = ma.rank >= SKILL_KISMET_CAP || ma.rank >= maUnarmed;
+    const maCost = skillRaiseCost(ma.rank);
+    maBox.append(el("div", { class: "sh-advrow" },
+      el("span", {}, el("b", {}, ma.style), el("span", { class: "sub" }, ` rank ${ma.rank}`)),
+      el("button", {
+        class: "btn small", disabled: (maCap || play.kismet < maCost) ? "1" : null,
+        title: ma.rank >= SKILL_KISMET_CAP ? "Rank 6 is the Kismet cap — use a mastery boon for 7"
+          : ma.rank >= maUnarmed ? `Cannot exceed Unarmed Combat rank ${maUnarmed}` : null,
+        onclick: async () => {
+          if (!spendKismet(`Raised Martial Arts (${ma.style}) to rank ${ma.rank + 1}`, maCost,
+              { kind: "martial_art", name: ma.style })) return;
+          const adv = play.martial_art_advances = play.martial_art_advances || {};
+          adv[ma.style] = (adv[ma.style] || 0) + 1;
+          await playChangedRecalc();
+        },
+      }, maCap ? "cap" : `+1 (${maCost})`)));
+  }
+  const maAddable = maStyles.filter(st => !maOwned.some(m => m.style === st));
+  if (maUnarmed < 1) {
+    maBox.append(el("p", { class: "hint" },
+      "Train Unarmed Combat before learning a martial art."));
+  } else if (maAddable.length) {
+    const maSel = el("select", {}, el("option", { value: "" }, "Learn new style…"),
+      ...maAddable.map(st => el("option", {}, st)));
+    maBox.append(el("div", { class: "add-row" }, maSel,
+      el("button", {
+        class: "btn-add", disabled: play.kismet < NEW_SKILL_KISMET_COST ? "1" : null,
+        onclick: async () => {
+          const style = maSel.value;
+          if (!style) return;
+          if (!spendKismet(`Learned Martial Arts style: ${style}`, NEW_SKILL_KISMET_COST,
+              { kind: "martial_art", name: style })) return;
+          const adv = play.martial_art_advances = play.martial_art_advances || {};
+          adv[style] = (adv[style] || 0) + 1;
+          await playChangedRecalc();
+        },
+      }, `Learn (${NEW_SKILL_KISMET_COST})`)));
+  }
+  spend.append(maBox);
+
   // ZP advancement: unlocks higher-Force casting (drain Stun instead of
   // lethal when Force <= ZP) and widens Amp/augment headroom.
   // Cost is 2x current MAX ZP per point (#69): it scales off the maximum, not

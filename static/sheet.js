@@ -6254,6 +6254,7 @@ function shSkills(body) {
   const etqFinal = ep.final || {};
   const etqAdjust = ep.adjust || {};
   const etq = Object.entries(etqFinal).filter(([, v]) => v > 0);
+  const from0 = CALC.etiquette_sources || [];
   if (etq.length) {
     const row = el("div", { class: "sh-tagrow" });
     for (const [name, total] of etq) {
@@ -6262,16 +6263,31 @@ function shSkills(body) {
       const from = (CALC.etiquette_sources || [])
         .filter(s => s.etiquette === name)
         .map(s => `${s.label} +${s.bonus}`);
-      row.append(el("span", {
+      // Rollable at its FINAL rating, with no pool attached (#72): an etiquette
+      // test is the rating on its own, so there is nothing to spend and the
+      // roller opens with the count already right.
+      row.append(rollable(el("span", {
         class: "sh-tag magic" + (bonus ? " sh-tag-boosted" : ""),
-        title: bonus ? `${base} bought +${bonus} from ${from.join(", ")}` : null,
-      }, bonus ? `${name} ${total} (${base}+${bonus})` : `${name} ${total}`));
+      }, bonus ? `${name} ${total} (${base}+${bonus})` : `${name} ${total}`), {
+        dice: total, label: `${name} Etiquette`,
+        title: `Roll ${total}d6 — ${name} Etiquette`
+          + (bonus ? ` (${base} bought +${bonus} from ${from.join(", ")})` : ""),
+        note: bonus ? `${base} bought +${bonus} from ${from.join(", ")}` : "No pool — this is the rating on its own",
+      }));
     }
     know.append(el("h4", { class: "sh-h4" }, "Etiquettes"), row);
-    if (Object.keys(etqAdjust).length)
+    // Where each bonus comes from, spelled out rather than left in a tooltip
+    // (#72). A player checking whether they still have the Corporate bonus is
+    // asking which garment is carrying it, and a hover they have to discover
+    // is a poor way to answer that.
+    if (from0.length) {
+      know.append(el("div", { class: "sh-etq-sources" },
+        ...from0.map(s => el("div", { class: "sub" },
+          `+${s.bonus} ${s.etiquette} — ${s.label}`))));
       know.append(el("p", { class: "hint" },
         "Bonuses come from what you're wearing and carrying — they drop when the "
         + "gear does, and they sit outside the point cap."));
+    }
     // Bling is an Etiquette bonus, so it belongs with the Etiquettes rather than
     // on a combat card. One line for the whole look: a blinged gun and a blinged
     // ride are the same show, so it's the best single source, never the sum.
@@ -6289,17 +6305,27 @@ function shSkills(body) {
   // Knowledge points are never forfeited at finalize — any leftover (or
   // freed up by a later Intelligence raise) budget stays spendable here.
   const kBudget = CALC.knowledge || { budget: 0, spent: 0, remaining: 0 };
+  // Name what actually built the budget rather than describing the formula
+  // (#72). The bonus is derived from the gap so it needs nothing new from the
+  // engine, and it is only mentioned when there IS one.
+  const kInt = CALC.attributes.Intelligence.final;
+  const kBonus = Math.max(0, (kBudget.budget || 0) - 2 * kInt);
   know.append(el("h4", { class: "sh-h4" }, "Knowledges"),
     el("p", { class: "hint", style: "margin:0 0 6px" },
-      `${kBudget.remaining} / ${kBudget.budget} points left — 2 × Intelligence `
-      + "(+1 per Knowledge Skillsoft), free-form, spendable any time."));
+      `${kBudget.remaining} / ${kBudget.budget} points left — 2 × Intelligence ${kInt} = ${2 * kInt}`
+      + (kBonus ? `, +${kBonus} from Knowledge Skillsoft` : "")
+      + ". Free-form, spendable any time."));
   const kt = el("table", { style: "max-width:560px" });
   allKnowledgeSkills().forEach((k, i) => {
     const atCap = (k.points || 0) >= KNOWLEDGE_RANK_CAP;
     const pointsCtl = el("span", { class: "sh-mini" },
       el("button", { class: "mini-btn", title: "Reduce",
         onclick: async () => { k.points = Math.max(0, (k.points || 0) - 1); await playChangedRecalc(); } }, "−"),
-      el("b", {}, String(k.points || 0)),
+      // Same click-to-roll as an etiquette, and for the same reason: a
+      // knowledge test is its rating with no pool behind it (#72).
+      rollable(el("b", {}, String(k.points || 0)), {
+        dice: k.points || 0, label: `${k.name || "Knowledge"}`,
+        note: "No pool — this is the rating on its own" }),
       el("button", { class: "mini-btn", title: atCap ? `Rank ${KNOWLEDGE_RANK_CAP} is the cap`
           : kBudget.remaining < 1 ? "No Knowledge points left" : "Raise",
         disabled: (atCap || kBudget.remaining < 1) ? "1" : null,

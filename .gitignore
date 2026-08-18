@@ -9,3 +9,6 @@ api/sessions/
 
 # Local scratch: sample imports and throwaway probes. Never committed.
 .scratch/
+
+# agent worktrees (transient)
+.claude/worktrees/

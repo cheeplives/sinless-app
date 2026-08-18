@@ -566,6 +566,14 @@ const CASH_UNDO = {
   },
   weapon_mod:  u => removeFromSublist(ownedWeapons(), u.host, "mods", u.name),
   armor_extra: u => removeFromSublist(ownedArmor(), u.host, "extras", u.name),
+  // Quality and Style are a FIELD on the piece rather than an entry in a list,
+  // so undo puts the previous value back instead of removing anything (#73).
+  armor_trait: u => {
+    const en = ownedArmor().find(e => e.ref && e.ref.name === u.host);
+    if (!en) return false;
+    en.ref[u.field] = u.from || "";
+    return true;
+  },
   deck_mod:    u => removeFromSublist(ownedDecks(), u.host, "mods", u.name),
   rig_mod:     u => removeFromSublist(ownedRigs(), u.host, "mods", u.name),
   mount: u => removeFromSublist(
@@ -7128,6 +7136,43 @@ function shUseDoseBtn(entry, row, owned) {
     } }, "Use");
 }
 
+/* A Quality/Style dropdown on an owned piece of armor, priced like an Extra.
+ *
+ * The multiplier is on the piece as a whole, so the marginal charge is
+ * base x (multiplier - 1) and a SWITCH costs the difference between the two.
+ * Charging the full new multiplier each time would bill the player again for
+ * armor they already own; refunding on a downgrade is the same rule read
+ * backwards. An overdraw is refused and the select snaps back, rather than
+ * leaving the piece changed and the cash negative.
+ *
+ * The previous value rides along in the ledger entry so Undo can restore it --
+ * a field, unlike a fitted Extra, has nothing to remove (#73).
+ *
+ * `overdrawOK` is handed in rather than reached for: it is a closure inside the
+ * Gear tab (it needs that tab's surcharge multiplier), and an async handler that
+ * throws for an out-of-scope name fails SILENTLY as an unhandled rejection --
+ * the dropdown moves, nothing else does, and there is no error to read. */
+function armorTraitSelect({ entry, field, table, column, label, baseCost, mult, overdrawOK }) {
+  const current = entry[field] || "";
+  const multOf = v => {
+    const row = table.find(x => x[column] === v);
+    return row ? (+row.Multiplier || 1) : 1;
+  };
+  const sel = el("select", { class: "btn-select",
+    onchange: async e => {
+      const next = e.target.value;
+      const delta = Math.round(baseCost * (multOf(next) - multOf(current)) * mult);
+      if (delta > 0 && !overdrawOK(next || label, delta)) { e.target.value = current; return; }
+      entry[field] = next;
+      logCash(next ? `${entry.name}: ${label} ${next}` : `${entry.name}: ${label} cleared`,
+        -delta, { kind: "armor_trait", host: entry.name, field, from: current });
+      await playChangedRecalc();
+    } },
+    el("option", { value: "" }, `${label}…`),
+    ...table.map(x => el("option", { value: x[column] }, `${x[column]} ×${x.Multiplier}`)));
+  sel.value = current;
+  return sel;
+}
 /* Mounted-augment editor for host gear (Power Armor, Arwin Goggles, homebrew
    with a "Mount Types" column). Mounted augments are managed with the gear —
    they never appear on the Augments tab, their ZR is exempt from ZP, and
@@ -7506,8 +7551,19 @@ function shGear(body) {
             () => arrayMove(arr, localIndex, 1, playChangedRecalc),
             localIndex > 0, localIndex < arr.length - 1),
           el("b", {}, a.name),
-          el("div", { class: "sub" },
-            ([arow.material, arow.style].filter(Boolean).join(" · ") || r.Slot || "") + ` · wt ${r.wt || 0}`),
+          el("div", { class: "sub" }, `${r.Slot || ""} · wt ${r.wt || 0}`),
+          // Quality and Style were display-only in play (#73): you could buy a
+          // coat and never say what it was made of. They are priced exactly the
+          // way Extras above are -- base × (multiplier − 1) -- and switching
+          // between two of them charges, or refunds, only the difference, so
+          // the ledger never double-charges for a piece you already own.
+          ro ? null : el("div", { class: "sh-armor-traits" },
+            armorTraitSelect({ entry: a, field: "material", table: DATA.tables.armor_materials,
+              column: "Material", label: "Quality", baseCost, mult: armorMult, overdrawOK }),
+            r.Style === "Y"
+              ? armorTraitSelect({ entry: a, field: "style", table: DATA.tables.armor_styles,
+                  column: "Style", label: "Style", baseCost, mult: armorMult, overdrawOK })
+              : el("span", { class: "sub" }, "fixed design — no Style")),
           aeffects.length ? el("div", { class: "sub armor-effects" },
             aeffects.map(e => `${e.label}: ${e.text}`).join(" · ")) : null,
           shMountEditor(en, r, a.active !== false)),

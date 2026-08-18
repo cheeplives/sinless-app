@@ -1652,3 +1652,8 @@ body.sheet-readonly .sh-readonly-banner .btn{pointer-events:auto;opacity:1}
    because it is reference the player checks, not something they read every time. */
 .sh-etq-sources{margin:6px 0 2px;display:grid;gap:2px}
 .sh-etq-sources .sub{font-size:11px;color:var(--dim)}
+
+/* Quality / Style pickers on an owned armor row (#73). Wrap on narrow screens
+   rather than forcing the gear table wider than the viewport. */
+.sh-armor-traits{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+.sh-armor-traits select{font-size:11px;max-width:100%}

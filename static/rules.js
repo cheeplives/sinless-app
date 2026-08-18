@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "304";
+const APP_VERSION = "305";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -776,6 +776,34 @@ function programSkill(name) {
   if (!isEWProgram(name)) return null;
   return houseRule("ew") === "classic" ? EW_SKILL : "Computer: Hacking";
 }
+
+/* The default hacking skill, named once so the Run Program button (#79) and
+ * anything else that reaches for it can't drift from the SKILLS key. */
+const HACKING_SKILL = "Computer: Hacking";
+
+/* Every rated program is "<Base> N" — the same trailing-number convention
+ * hackingProgramRating reads, generalised, because running a program rolls its
+ * rating as dice (#79) and that is true of the whole table, not just the
+ * Hacking family. "Alert Monitor" is the one unrated program; it comes back 0,
+ * which is exactly right — it contributes no rating dice. */
+function programRating(name) {
+  const m = /\s(\d+)$/.exec(String(name || "").trim());
+  return m ? toInt(m[1]) : 0;
+}
+
+/* What running a program costs the action economy, counted in SIMPLE ACTIONS
+ * because that is the unit the play sheet actually spends (#79): a Complex
+ * Action is two Simples, and "N/A" — the Hacking family, which is the deck's
+ * operating system rather than a tool you run — costs nothing.
+ *
+ * The issue words this as "the action type named in the Program's Description",
+ * but the programs table carries a dedicated `Action Type` column that says the
+ * same thing in one word instead of a paragraph; reading the column keeps
+ * homebrew programs working without prose-parsing, and the two agree. */
+const PROGRAM_ACTION_UNITS = { Complex: 2, Simple: 1 };
+function programActionUnits(row) {
+  return PROGRAM_ACTION_UNITS[String((row || {})["Action Type"] || "").trim()] || 0;
+}
 // The label for a hack-action's Skill cell: "EW" stays "EW" under Classic but
 // reads "Hacking" when there's no EW skill; everything else is unchanged.
 function hackActionSkill(skillCode) {
@@ -940,6 +968,11 @@ function defaultCharacter() {
       // gear half of pool_effects — see gearIsDose.
       doses: [],
       beast_dice: WILDLING_BEAST_DICE,   // Wildling: "Beast" dice left this round
+      // Decker: MCP dice left this round, spent before Focus when a program is
+      // run (#79). The MAX is derived from the active deck's MCP, so only what
+      // is left gets stored — null means "never touched, assume full", the same
+      // read beast_dice gets, so buying a bigger deck mid-round isn't punished.
+      mcp_dice: null,
       pool_used: {},
       // Actions spent so far this round, keyed "simple" or an exploit kind
       // ("Melee", "Rigging", …). Cleared by New Round alongside the pools.
@@ -6159,6 +6192,7 @@ return {
   HOUSE_RULE_DEFS, houseRule, setHouseRule, currencyName, currencySymbol,
   recoilIgnoredForWeapon,
   programSkill, isEWProgram, hackActionSkill, programNeedsThread,
+  HACKING_SKILL, programRating, programActionUnits,
   HACKING_PROGRAM_CATEGORY, isHackingProgram, hackingProgramRating, deckHackingRequired,
   BASE_HACK_RANGE_METERS, deckHackRange, deckRangeConflict,
   deckHardening, rigUnitHardening, hardeningBonusFromText,

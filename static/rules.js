@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "259";
+const APP_VERSION = "260";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -356,6 +356,13 @@ const HOUSE_RULE_DEFS = [
       { value: "single", label: "Single skill",
         help: "One Engineering skill covers every discipline." },
     ] },
+  { id: "recoil", label: "Recoil", default: "classic",
+    options: [
+      { value: "classic", label: "Classic",
+        help: "Firing generates recoil tokens; your Recoil Capacity is how many you absorb before they cost you, and gear that steadies a gun raises it." },
+      { value: "houserule", label: "No Recoil",
+        help: "Recoil stops existing — no Recoil Capacity, no tokens, nothing to stabilize. The gear that used to soak it pays out bonus dice instead: Bi-pod +1b braced; Gyro-mount and Gas Vent +1b; the Gyromount augment +3b; Gun-Kata 3 +3b — each on any firing mode that isn't SS." },
+    ] },
 ];
 
 // House rule: the single Engineering skill can split into a six-skill group.
@@ -403,6 +410,147 @@ function syncEWSkill() {
     delete SKILLS[EW_SKILL];
     delete dskills[EW_SKILL];
   }
+}
+
+/* ---- House rule: "No Recoil" (#61) ------------------------------------------
+ * Under this rule recoil is not a thing that exists. There is no Recoil
+ * Capacity, no tokens to soak and nothing to stabilize — so the gear that
+ * bought recoil capacity has to be worth something else, and what it buys
+ * instead is BONUS DICE ("+1b" is one bonus die), on any firing mode that isn't
+ * a single shot. A Bi-pod is the exception: it pays out only when the gun is
+ * braced, which is a thing the player declares at the table.
+ *
+ * WHY THE ALTERNATE WORDING LIVES HERE AND NOT IN data.js: Classic still needs
+ * the as-written text, so one data row has to serve both rules. Rewriting the
+ * row would break Classic for every character who never opted in. Instead the
+ * rule is resolved in the engine — syncNoRecoilText() retargets each affected
+ * row's Effect at recalc time and keeps the row's original text in
+ * NO_RECOIL_AS_WRITTEN, so switching back restores exactly what the data says
+ * (rather than a copy of it here that could go stale). That is the same shape
+ * as syncEngineeringSkills/syncEWSkill: reshape the shared tables to match the
+ * active rule, idempotently. Every display site — chargen, the sheet, exports,
+ * the homebrew editor's builtin list, tooltips — then reads the right wording
+ * without any of them having to know this rule exists.
+ *
+ * `dice` is what the piece is worth and `when` says when it counts:
+ *   "nonss"  — any firing mode other than SS. The sheet applies it on its own.
+ *   "braced" — the player declares it, so the sheet offers it as a per-weapon
+ *              toggle beside the Gun-Kata one rather than assuming a bipod is
+ *              always deployed.
+ * `types` narrows a source to weapon types it can apply to (Gun-Kata is a
+ * pistol-and-SMG discipline — see RECOIL_IGNORED_WEAPON_TYPES, which is the
+ * same restriction its Classic "Ignore Recoil" already carries). */
+const NO_RECOIL_NONSS = "when using any firing mode that's not SS";
+const NO_RECOIL_EFFECTS = [
+  { id: "mod:bipod", table: "weapon_mods", col: "Effect", label: "Bi-pod",
+    match: row => row.Modification === "Bi-pod (Rifle Only)",
+    text: "+1b when braced.", dice: 1, when: "braced" },
+  { id: "mod:gyro", table: "weapon_mods", col: "Effect", label: "Gyro-mount",
+    match: row => row.Modification === "Gyro-mount",
+    text: `+1b ${NO_RECOIL_NONSS}.`, dice: 1, when: "nonss" },
+  { id: "mod:gasvent", table: "weapon_mods", col: "Effect", label: "Gas Vent",
+    match: row => row.Modification === "Gas Vent",
+    text: `+1b ${NO_RECOIL_NONSS}.`, dice: 1, when: "nonss" },
+  { id: "augment:gyromount", table: "augments", col: "Effect", label: "Gyromount",
+    match: row => row.Name === "Gyromount",
+    text: `+3b ${NO_RECOIL_NONSS}.`, dice: 3, when: "nonss" },
+  // Gun-Kata 3's displayed wording is the issue's, not a generated one: the
+  // level does two things and only the second changes, so the split-fire half
+  // is carried through verbatim.
+  { id: "ma:gunkata3", table: "martial_arts", col: "Effect", label: "Gun-Kata 3",
+    match: row => /^gun.?kata$/i.test(String(row.Style || ""))
+      && toInt(asNumber(row.Level)) === 3,
+    text: "Can split fire with no penalty. +3b when a fire mode that's not SS.",
+    dice: 3, when: "nonss", types: RECOIL_IGNORED_WEAPON_TYPES },
+];
+// row object -> the Effect text the data actually ships, captured the first time
+// that row is retargeted. Keyed by row identity so a homebrew row that happens
+// to share a name is untouched unless it matched, and so nothing here has to
+// hardcode a copy of the data.
+const NO_RECOIL_AS_WRITTEN = new Map();
+
+function noRecoilActive() { return houseRule("recoil") === "houserule"; }
+/** Classic recoil is the only rule under which recoil is a number worth showing. */
+function recoilInPlay() { return !noRecoilActive(); }
+
+// Idempotent: safe to run on every calculate(), and it must run BEFORE the
+// martial arts are resolved — martialArtStatMods reads Gun-Kata 3's text to
+// decide `recoil_ignored`, and under this rule that text no longer says it.
+function syncNoRecoilText() {
+  const on = noRecoilActive();
+  const tables = BUNDLE.tables || {};
+  for (const spec of NO_RECOIL_EFFECTS) {
+    for (const row of tables[spec.table] || []) {
+      if (!spec.match(row)) continue;
+      if (!NO_RECOIL_AS_WRITTEN.has(row)) NO_RECOIL_AS_WRITTEN.set(row, row[spec.col]);
+      row[spec.col] = on ? spec.text : NO_RECOIL_AS_WRITTEN.get(row);
+    }
+  }
+}
+
+const noRecoilSpec = id => NO_RECOIL_EFFECTS.find(s => s.id === id);
+
+/* The bonus-dice sources this rule gives the CHARACTER (as opposed to a
+ * particular gun): the Gyromount augment and Gun-Kata 3. Resolved in calculate()
+ * onto combat.no_recoil_sources so the sheet can ask one question per weapon. */
+function noRecoilCharacterSources(augments, martialArt) {
+  if (!noRecoilActive()) return [];
+  const out = [];
+  const gyros = toInt((augments || {}).gyromount_count);
+  if (gyros) {
+    const spec = noRecoilSpec("augment:gyromount");
+    // Cumulative with other gyroscopic mounts, exactly as the augment's own
+    // description says — the same reason Classic scales its +2 by the count.
+    out.push({ id: spec.id, label: spec.label, dice: spec.dice * gyros, when: spec.when });
+  }
+  for (const level of ((martialArt || {}).levels) || []) {
+    const spec = NO_RECOIL_EFFECTS.find(s => s.table === "martial_arts" && s.match(level));
+    if (spec) out.push({ id: spec.id, label: spec.label, dice: spec.dice,
+                         when: spec.when, types: spec.types });
+  }
+  return out;
+}
+
+/* Every bonus-dice source this rule gives ONE gun: whatever is bolted to it,
+ * plus the character-wide sources that reach a weapon of this type.
+ * `modNames` is the fitted + integrated mod names; `combat` is CALC.combat.
+ * Returns [{ id, label, dice, when }] — the caller decides which are live,
+ * because "nonss" is a fact about the selected mode and "braced" is a
+ * declaration only the player can make. Empty under the Classic rule. */
+function noRecoilBonuses(weaponType, modNames, combat) {
+  if (!noRecoilActive()) return [];
+  const fitted = new Set((modNames || []).map(n => String(n || "").trim()));
+  const out = [];
+  for (const spec of NO_RECOIL_EFFECTS) {
+    if (spec.table !== "weapon_mods") continue;
+    for (const row of (BUNDLE.tables.weapon_mods || []))
+      if (spec.match(row) && fitted.has(String(row.Modification).trim())) {
+        out.push({ id: spec.id, label: spec.label, dice: spec.dice, when: spec.when });
+        break;   // one row per spec; a mod fitted and integrated is still one mod
+      }
+  }
+  for (const src of ((combat || {}).no_recoil_sources) || []) {
+    if (src.types && !src.types.some(t => weaponTypeIs(weaponType, t))) continue;
+    out.push({ id: src.id, label: src.label, dice: src.dice, when: src.when });
+  }
+  return out;
+}
+
+/* Does a weapon's Type belong to a category? Both of the app's existing tests
+ * are needed: owned weapons are typed by weight and want the prefix match
+ * ("PistolHvy" is a Pistol — recoilIgnoredForType), while a cybergun's Type is
+ * prose and wants the word match ("Forearm SMG" is an SMG — cybergunRecoil).
+ * One weapon list feeds both, so ask both. */
+function weaponTypeIs(type, category) {
+  const t = String(type || "");
+  return t.startsWith(category) || new RegExp(`\\b${category}\\b`, "i").test(t);
+}
+
+/* Free actions that stop existing under this rule. "Stabilize a gun" is recoil
+ * housekeeping, and there is no recoil to keep house on. Matched on the text so
+ * the reference table stays plain data. */
+function actionRefHidden(item) {
+  return noRecoilActive() && /\bstabiliz/i.test(String(item || ""));
 }
 // House rules are PER CHARACTER, stored on `character.house_rules`. The engine
 // reads the active character's choices via houseRule() (activeHouseRules is
@@ -1832,6 +1980,11 @@ function augmentEffectSums(owned) {
     // Recoil-capacity bonus: each Gyromount adds +2.
     recoil_capacity_bonus: toInt(sumBy(owned, ([row, count]) =>
       row.Name === "Gyromount" ? GYROMOUNT_RECOIL_BONUS * count : 0)),
+    // How many, as its own figure: the "No Recoil" house rule pays a Gyromount
+    // in bonus dice instead (#61), and dividing the capacity bonus back out
+    // would break the moment anything else contributed to it.
+    gyromount_count: toInt(sumBy(owned, ([row, count]) =>
+      row.Name === "Gyromount" ? count : 0)),
     dodge_bonus: names.has("Covert Synthskin") ? COVERT_SYNTHSKIN_DODGE_BONUS : 0,
     impact_armor: toInt(sumBy(owned, ([row, count]) => asNumber(row["Impact Armor"]) * count)),
     ballistic_armor: toInt(sumBy(owned, ([row, count]) => asNumber(row["Ballistic Armor"]) * count)),
@@ -2182,6 +2335,7 @@ function mergeMountedAugments(augments, mounted) {
   }
   augments.move_bonus += mounted.move_bonus;
   augments.recoil_capacity_bonus += mounted.recoil_capacity_bonus || 0;
+  augments.gyromount_count += mounted.gyromount_count || 0;
   augments.dodge_bonus += mounted.dodge_bonus;
   augments.impact_armor += mounted.impact_armor;
   augments.ballistic_armor += mounted.ballistic_armor;
@@ -5264,6 +5418,7 @@ function calculate(character) {
   const data = loadData();
   syncEngineeringSkills();   // reshape Engineering skills per the house rule
   syncEWSkill();             // add/remove Computer: Electronic Warfare per the EW rule
+  syncNoRecoilText();        // retarget the recoil-gear effect text per the Recoil rule (#61)
   const warnings = [], errors = [];
   /* Creation rules stop applying at Finalize — budgets are spent and a play
    * character is allowed to have drifted from them. But some of those checks
@@ -5651,6 +5806,12 @@ function calculate(character) {
     combatOut.recoil_ignored = 1;
     combatOut.recoil_ignored_types = RECOIL_IGNORED_TYPES_LABEL;
   }
+  /* "No Recoil" (#61): the character-wide half of the bonus dice that replace
+   * recoil compensation — the Gyromount augment and Gun-Kata 3. Empty under the
+   * Classic rule, so nothing downstream needs to branch. The per-gun half (a
+   * Bi-pod, Gyro-mount or Gas Vent bolted to one weapon) stays with the weapon
+   * and is joined to these by noRecoilBonuses(). */
+  combatOut.no_recoil_sources = noRecoilCharacterSources(augments, martialArt);
   combatOut.martial_notes = maMods.applied;
   // Natural / implanted / power-granted melee weapons for the Overview loadout,
   // plus heritage bite/spit attacks (Shark, Snake).
@@ -5805,6 +5966,7 @@ return {
   GHOST_RATING_DICE,
   weaponIntegratedMods, weaponIsOneshot, ONESHOT_NOTE,
   BASE_RECOIL_CAPACITY, recoilStrengthBonus, recoilIgnoredForType, cybergunRecoil,
+  recoilInPlay, noRecoilBonuses, actionRefHidden, weaponTypeIs,
   gearIsDose, gearMaxDoses, liveDoseRows,
   rigStats, applyExtendedMagazine, meleeDamage, isStrengthDamage,
   meleeDamageIsComputable, assignWeaponModSlots, bowRating,

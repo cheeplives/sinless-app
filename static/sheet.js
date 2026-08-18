@@ -3338,6 +3338,34 @@ function gunKataFitsWeapon(type) {
   return /pistol|smg/i.test(String(type || ""));
 }
 
+/* ---- the "No Recoil" house rule's bonus dice (#61) --------------------------
+ * Under that rule the gear that used to raise Recoil Capacity pays out bonus
+ * dice instead. The engine says WHAT a gun's sources are worth and when each
+ * one counts; these two decide which are live for the shot being set up, and
+ * hand them to the same `bonuses` list the firing mode and Gun-Kata 2 use — so
+ * they land in the dice chip, the Fire tooltip and the roller together, and the
+ * number you click is the number you shoot with.
+ *
+ * Empty under the Classic rule, so neither the weapon rows nor the roller need
+ * to know which rule is running. */
+function noRecoilSourcesFor(row, calcRow) {
+  const names = [...((calcRow || {}).mods || []), ...((calcRow || {}).integrated_mods || [])]
+    .map(m => (m && typeof m === "object") ? m.name : m);
+  return RULES.noRecoilBonuses((row || {}).Type, names, CALC.combat);
+}
+
+/* A "nonss" source is live the moment a mode other than SS is selected — that
+ * is a fact about the shot, so the engine's number applies on its own. "braced"
+ * is not: whether the bipod is actually deployed is a situation only the player
+ * can declare, so it follows the Gun-Kata checkbox pattern (a per-weapon opt-in
+ * on the entry) rather than being assumed on. */
+function noRecoilLiveBonuses(sources, mode, entry) {
+  const nonss = String(mode || "SS") !== "SS";
+  return (sources || [])
+    .filter(b => b.when === "braced" ? !!(entry && entry.braced) : nonss)
+    .map(b => ({ label: b.when === "braced" ? `${b.label} braced` : b.label, dice: b.dice }));
+}
+
 /* Per-shot heat and its cap for an Energy weapon. The structured "Heat" /
    "Max Heat" columns win; failing those it parses the prose the core rows also
    carry ("Heat 3 / max 15"). Columns first because they're what the homebrew
@@ -3386,8 +3414,11 @@ function attackButton(label, rs, opts = {}) {
  * own name, which is right for an owned weapon — but a cybergun's entry is the
  * augment that installed it ("Cybergun Installation") and a trait mount's is a
  * bare play-state record with no name at all, so both pass their own. */
+/* `opts.braceOffered` puts a Braced checkbox beside the Gun-Kata one: under the
+ * "No Recoil" house rule a Bi-pod is worth +1b, but only when the gun is
+ * actually braced, and that is a situation the player declares (#61). */
 function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rollSpec = null,
-                            label = null) {
+                            label = null, opts = {}) {
   const fireLabel = label || w.name || "Attack";
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   const wrap = el("div", { class: "sh-fire" });
@@ -3443,6 +3474,13 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
       el("input", { type: "checkbox", ...(kataOn ? { checked: 1 } : {}), ...(ro ? { disabled: "1" } : {}),
         onchange: e => { w.kata = e.target.checked; playChanged(); } }),
       el("span", {}, "Gun-Kata")));
+  }
+  if (opts.braceOffered) {
+    wrap.append(el("label", { class: "sh-fire-kata",
+      title: "Bi-pod deployed: +1 bonus die while braced" },
+      el("input", { type: "checkbox", ...(w.braced ? { checked: 1 } : {}), ...(ro ? { disabled: "1" } : {}),
+        onchange: e => { w.braced = e.target.checked; playChanged(); } }),
+      el("span", {}, "Braced")));
   }
   if (ro) return wrap;
   // Fire and Reload sit together on their own line — they're the pair you reach
@@ -4101,9 +4139,14 @@ function shOverview(body) {
           const kataOffered = gunKataRank() >= 2 && magSize > 0 && modes.length > 0
             && gunKataFitsWeapon(r.Type);
           const kataOn = kataOffered && !!w.kata;
+          // No Recoil (#61): a Bi-pod / Gyro-mount / Gas Vent on this gun, plus
+          // the Gyromount augment and Gun-Kata 3, as bonus dice.
+          const noRecoil = noRecoilSourcesFor(r, calcRow);
+          const braceOffered = noRecoil.some(b => b.when === "braced");
           const bonuses = [];
           if (md.dice) bonuses.push({ label: mode, dice: md.dice });
           if (kataOn) bonuses.push({ label: "Gun-Kata", dice: 1 });
+          bonuses.push(...noRecoilLiveBonuses(noRecoil, mode, w));
           const statBit = (label, key) => el("span",
             (munName && String(shot[key]) !== String(base[key]))
               ? { class: "wpn-ammo-mod", title: `${munName} loaded` } : {},
@@ -4137,7 +4180,8 @@ function shOverview(body) {
             fire: el("td", { class: "sub" }, (() => {
               const rs = weaponRollSpec(w.name, r.Type, shot.acc, bonuses, r.Reach);
               if (modes.length)
-                return firingModeControls(w, r, calcRow, modes, mode, kataOffered, rs);
+                return firingModeControls(w, r, calcRow, modes, mode, kataOffered, rs,
+                  null, { braceOffered });
               // Melee, thrown and anything else without a firing mode: no
               // magazine to track, but the same attack test to roll.
               const ro = !!(activeTabObj() && activeTabObj().readonly);
@@ -4170,6 +4214,11 @@ function shOverview(body) {
           const cgBonuses = [];
           if (cgMd.dice) cgBonuses.push({ label: cgMode, dice: cgMd.dice });
           if (cgKataOffered && cg.src.kata) cgBonuses.push({ label: "Gun-Kata", dice: 1 });
+          // No Recoil (#61). An implanted gun takes no weapon mods, so only the
+          // character-wide sources can reach it — and a Palm Pistol is still a
+          // pistol as far as Gun-Kata is concerned (RULES.weaponTypeIs).
+          cgBonuses.push(...noRecoilLiveBonuses(
+            RULES.noRecoilBonuses(g.Type, [], CALC.combat), cgMode, cg.src));
           const bit = (label, key) => el("span",
             (ammo.row && String(shot[key]) !== String(base[key]))
               ? { class: "wpn-ammo-mod", title: `${ammo.name} ammo` } : {},
@@ -4420,7 +4469,11 @@ function recoilSummary() {
   };
 }
 
+/* Null under the "No Recoil" house rule (#61) — there is no capacity to report,
+ * so the Finesse card and the Dossier both lose the line rather than showing a
+ * number that means nothing. Both callers test for null. */
 function recoilStatLine() {
+  if (!RULES.recoilInPlay()) return null;
   const r = recoilSummary();
   return el("div", { class: "sh-recoil" },
     statLine("Recoil capacity", String(r.value), r.breakdown),
@@ -5295,7 +5348,10 @@ function shSkills(body) {
     // Firearms, Heavy Weapons and Archery are all Finesse, so the number that
     // decides how much of a burst you can hold on target belongs at the foot of
     // this card rather than a tab away.
-    if (pool === "Finesse") card.append(recoilStatLine());
+    if (pool === "Finesse") {
+      const rl = recoilStatLine();
+      if (rl) card.append(rl);
+    }
     grid.append(card);
   }
   body.append(grid);
@@ -8480,10 +8536,14 @@ function shRigging(body) {
  * action categories land here automatically. */
 function actionRefCard(section) {
   if (!section) return null;
+  // A house rule can retire an action outright — "No Recoil" takes "Stabilize a
+  // gun" with it, since there is no recoil to stabilize (#61). The engine
+  // decides which lines are gone so the reference stays plain data.
+  const items = section.items.filter(item => !RULES.actionRefHidden(item));
   return el("div", { class: "card sh-card" },
     el("h3", {}, section.title),
     section.note ? el("p", { class: "hint" }, section.note) : null,
-    el("ul", { class: "sh-bullets" }, ...section.items.map(item => el("li", {}, item))));
+    el("ul", { class: "sh-bullets" }, ...items.map(item => el("li", {}, item))));
 }
 
 function shActions(body) {
@@ -8538,11 +8598,13 @@ function shNotes(body) {
   // The card always renders now, because recoil capacity is always there to
   // report. It goes in as a stat line rather than a ⚠ callout: this card mixes
   // two kinds of generated content, and a standing figure of the build is not a
-  // warning about it.
+  // warning about it. (The one exception is the "No Recoil" house rule, which
+  // takes the stat away entirely — #61.)
   const dossier = el("div", { class: "card sh-card" },
     el("h3", {}, "Dossier Notes"),
     el("p", { class: "hint" }, "Generated from your build — reminders that don't fit the other tabs."));
-  dossier.append(recoilStatLine());
+  const dossierRecoil = recoilStatLine();
+  if (dossierRecoil) dossier.append(dossierRecoil);
   autos.forEach(n => dossier.append(el("div", { class: "sh-callout" }, "⚠ ", n)));
   if (lifespan) dossier.append(lifespan);
   body.append(el("div", { class: "sh-notes-top" }, notes, dossier));
@@ -8968,7 +9030,10 @@ function buildMarkdown() {
     `**Move** ${c.move}m${moveSpecial() ? ` (${moveSpecial()})` : ""}${altMoves ? ` [${altMoves}]` : ""}`,
     `**Init** ${initEx.dice}d+${initEx.bonus}`,
     `**Actions** ${c.simple_actions}`,
-    `**Recoil** ${c.recoil_capacity}${c.recoil_ignored ? " (ignored)" : ""}`,
+    // No Recoil (#61): nothing to export — the stat doesn't exist for this
+    // character, and an exported "Recoil 1" would be a rule the table dropped.
+    RULES.recoilInPlay()
+      ? `**Recoil** ${c.recoil_capacity}${c.recoil_ignored ? " (ignored)" : ""}` : null,
     c.dodge_bonus ? `**Dodge** +${c.dodge_bonus}` : null,
     c.soak_bonus ? `**Soak** +${c.soak_bonus}d` : null,
     c.physical_damage_reduction ? `**Soak** −${c.physical_damage_reduction}` : null,

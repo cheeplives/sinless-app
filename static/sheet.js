@@ -320,7 +320,11 @@ function kismetEcon() {
 function awardKismet(label, n) {
   CHAR.play.kismet += n;
   CHAR.play.kismet_earned += n;
-  CHAR.play.kismet_log.unshift({ label, delta: n });
+  // Awards are undoable too (#76). The descriptor carries the amount so undo
+  // can walk back BOTH the available Kismet and the lifetime total -- the
+  // lifetime figure is what sizes the boon milestones and the Kismet die pool,
+  // so leaving it standing would hand out a permanent boon for a mis-key.
+  CHAR.play.kismet_log.unshift({ label, delta: n, undo: { kind: "award", amount: n } });
 }
 /* `undo`, when given, is a small serializable descriptor (not a closure —
  * kismet_log is persisted to localStorage as JSON) letting a later
@@ -417,6 +421,36 @@ function ordinalish(n) { return n + (n === 2 ? "nd" : n === 3 ? "rd" : "th"); }
 function undoKismetSpend(entry) {
   const play = CHAR.play;
   const idx = play.kismet_log.indexOf(entry);
+  // An AWARD runs the other way: it handed out Kismet and raised the lifetime
+  // total, so undoing has to take back both (#76). Two states make that unsafe,
+  // and both REFUSE rather than force it -- quietly un-redeeming a boon, or
+  // driving the balance negative, is worse than asking for the undo in order.
+  if (idx >= 0 && entry.undo && entry.undo.kind === "award") {
+    const n = Math.max(0, +entry.delta || 0);
+    if (play.kismet < n) {
+      alert(`That award gave ${n} Kismet and only ${play.kismet} is still unspent. `
+        + "Undo what it paid for first, then undo the award.");
+      return;
+    }
+    const lifetimeAfter = Math.max(0, (play.kismet_earned || 0) - n);
+    const incAfter = Math.floor(lifetimeAfter / 10);
+    const majorsAfter = Math.floor(incAfter / 2);
+    if ((play.major_boons_spent || 0) > majorsAfter
+        || (play.boons_spent || 0) > incAfter - majorsAfter) {
+      alert("Undoing this would drop the lifetime total below a milestone whose "
+        + "boon has already been redeemed. Undo the boon first.");
+      return;
+    }
+    play.kismet -= n;
+    play.kismet_earned = lifetimeAfter;
+    // The Kismet die pool is sized off the lifetime total, so a smaller total
+    // can leave more dice marked used than now exist. The read side clamps, but
+    // the stored value should not be left lying about what was spent.
+    play.pool_used = play.pool_used || {};
+    play.pool_used.Kismet = Math.min(play.pool_used.Kismet || 0, 1 + Math.floor(lifetimeAfter / 10));
+    play.kismet_log.splice(idx, 1);
+    return;
+  }
   // Boons cost no Kismet (delta: 0) but still consume a boons_spent /
   // major_boons_spent slot, so only a strictly POSITIVE (gained) entry is
   // blocked here -- a zero-cost boon redemption is still undoable.
@@ -568,6 +602,15 @@ const CASH_UNDO = {
   armor_extra: u => removeFromSublist(ownedArmor(), u.host, "extras", u.name),
   // Quality and Style are a FIELD on the piece rather than an entry in a list,
   // so undo puts the previous value back instead of removing anything (#73).
+  // A unit's Condition is a field like armor Quality, so undo restores the
+  // value rather than removing an entry (#73).
+  unit_condition: u => {
+    const list = [...(kitOf(u.table) || []), ...((CHAR.play.purchases || {})[u.table] || [])];
+    const unit = list.find(x => x && x.name === u.name);
+    if (!unit) return false;
+    unit.condition = u.from || "Pristine";
+    return true;
+  },
   armor_trait: u => {
     const en = ownedArmor().find(e => e.ref && e.ref.name === u.host);
     if (!en) return false;
@@ -2370,7 +2413,8 @@ function openArmorPopover() {
 }
 
 /* Kismet die pool — 1 die to start, +1 per 10 Kismet earned during play
- * (lifetime, from play.kismet_earned; never shrinks).
+ * (lifetime, from play.kismet_earned, which only moves backwards when an
+ * award is undone -- see undoKismetSpend, which clamps this pool when it does).
  *
  * A meter in the header's top row, in the slot Initiative held, rather than a sixth pool
  * tile. Kismet dice keep their own used-count in `play.pool_used.Kismet`, but
@@ -6906,10 +6950,11 @@ function shKismet(body) {
         el("td", {}, entry.label),
         el("td", { class: "num", style: entry.delta > 0 ? "color:var(--ok)" : entry.delta < 0 ? "color:var(--bad)" : "" },
           entry.delta > 0 ? `+${entry.delta}` : String(entry.delta)),
-        el("td", {}, entry.delta <= 0 && entry.undo
+        el("td", {}, entry.undo
           ? el("button", { class: "btn small",
               title: entry.delta < 0 ? "Refund the Kismet and reverse this spend"
-                                     : "Reverse this and free up the boon slot it spent",
+                : entry.delta > 0 ? "Take this award back, lifetime total included"
+                : "Reverse this and free up the boon slot it spent",
               onclick: async () => { undoKismetSpend(entry); await playChangedRecalc(); } }, "Undo")
           : null))));
     ledger.append(t);
@@ -8915,6 +8960,37 @@ function shDecking(body) {
   body.append(deckBuySection);
 }
 
+/* Condition on an owned drone or vehicle, with the money attached (#73).
+ *
+ * The picker itself already existed in play, but changing it only recalculated:
+ * the factor scales the base chassis price, so a Scooter switched from Pristine
+ * to Good got cheaper on paper while the cash on hand never moved. This charges
+ * or refunds the DIFFERENCE between the two factors, never the whole new price,
+ * because the unit has already been bought once -- the same rule the armor
+ * Quality/Style pickers follow.
+ *
+ * An unaffordable upgrade asks before overdrawing and snaps back if declined,
+ * rather than leaving the unit improved and the balance negative. The previous
+ * value rides in the ledger entry so Undo can put it back. */
+function unitConditionSelect(u, table, baseCost, mult) {
+  let previous = u.condition || "Pristine";
+  const factor = c => RULES.VEHICLE_CONDITION_FACTORS[c] ?? 1;
+  return vehicleConditionSelect(u, async () => {
+    const delta = Math.round(baseCost * (factor(u.condition) - factor(previous)) * mult);
+    if (delta > 0 && CHAR.play.cash < delta
+        && !confirm(`Changing ${u.name} to ${u.condition} costs ${fmt(delta)} but you have `
+          + `${fmt(CHAR.play.cash)}. Overdraw?`)) {
+      u.condition = previous;
+      await playChangedRecalc();
+      return;
+    }
+    if (delta !== 0)
+      logCash(`${u.name}: condition ${previous} → ${u.condition}`, -delta,
+        { kind: "unit_condition", table, name: u.name, from: previous });
+    previous = u.condition;
+    await playChangedRecalc();
+  });
+}
 /* ------------------------------------------------ rigging tab */
 // Per unit-type config. The weapon/mod table names come from rules.js's
 // UNIT_ATTACHMENT_TABLES so the engine, the legacy-attachment migration and this
@@ -9713,7 +9789,7 @@ function shRigging(body) {
                 + ` · weapons ${summary.weapon_count ?? u.weapons.length}/${summary.weapon_cap ?? cfg.capOf(r)}`;
             })()),
           r.Effect ? el("div", { class: "sub", style: "color:var(--manon)" }, r.Effect) : null,
-          vehicleConditionSelect(u, () => playChangedRecalc()),
+          unitConditionSelect(u, cfg.table, +r.Cost || 0, baseMult),
           // Physical Condition + Vehicle Integrity tracks (issue #22), then
           // Inertia sitting with them. Inertia is a free-form tally the engine
           // never reads — it's a place to note momentum during a chase. The old

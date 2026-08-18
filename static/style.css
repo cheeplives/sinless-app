@@ -1423,8 +1423,8 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .settings-rule-help > summary{cursor:pointer;font:400 11px/1.4 var(--body);
   color:var(--dim);margin-top:4px;list-style:none;user-select:none}
 .settings-rule-help > summary::-webkit-details-marker{display:none}
-.settings-rule-help > summary::before{content:"B8 ";display:inline-block}
-.settings-rule-help[open] > summary::before{content:"BE "}
+.settings-rule-help > summary::before{content:"▸ ";display:inline-block}
+.settings-rule-help[open] > summary::before{content:"▾ "}
 .settings-rule-help[open] > summary{color:var(--text)}
 /* Click-to-roll dice figures (skill ratings, weapon dice chips, roll hints).
    A bare button so it inherits whatever it wraps — the reading must not move,

@@ -228,6 +228,19 @@ function seedClassicPriorities(ask = true) {
   for (const k of PRIORITY_CATEGORIES) CHAR.priorities[k] = CLASSIC_PRIORITY_SEED[k];
 }
 
+/* Each rule's description is a full paragraph, and five stacked turn both the
+ * panel and the new-character modal into a wall of prose the reader has to
+ * wade through to reach the next choice (#64). Fold it behind a summary so the
+ * list reads as choices first, with the reasoning one click away. Returns the
+ * element to place plus the setter, because the caller re-points it whenever
+ * the select changes. */
+function houseRuleHelp() {
+  const text = el("div", { class: "settings-help" });
+  const box = el("details", { class: "settings-rule-help" },
+    el("summary", {}, "What this means"), text);
+  return { box, setText: v => { text.textContent = v; } };
+}
+
 let houseRuleControls = [];
 function initHouseRules() {
   const btn = $("#settings-btn"), panel = $("#settings-panel");
@@ -237,8 +250,8 @@ function initHouseRules() {
     el("p", { class: "settings-help", style: "margin:-2px 0 8px" },
       "Set per character — changes affect only the open character."),
     ...RULES.HOUSE_RULE_DEFS.map(def => {
-      const help = el("div", { class: "settings-help" });
-      const setHelp = v => { help.textContent = (def.options.find(o => o.value === v) || {}).help || ""; };
+      const { box: help, setText } = houseRuleHelp();
+      const setHelp = v => setText((def.options.find(o => o.value === v) || {}).help || "");
       const sel = el("select", {
         onchange: async e => {
           RULES.setHouseRule(def.id, e.target.value);
@@ -290,8 +303,8 @@ function promptHouseRules(initial) {
     const onKey = e => { if (e.key === "Escape") done(null); };
 
     const rows = RULES.HOUSE_RULE_DEFS.map(def => {
-      const help = el("div", { class: "settings-help" });
-      const setHelp = v => { help.textContent = (def.options.find(o => o.value === v) || {}).help || ""; };
+      const { box: help, setText } = houseRuleHelp();
+      const setHelp = v => setText((def.options.find(o => o.value === v) || {}).help || "");
       const sel = el("select", {
         onchange: e => { chosen[def.id] = e.target.value; setHelp(e.target.value); } },
         ...def.options.map(o => el("option", { value: o.value }, o.label)));

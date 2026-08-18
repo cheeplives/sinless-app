@@ -3907,6 +3907,36 @@ function weaponSkillDice(name, type, accuracy, bonuses = [], reach = null) {
         + (bwhy.length ? `, bonus ${bwhy.join(" + ")}` : "") });
 }
 
+/* Concealment (#62): whether the guns you are carrying read as guns.
+ *
+ * The check is the summed Conceal of every carried weapon against Subterfuge --
+ * one rating covering the whole load, not a per-weapon test, because an
+ * observer sees the silhouette all at once. Conceal here is the EFFECTIVE
+ * rating the engine already folded mods into, so a bulky scope shows up.
+ *
+ * Cyberguns are deliberately excluded: they are inside the body, and nothing on
+ * the surface is what Subterfuge is hiding. Returns null when the character is
+ * carrying nothing, since there is no question to answer. */
+function concealCallout() {
+  const carried = allWeapons().filter(w => w.equipped !== false);
+  if (!carried.length) return null;
+  // Resolved by position, not by name: two identical guns are two silhouettes
+  // and both have to count. See calcRowFor for why a name-find is wrong here.
+  const conceal = w => toIntSafe(calcRowFor(w, carried).Conceal);
+  const total = carried.reduce((n, w) => n + conceal(w), 0);
+  const sub = ((CALC.skills || {}).Subterfuge || {}).final || 0;
+  // Subterfuge 0 can't cover anything, so any bulk at all is showing. Guarded
+  // rather than divided, because total/0 is Infinity and reads as a bug.
+  const hidden = total === 0 || (sub > 0 && total / sub <= 1);
+  return el("div", { class: "sh-conceal" + (hidden ? "" : " bad"),
+      title: carried.map(w => `${w.name} ${conceal(w)}`).join(" · ") },
+    el("span", { class: "k" }, "Conceal"), " ",
+    el("b", {}, `${total} / ${sub}`),
+    el("span", { class: "sub" }, hidden
+      ? "Carried weapons are hidden from casual observers"
+      : "Weapons not concealed"));
+}
+
 /* One-time special case (player request, not a general homebrew mechanic):
  * the M31-a1G is the under-mounted grenade launcher that belongs to the
  * M31-a1 Advanced Combat Weapon itself -- so even though the M31-a1 is
@@ -4782,6 +4812,7 @@ function shOverview(body) {
         cards.append(tile);
       }
       loadout.append(cards);
+      loadout.append(concealCallout());
 
       // Carried but not in a hand right now -- names only; press the select
       // above to actually wield one. Distinct from "dormant" below: this
@@ -7474,7 +7505,7 @@ function shGear(body) {
       onclick: () => { gearCats.forEach(c => { gearCatOpen[c] = false; }); renderSheet(); } },
       "Collapse all")) : null;
   body.append(el("div", { class: "card sh-card", id: "gear-gear" },
-    el("h3", {}, "Gear"), gearCatBar, gt));
+    el("h3", {}, "Gear"), concealCallout(), gearCatBar, gt));
 
   // ===== Vehicles / rigs / decks owned (configured on their own tabs).
   // Drones and vehicles get their full Rigging-tab stat + attachment lines here

@@ -1418,6 +1418,14 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .settings-rule > span{display:block;font:600 12px/1.3 var(--body);color:var(--text);margin-bottom:4px}
 .settings-rule select{width:100%}
 .settings-help{font:400 11px/1.4 var(--body);color:var(--dim);margin-top:4px}
+/* Collapsed rule description (#64): the summary is a quiet affordance, not a
+   heading -- it sits under the select and should not compete with it. */
+.settings-rule-help > summary{cursor:pointer;font:400 11px/1.4 var(--body);
+  color:var(--dim);margin-top:4px;list-style:none;user-select:none}
+.settings-rule-help > summary::-webkit-details-marker{display:none}
+.settings-rule-help > summary::before{content:"B8 ";display:inline-block}
+.settings-rule-help[open] > summary::before{content:"BE "}
+.settings-rule-help[open] > summary{color:var(--text)}
 /* Click-to-roll dice figures (skill ratings, weapon dice chips, roll hints).
    A bare button so it inherits whatever it wraps — the reading must not move,
    only gain an affordance. Padding with a matching negative margin: the hit
@@ -1627,3 +1635,15 @@ body.sheet-readonly .sh-init-roll,body.sheet-readonly .sh-roller-fab{
   pointer-events:none;opacity:.45}
 /* …but keep the read-only banner's own buttons fully usable. */
 body.sheet-readonly .sh-readonly-banner .btn{pointer-events:auto;opacity:1}
+
+/* Concealment callout (#62). Reads as a verdict, not another stat row: the
+   ratio is the evidence and the sentence beside it is the answer. */
+.sh-conceal{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;
+  margin:8px 0 2px;padding:6px 10px;border:1px solid var(--line);
+  border-left:3px solid var(--ok);border-radius:5px;background:var(--panel)}
+.sh-conceal.bad{border-left-color:var(--bad)}
+.sh-conceal .k{font-family:var(--disp);font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim)}
+.sh-conceal b{font-family:var(--mono);font-size:13px}
+.sh-conceal .sub{font-size:11px;color:var(--dim)}
+.sh-conceal.bad .sub{color:var(--bad)}

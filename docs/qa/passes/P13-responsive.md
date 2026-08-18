@@ -212,6 +212,27 @@ Load the fixture and install the measurement helper once:
   where vertical space is scarcest.
 - **Note:** Run this specifically at `11-landscape` and `13-landscape`. A header
   eating a third of a short viewport is the classic tablet-landscape complaint.
+
+  Known FAIL, tightened twice (2026-08-18) and still short. Measured against
+  `kitchen-sink-final.json`, coarse pointer: `11-landscape` 42% → 34%,
+  `13-landscape` 33% → 28%. `13-landscape` now clears the 25 line's spirit
+  even though it doesn't clear the number; `11-landscape` — the shortest
+  viewport, so the same header height reads as the biggest percentage there —
+  is the holdout.
+
+  What's left is not spacing any more. Both rounds of tightening (line-height,
+  padding, gaps) ran up against the coarse-pointer 32px tap-target floor
+  (JC-017) on every inline `−`/`+`/`↺` row in the header, and the second round
+  additionally folded the pool tiles' "temp" boost row away entirely when it's
+  at 0 (P06-053) — removing one of those floored rows per tile outright rather
+  than just shrinking around it. What remains at `11-landscape` is real text
+  wrapping: the identity column's tags (heritage · magic · lifestyle) and the
+  lifestyle effect line both wrap to two lines at that width once the meters
+  and description columns take their share, and that's content length against
+  available width, not slack spacing. Closing the rest of the gap means either
+  rebalancing how much width the identity column gets against the description
+  and meters (a layout change, not a spacing one), or accepting this as the
+  practical floor for what the header currently shows.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P13-010: The sticky bar (tab strip + actions strip) stays a fraction of a short viewport

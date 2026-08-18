@@ -167,6 +167,12 @@ const LIFESTYLE_EFFECTS = {
 
 let sheetTab = "overview";
 let expandedPool = null;      // pool card the user clicked open on Overview
+// Header pool tiles: which ones have had their "temp" boost row manually
+// expanded. A tile with a nonzero boost shows the row regardless — this only
+// covers the "let me add one" case, where the row starts folded because there
+// is nothing yet to show. Per-pool (a Set of pool names), not one flag for
+// all four, so opening Brawn's doesn't also open Finesse's.
+let poolTempOpen = new Set();
 let imagesCollapsed = false;  // Images section folded shut on the Notes tab
 let dosesCollapsed = true;    // "Under the Effects Of" banner — starts folded
 let fxCollapsed = true;       // Conditional Effects panel — starts folded
@@ -2036,6 +2042,46 @@ function kismetPoolState() {
   };
 }
 
+/* The pool tile's "temp" boost row: −/+/↺ over a bonus/penalty count that
+ * sits at 0 for most characters most of the time. Folded to a single line
+ * when there's nothing to show, because at coarse pointer this row's three
+ * mini-btns cost a hard 32px each (the tap-target floor, JC-017) on every one
+ * of the four pool tiles, all the time, whether anyone had ever touched it or
+ * not — a real chunk of the header on a tablet for a control most tables
+ * never use.
+ *
+ * A tile with a LIVE boost always shows the full row regardless of fold
+ * state — this only folds the "nothing to see" case, never an active one.
+ * `poolTempOpen` is the "let me add one" override: click the folded line to
+ * reveal the −/+ controls, same click-to-reveal idiom as the doses banner and
+ * Conditional Effects panel use elsewhere on this tab. */
+function poolBoostRow(pool, boost, setBoost, btn) {
+  if (boost === 0 && !poolTempOpen.has(pool)) {
+    const open = () => { poolTempOpen.add(pool); renderSheet(); };
+    return el("div", { class: "sh-pool-boost collapsed", role: "button", tabindex: "0",
+        title: "No temporary dice — click to add some",
+        onclick: e => { e.stopPropagation(); open(); },
+        onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); open(); } } },
+      el("span", { class: "sub" }, "temp +0 ▸"));
+  }
+  return el("div", { class: "sh-pool-boost", onclick: e => e.stopPropagation() },
+    el("span", { class: "sub" }, "temp"),
+    btn("−", () => setBoost(boost - 1), "Reduce temporary dice (can go negative)"),
+    el("b", { title: "Temporary bonus/penalty dice",
+      style: boost > 0 ? "color:var(--ok)" : boost < 0 ? "color:var(--bad)" : "" },
+      boost > 0 ? `+${boost}` : boost < 0 ? `−${Math.abs(boost)}` : "+0"),
+    btn("+", () => setBoost(boost + 1), "Add temporary dice"),
+    // At 0 there's nothing to reset — that slot folds the row back away
+    // instead, so opening it to add a die and changing your mind isn't a
+    // one-way door. A live boost keeps the reset: folding it away would hide
+    // an active effect, which the row is never allowed to do.
+    boost
+      ? btn("↺", () => setBoost(0), "Reset temporary dice to 0")
+      : el("button", { class: "mini-btn", title: "Fold this row away",
+          onclick: e => { e.stopPropagation(); poolTempOpen.delete(pool); renderSheet(); } },
+          "▴"));
+}
+
 function headerPoolTile(pool) {
   const { kismetDice, boost, beast, max, used, remaining, setUsed, setBoost } = poolState(pool);
   const btn = (label, fn, title) => el("button", { class: "mini-btn", title,
@@ -2064,14 +2110,7 @@ function headerPoolTile(pool) {
       btn("−", () => setUsed(used + 1), "Spend a die from this pool"),
       btn("+", () => setUsed(used - 1), "Return a spent die"),
       btn("↺", () => setUsed(0), "Reset pool to full")),
-    el("div", { class: "sh-pool-boost", onclick: e => e.stopPropagation() },
-      el("span", { class: "sub" }, "temp"),
-      btn("−", () => setBoost(boost - 1), "Reduce temporary dice (can go negative)"),
-      el("b", { title: "Temporary bonus/penalty dice",
-        style: boost > 0 ? "color:var(--ok)" : boost < 0 ? "color:var(--bad)" : "" },
-        boost > 0 ? `+${boost}` : boost < 0 ? `−${Math.abs(boost)}` : "+0"),
-      btn("+", () => setBoost(boost + 1), "Add temporary dice"),
-      boost ? btn("↺", () => setBoost(0), "Reset temporary dice to 0") : null),
+    poolBoostRow(pool, boost, setBoost, btn),
     // Only the effects that are switched ON get a line here — the rest live in
     // the Conditional Effects panel, where you'd go to switch them on.
     ...activePoolEffects().map(e => {

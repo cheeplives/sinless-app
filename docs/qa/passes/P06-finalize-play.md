@@ -1526,6 +1526,52 @@ path by which play could reach into the creation record.
   `actionsCard()` already applies via `activeTabObj().readonly`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-053: A pool tile's temp row folds away at 0, never while it's live, and reopens on demand
+- **Type:** correctness
+- **Steps:** none.
+- **Check:**
+
+      (async () => { const c = RULES.defaultCharacter(); c.name = "QA Temp Collapse"; c.priorities = { heritage: 2, magic: 0, attributes: 3, skills: 2, resources: 3 }; c.heritage.type = "Human"; c.finalized = true; c.lifestyles = [{ name: "Squatter", months: 1 }]; await openCharacter(c); sheetTab = "overview"; renderSheet(); const boostRow = () => document.querySelector(".sh-pool.brawn .sh-pool-boost"); const startsCollapsed = boostRow().classList.contains("collapsed"); const collapsedText = boostRow().textContent; boostRow().click(); const afterClickOpen = !boostRow().classList.contains("collapsed"); const hasButtons = boostRow().querySelectorAll("button").length; const expandedPoolAfterToggle = expandedPool; const foldBtn = [...boostRow().querySelectorAll("button")].find(b => b.textContent === "▴"); foldBtn.click(); const afterFoldCollapsed = boostRow().classList.contains("collapsed"); poolState("Brawn").setBoost(2); renderSheet(); const autoExpandsWithLiveBoost = !boostRow().classList.contains("collapsed"); const noFoldButtonWhileLive = ![...boostRow().querySelectorAll("button")].some(b => b.textContent === "▴"); const hasResetButtonWhileLive = [...boostRow().querySelectorAll("button")].some(b => b.textContent === "↺"); poolState("Brawn").setBoost(0); renderSheet(); const collapsesAgainAfterReset = boostRow().classList.contains("collapsed"); const tab = activeTabObj(); tab.readonly = true; renderSheet(); const readonlyStillCollapsedByDefault = boostRow().classList.contains("collapsed"); tab.readonly = false; await closeTabByName("QA Temp Collapse"); return { startsCollapsed, collapsedText, afterClickOpen, hasButtons, expandedPoolAfterToggle, afterFoldCollapsed, autoExpandsWithLiveBoost, noFoldButtonWhileLive, hasResetButtonWhileLive, collapsesAgainAfterReset, readonlyStillCollapsedByDefault }; })()
+
+- **Expected:**
+
+      { "startsCollapsed": true, "collapsedText": "temp +0 ▸", "afterClickOpen": true,
+        "hasButtons": 3, "expandedPoolAfterToggle": null, "afterFoldCollapsed": true,
+        "autoExpandsWithLiveBoost": true, "noFoldButtonWhileLive": true,
+        "hasResetButtonWhileLive": true, "collapsesAgainAfterReset": true,
+        "readonlyStillCollapsedByDefault": true }
+
+- **Note:** Follow-on from slimming the header (2026-08-18): the "temp" boost
+  row's three `−`/`+`/`↺` buttons cost a hard 32px each under the coarse-
+  pointer tap-target floor (JC-017), on all four pool tiles, all the time —
+  most tables never touch it, since a nonzero boost is the exception, not the
+  rule. `poolBoostRow()` folds it to one plain text line
+  (`"temp +0 ▸"`, no buttons, so the 32px floor doesn't apply) whenever a
+  pool's boost is 0 and nobody's asked to see it.
+
+  `startsCollapsed`/`collapsedText` are the default state. `afterClickOpen`/
+  `hasButtons` confirm a click reveals the real row (3 buttons: `−`, `+`, and
+  `▴` in the reset slot, since there's nothing to reset at 0).
+  `expandedPoolAfterToggle` stays `null` — the click must not also bubble to
+  the tile itself and pop the Skills panel open, the same `stopPropagation()`
+  guard the always-expanded row already used. `afterFoldCollapsed` confirms
+  `▴` folds it back — opening it to look and changing your mind isn't a
+  one-way door.
+
+  `autoExpandsWithLiveBoost` is the guard that matters most: the row must
+  **never** be collapsible while a boost is actually live — hiding an active
+  temporary bonus or penalty would be actively misleading, not just
+  cosmetic. `noFoldButtonWhileLive` confirms there's no way to fold it away in
+  that state, and `hasResetButtonWhileLive` confirms the reset button is back
+  in that slot (it has something to do again). `collapsesAgainAfterReset`
+  closes the loop: setting boost back to 0 folds the row automatically,
+  without needing the player to fold it by hand. `readonlyStillCollapsedByDefault`
+  is a plain sanity check that read-only doesn't force it open — the
+  existing `body.sheet-readonly .sh-pool-boost{pointer-events:none}` rule
+  already covers both states of the row, collapsed or not, since `.collapsed`
+  is an added class on the same element rather than a different one.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

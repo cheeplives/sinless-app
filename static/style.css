@@ -1687,6 +1687,68 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   th{font-size:11px}
   .sh-skilltable th{font-size:10.5px}
   .sh-tag,.sh-tag-select{font-size:12px}
+
+  /* ---- workspace tab strip ----
+   * The app's top-level navigation, and the one strip this block never
+   * covered: chips measured 24px, the + 26px, the ☰ 30px, and ⎘ / × 15px
+   * apiece sitting 3px apart. Everything here fits inside the existing 40px
+   * strip (--ws-h), so #workspace-tabs .sh-menu-panel{top:37px} still lines
+   * up and no height had to change.
+   *
+   * The chip takes min-height rather than padding, contrary to this block's
+   * usual "padding where there's a label": a chip's height comes from the
+   * strip stretching it, not from its own box, and its width is capped at
+   * 190px with an ellipsis on the name — so growing horizontal padding would
+   * only eat the name it exists to show. 32 + the chip's 5px margin-top =
+   * 37px, still inside the strip. */
+  .ws-tab{min-height:32px}
+  /* Duplicate is DESTRUCTIVE in a way close is not: closeTab leaves a named
+   * character in storage (workspace.js closeTab), while duplicateTab commits
+   * a new "(copy)" character to storage immediately with no undo. Two 15px
+   * buttons 3px apart, where the worse mis-tap is the one that persists data,
+   * is not a target — so on touch the chip carries only ×, and duplication
+   * moves to "Duplicate" in the ☰ character-actions menu at the head of the
+   * strip (added in workspace.js). Mouse users keep the inline ⎘ untouched. */
+  .ws-dup{display:none}
+  .ws-close{font-size:19px;min-width:32px;min-height:32px;padding:2px 6px}
+  .ws-new{width:32px;height:32px}
+  /* Same specificity as the base rule (which is ID-scoped) so this wins. */
+  #workspace-tabs .sh-menu-btn{height:32px}
+
+  /* ---- click-to-roll ----
+   * The core play verb (skill ratings, weapon dice chips) and the base rule
+   * stops at 19px. Same trick, further: padding grows the hit area and an
+   * equal negative margin cancels it, so the rendered number does not move.
+   * 13px of line + 2x10px padding = 33px tall, and the -10px vertical margins
+   * put the margin box back at 13px, so the line box it sits in is unchanged.
+   * Padding and margin cancel exactly on both axes.
+   *
+   * Horizontally the growth has to stay modest. These are inline figures with
+   * other targets a few px away, and a hit area that crosses into a neighbour
+   * silently steals its taps — an overlap is its own accessibility defect, not
+   * a bigger target. 10px clears 32px for anything two characters or wider; a
+   * lone single-digit rating lands at 28px, and the two exceptions below give
+   * up more width still where a neighbour is genuinely close. */
+  .sh-rollable{padding:10px;margin:-10px}
+  /* Paint the highlight on the content box only: at 33px the padding box
+     would bleed over the table rows above and below, which the 19px version
+     never did. The target grows; the reading still doesn't. The :hover state
+     has to be named too — it sets the `background` SHORTHAND, which resets
+     background-clip back to border-box. */
+  .sh-rollable,.sh-rollable:hover{background-clip:content-box}
+  /* A specialized skill renders two ratings separated only by " / " (sheet.js,
+     skillRow). At 10px each, their hit areas would cross over the slash and
+     the second — painted last, so on top — would swallow taps meant for the
+     first. Meet at the separator instead: 5px on the facing edges, the full
+     10px on the outward ones. */
+  .sh-rollable:has(+ b + .sh-rollable){padding-right:5px;margin-right:-5px}
+  .sh-rollable + b + .sh-rollable{padding-left:5px;margin-left:-5px}
+  /* A Knowledge rating sits between the − and + of a .sh-mini pill with a 5px
+     gap on each side, and those steppers are 32px targets in their own right.
+     Anything wider than the gap overlays one of them, so this instance keeps
+     the full height and gives up the width. */
+  .sh-mini .sh-rollable{padding-left:2px;padding-right:2px;
+    margin-left:-2px;margin-right:-2px}
 }
 @media (prefers-reduced-motion: reduce){
   *{transition:none!important}

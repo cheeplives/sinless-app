@@ -614,11 +614,18 @@ label.opt input{margin-top:3px}
    Scoped to the band on purpose: .big, .sub and .btn belong to cards all over
    the sheet and must not shrink with them. */
 /* stretch, not flex-start: the two boxes must read as a matched pair, and
-   Dodge's height is VARIABLE -- cover, drone riders and the tracked-dodge
-   counter each add a row -- so tuning type to match today's content would come
+   Dodge's height WAS VARIABLE -- cover, drone riders and the tracked-dodge
+   counter each added a row -- so tuning type to match today's content would come
    apart on the first character who has cover. Stretch holds in every case; the
    type scale below just keeps the natural gap small enough that the taller box
-   is not mostly air. */
+   is not mostly air.
+
+   Those variable rows now live in Dodge's popover, so the two boxes are the same
+   three elements each (heading, figure, roll row) and match on their own. Stretch
+   stays regardless: it is what guaranteed the match before, it costs nothing, and
+   the moment either box grows a row again it is the only thing holding the pair
+   together. Do not swap it for flex-start on the grounds that they happen to
+   agree today. */
 .sh-head-boxes{flex:1 1 320px;min-width:260px;display:flex;flex-wrap:wrap;gap:10px;
   align-items:stretch}
 .sh-head-boxes > .sh-card{flex:1 1 240px;min-width:0;margin:0;
@@ -636,7 +643,24 @@ label.opt input{margin-top:3px}
 .sh-head-boxes .sh-init-input{font-size:13px;width:54px;padding:3px 5px}
 .sh-head-boxes .sh-counter-btns{gap:6px}
 .sh-head-boxes h3{margin-bottom:2px}
-.sh-head-boxes .sh-card > .sub{margin-top:1px}
+/* The .sub directly under each heading is gone -- it was the static explanation
+   ("Focus Pool dice + Reaction", the dodge sources) and it lives in the boxes'
+   popovers now. The .sub that remains is the "Rolled:" / "Finesse pool" label
+   inside the roll row, which is laid out by .sh-counter-btns, not by this. */
+/* The part of a header box you click for that popover -- heading and figure,
+   never the roll row. Move and Armor make the whole tile the button; these two
+   boxes already own real controls, so the affordance is scoped to the half that
+   doesn't. Same cursor, same focus ring the other clickables here use. */
+.sh-box-face{cursor:pointer;border-radius:6px}
+.sh-box-face:focus-visible{outline:1px solid var(--manon);outline-offset:2px}
+.sh-box-face:hover .sh-box-more{color:var(--manon)}
+/* The visible half of the affordance. cursor:pointer and the title tooltip are
+   both hover-only, and this band is read on an 11" tablet more than anywhere
+   else -- the glyph is what tells a finger there is more behind the box. */
+.sh-box-more{font-size:9px;color:var(--dim);margin-left:5px;vertical-align:1px}
+/* Something exceptional is folded away in there (an initiative note, standing
+   cover), as opposed to the ordinary explanation every box has. */
+.sh-box-flag{font-size:9px;color:var(--amber);margin-left:5px;vertical-align:1px}
 /* The coarse-pointer 32px floor still wins on a phone, and should: these are
    tap targets before they are type. Mobile therefore tightens less. */
 /* "Running now" is a standalone Overview card now, no longer a header panel, so
@@ -668,6 +692,13 @@ label.opt input{margin-top:3px}
   border:1px solid var(--line);border-radius:4px;padding:2px 7px;margin:3px 4px 0 0;
   color:var(--text);cursor:pointer}
 .sh-tag-select:hover{border-color:var(--manon-dim)}
+/* "Effect ▾" -- the lifestyle sentence that used to print in full underneath.
+   Wears .sh-tag as well, so it sizes with the rest of the row (including the
+   coarse-pointer bump further down) and reads as part of it rather than as a
+   button someone bolted on. */
+.sh-ls-info{cursor:pointer;line-height:1.35;margin-top:3px}
+.sh-ls-info:hover{border-color:var(--manon-dim);color:var(--manon)}
+.sh-ls-info:focus-visible{outline:1px solid var(--manon);outline-offset:1px}
 .sh-attrs{display:flex;gap:8px;flex-wrap:wrap;flex:1}
 /* One box shape for everything on this line — the six attributes, Ghost and the
    ZR casting penalty. They're all "a standing figure about this character", so
@@ -1304,7 +1335,6 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
    misread as a pair of steppers. */
 .btn.use-dose{margin-top:4px;display:block;width:100%}
 .btn.use-dose.off{opacity:.45;cursor:not-allowed}
-.sh-ls-effect{font-size:11px;color:var(--dim);max-width:340px;margin-top:2px;line-height:1.25}
 .sh-inline-adjust{display:inline-flex;align-items:center;gap:6px}
 .sh-cash-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .sh-hackbox{border:1px solid var(--line);border-radius:6px;background:var(--panel-2);padding:10px 12px;margin:10px 0 12px}
@@ -1597,8 +1627,9 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
      single 4-across row rather than sitting as a squat block under the name. */
   .sh-meters{margin-left:0;width:100%;grid-template-columns:repeat(4,minmax(0,1fr))}
   /* .sh-heritage-abilities is its own full-width band now and needs no cap
-     lifted; .sh-ls-effect still sits inside the identity column. */
-  .sh-ls-effect{max-width:none}
+     lifted. The .sh-ls-effect paragraph that used to need one here is gone
+     entirely: stacked, it was the identity column's fourth line on every tab,
+     and it is now the "Effect ▾" chip on the tags row, which costs no height. */
 }
 /* Phones go back to 2x2. Four tiles across a 375px screen leaves each one 72px
    wide and 48px of that usable, which is not enough for Kismet's three −/+/↺

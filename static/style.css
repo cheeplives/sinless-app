@@ -958,8 +958,11 @@ label.opt input{margin-top:3px}
    without their per-slot identity colour: a hand isn't a persistent character
    the way a bound spirit is, so every card reads the same until it holds
    something. auto-fit so 2 hands sit side by side and 3+ reflow by width. */
+/* container-type is here for the Twin Fire bar below, which has to know whether
+   this grid is currently one column wide or two — a fact about THIS box, not
+   about the viewport, since the grid sits inside a card whose width varies. */
 .sh-hand-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
-  gap:12px;margin-top:6px;align-items:start}
+  gap:12px;margin-top:6px;align-items:start;container-type:inline-size}
 .sh-hand-card{border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0;
   display:flex;flex-direction:column;gap:6px;background:var(--panel);overflow-wrap:anywhere}
 .sh-hand-card.active{border-color:var(--manon-dim)}
@@ -969,6 +972,41 @@ label.opt input{margin-top:3px}
 /* An underbarrel weapon nested inside its host's hand card, set apart with a
    left rule so it still reads as "part of this card" rather than a sibling. */
 .sh-hand-underbarrel{border-left:2px solid var(--line);padding-left:10px;margin-top:4px}
+/* Twin Fire (#59): a tie-bar joining the two hands that hold the guns. It is a
+   grid item like the cards, and the whole trick is which columns it takes.
+
+   `1 / span 2` is what actually bridges the pair: starting at column 1 forces it
+   onto the row BELOW the two cards, and spanning exactly two tracks makes it end
+   where the second card ends rather than running out past it. It also has to be
+   exactly two: this grid is auto-fit, so a bar spanning `1 / -1` would occupy
+   the surplus tracks that auto-fit had collapsed to zero, de-collapse them, and
+   halve the width of the hand cards themselves — a wide screen went from two
+   584px cards to four 286px tracks with the cards in the first two.
+
+   But `span 2` is only safe once two tracks exist. Below that the grid is one
+   column, and asking for two would invent an implicit second one and push the
+   page into horizontal scroll. So the DEFAULT is the always-safe full span, and
+   the two-track version is layered on only when the grid is measurably wide
+   enough for two 260px cards plus the gap — a CONTAINER query, because this grid
+   sits inside a card and its width doesn't track the viewport. A browser without
+   container queries simply keeps the safe default.
+
+   The rules either side of the button are drawn with ::before/::after and flex:1
+   rather than at fixed percentages: nothing in the CSS knows where the two
+   cards' centres are. Negative top margin pulls the bar up into the grid gap so
+   it reads as attached to the row above, not as a third card. */
+.sh-twinfire{grid-column:1/-1;margin-top:-6px}
+@container (min-width:532px){ .sh-twinfire{grid-column:1/span 2} }
+.sh-twinfire-bar{display:flex;align-items:center;gap:10px}
+.sh-twinfire-bar::before,.sh-twinfire-bar::after{content:"";flex:1;height:1px;
+  background:var(--manon-dim)}
+.sh-twinfire-btn{white-space:nowrap;border-color:var(--manon-dim);color:var(--manon)}
+.sh-twinfire-note{text-align:center;margin-top:3px}
+/* Conditions met but not right now (wrong mode, empty magazine): the bar stays
+   put and fades, so the option doesn't jump in and out of the layout while the
+   player is fiddling with the two mode selects it is asking them to align. */
+.sh-twinfire.off{opacity:.5}
+.sh-twinfire.off .sh-twinfire-btn{cursor:not-allowed}
 /* Fire and Reload are the pair you reach between mid-fight, so they get their
    own line under the mode select rather than trailing off the end of it. A
    weapon with no firing mode carries a lone Attack button in the same slot. */
@@ -1337,6 +1375,10 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-head{display:flex;justify-content:space-between;align-items:center;
   font-family:var(--disp);font-size:12px;letter-spacing:.18em;text-transform:uppercase;
   color:var(--dim);margin-bottom:8px}
+/* "1 of 2" beside a queued roll's title (#59). margin-right:auto keeps it
+   tucked against the title rather than floating to the middle of the head,
+   which is what space-between would otherwise do with a third child. */
+.sh-roller-seq{margin:0 auto 0 8px;font-size:10px;letter-spacing:.1em;color:var(--manon)}
 .sh-roller-close{background:none;border:0;color:var(--dim);cursor:pointer;font-size:13px;padding:2px 4px}
 .sh-roller-close:hover{color:var(--text)}
 .sh-roller-controls{display:flex;align-items:center;gap:6px;margin-bottom:8px}
@@ -1399,6 +1441,10 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 .sh-roller-succ b.sh-roller-total{color:var(--manon)}
 .sh-roller-reroll{width:100%;margin-bottom:6px}
 .sh-roller-reroll[disabled]{opacity:.45;cursor:default}
+/* Hand-over to the second of a pair of rolls (#59). Full width like the
+   re-roll button above it, and accented, because it is the one thing left to
+   do in the panel once the first shot has been read. */
+.sh-roller-next{width:100%;margin-bottom:6px;border-color:var(--manon-dim);color:var(--manon)}
 .sh-roller-hint{font-size:10px;color:var(--dim);line-height:1.35}
 
 /* light/dark theme toggle — floats above every screen (#app, #sheet, #homebrew) */

@@ -1515,8 +1515,16 @@ const rollerD6 = () => 1 + Math.floor(Math.random() * 6);
  * Dice thrown = count + bonusDice + bonusAdded. Pool spent = count.
  * `pool`      — the pool a roll draws from, "" for none. Sticky between rolls,
  *               because a run of Finesse tests is the normal case. */
+/* `penaltyLabel` names where the penalty dice came from, because they are no
+ * longer only wounds: Twin Fire adds one of its own (#59) and the roller has to
+ * say "Wound + Twin Fire −2d" rather than blaming it all on the wound track.
+ * `queue` is a list of further openPoolRoller specs to offer AFTER this one is
+ * rolled, and `seq` is the "shot 1 of 2" caption that goes with them. Only one
+ * roller panel exists, so a button that means "two separate rolls" has to hand
+ * them over one at a time rather than opening two panels (#59). */
 const rollerState = { open: false, count: 6, dice: [], bonus: 0, bonusDice: 0,
-                      bonusAdded: 0, mode: "free", pool: "", spent: null, penalty: 0 };
+                      bonusAdded: 0, mode: "free", pool: "", spent: null, penalty: 0,
+                      penaltyLabel: "Wound", queue: [], seq: null };
 /* Every die in the roll that costs no pool, before penalties. */
 const rollerFreeDice = () => (rollerState.bonusDice || 0) + (rollerState.bonusAdded || 0);
 
@@ -1585,10 +1593,22 @@ function sheetInitiative() {
  * so on; both are dice you roll, so they add into one count. It stops at
  * loading them: penalty dice from range, cover and lighting are a table call,
  * and the ± steppers are right there to apply them before you roll. */
-function openPoolRoller({ dice, bonus = 0, label, note, pool }) {
+/* `extraPenalty` is a penalty die the TEST itself carries, as distinct from the
+ * situational ones the player dials in with ± — Twin Fire's −1 for firing two
+ * guns at once is one, and it has to arrive already applied or the button would
+ * be handing over a roll that is a die too generous (#59). `queue`/`seq` drive
+ * the follow-up roll; see rollerState. Every call assigns all of them, so a
+ * plain roll opened after a queued one starts clean rather than inheriting a
+ * stale queue or somebody else's penalty label. */
+function openPoolRoller({ dice, bonus = 0, label, note, pool,
+                          extraPenalty = 0, penaltyLabel = null, queue = null, seq = null }) {
+  const wound = woundPenalty().size;
+  const extra = Math.max(0, +extraPenalty || 0);
   Object.assign(rollerState, {
     open: true, mode: "pool", label: label || "", note: note || "",
     dice: [], bonus: 0, spent: null, bonusAdded: 0,
+    queue: Array.isArray(queue) ? queue.slice() : [],
+    seq: seq || null,
     // Skill dice in the count, bonus dice in the bonus row — the roller reads
     // the way the chip that opened it does.
     bonusDice: Math.max(0, Math.min(ROLLER_MAX_DICE, +bonus || 0)),
@@ -1598,7 +1618,9 @@ function openPoolRoller({ dice, bonus = 0, label, note, pool }) {
     pool: pool !== undefined ? (pool || "") : rollerState.pool,
     // Wounds are a standing condition, not a situational modifier, so the
     // roller takes them off every test without being asked (issue #30).
-    penalty: woundPenalty().size,
+    penalty: wound + extra,
+    penaltyLabel: penaltyLabel
+      || (extra && wound ? "Wound + test" : extra ? "Test" : "Wound"),
   });
   // A roll with nothing in it is no roll: a caller that preloads only bonus
   // dice (Soak, Dodge) starts at zero limit, but a bare one needs a die.
@@ -1677,7 +1699,16 @@ function rollerOverlay() {
         Object.assign(st, { mode: "free", bonus: 0, bonusDice: 0, bonusAdded: 0,
           dice: [], spent: null });
       }
-      if (!st.open) st.penalty = woundPenalty().size;   // refresh: wounds change
+      // Reopening by hand is a NEW roll, so a queued follow-up and any
+      // test-specific penalty from the roll before it are dropped here along
+      // with the dice — otherwise the FAB would silently resume someone's
+      // half-finished Twin Fire (#59).
+      if (!st.open) {
+        st.penalty = woundPenalty().size;   // refresh: wounds change
+        st.penaltyLabel = "Wound";
+        st.queue = [];
+        st.seq = null;
+      }
 
       st.open = !st.open;
       rollerRefresh();
@@ -1706,6 +1737,10 @@ function rollerOverlay() {
   const panel = el("div", { class: "sh-roller" },
     el("div", { class: "sh-roller-head" },
       isInit ? "Initiative Roll" : (isPool && st.label) ? st.label : "Die Roller",
+      // "Shot 1 of 2" — a queued roll has to say which one you are looking at,
+      // or the second Twin Fire roll is indistinguishable from a stray reopen.
+      (isPool && st.seq)
+        ? el("span", { class: "sh-roller-seq" }, `${st.seq.i} of ${st.seq.n}`) : null,
       el("button", { class: "sh-roller-close", title: "Close",
         onclick: () => { st.open = false; rollerRefresh(); } }, "✕")),
     el("div", { class: "sh-roller-controls" },
@@ -1721,7 +1756,9 @@ function rollerOverlay() {
         return el("span", { class: "sh-roller-count",
             title: `${eff.total}d6 thrown — ${eff.limit} skill`
               + (eff.bonus ? ` + ${eff.bonus} bonus` : "")
-              + (eff.penalty ? ` · wound −${eff.penalty} already taken off` : "") },
+              + (eff.penalty
+                  ? ` · ${(st.penaltyLabel || "Wound").toLowerCase()} −${eff.penalty} already taken off`
+                  : "") },
           el("input", { type: "number", class: "sh-roller-count-input",
             min: "0", max: String(ROLLER_MAX_DICE),
             value: String(st.count),
@@ -1792,7 +1829,7 @@ function rollerOverlay() {
     // dice first is the combat sequence's own order.
     if (eff.penalty)
       panel.append(el("div", { class: "sh-roller-wound" },
-        `Wound −${eff.penalty}d applied`
+        `${st.penaltyLabel || "Wound"} −${eff.penalty}d applied`
         + (eff.bonusLost ? ` · ${eff.bonusLost} bonus ${eff.bonusLost === 1 ? "die" : "dice"} cancelled` : "")
         + (eff.limitLost ? ` · ${eff.limitLost} off the limit` : "")));
 
@@ -1868,6 +1905,21 @@ function rollerOverlay() {
       "4–6 = Success. Tap dice to mark for re-roll — each die re-rolls once."
       + (isInit ? " The total is saved to your Initiative." : "")
       + (st.spent ? " Re-rolls cost no further pool." : "")));
+    // The handover to a queued follow-up roll (#59). It waits until the dice
+    // are down, on purpose: the first shot's successes and its re-rolls are
+    // still on screen to be read and used, and only then does the panel
+    // reload as the second shot. Nothing has been spent for it — Twin Fire
+    // already paid the action, the rounds and the recoil for BOTH shots up
+    // front, so this button is purely "show me the other roll" and is safe to
+    // press late, or to walk away from.
+    if (isPool && st.queue.length) {
+      const next = st.queue[0];
+      panel.append(el("button", { class: "btn sh-roller-next",
+        title: `Open the next roll of this attack — ${next.label}. `
+          + "Nothing further is spent; it was all paid when you pressed the button.",
+        onclick: () => openPoolRoller({ ...next, queue: st.queue.slice(1) }),
+      }, `Next roll → ${next.label}`));
+    }
   } else if (rollerTotalDice() < 1) {
     panel.append(el("div", { class: "sh-roller-hint", style: "color:var(--bad)" },
       `The wound penalty takes this test to nothing — there are no dice left to roll. `
@@ -3936,6 +3988,126 @@ function aimedFireButton(rollSpec, fireLabel, mode, resource, kind = null, calcR
     } }, "Aimed Fire");
 }
 
+/* ---------------------------------------------------------------- Twin Fire
+ *
+ * Two guns, one trigger pull each, at the same instant (#59). Offered only when
+ * two hands each hold a ONE-HANDED pistol or SMG — the same "is this a gun you
+ * can fight with in one hand" question Gun-Kata already asks, so it reuses
+ * gunKataFitsWeapon rather than growing a third copy of the pistol|smg + 1H
+ * test that would drift away from the other two.
+ *
+ * The trade the rule makes, and why each half is coded where it is:
+ *
+ *  - No Accuracy. weaponRollSpec() normally folds a weapon's Accuracy into its
+ *    limit dice, so "no Accuracy bonus" is expressed by passing 0 for it rather
+ *    than by subtracting afterwards — that keeps the pool cost honest too,
+ *    since the pool only ever pays for limit dice.
+ *  - −1 penalty die on each roll. Carried into the roller as extraPenalty so it
+ *    is already applied when the panel opens; a player who had to remember to
+ *    dial it in would sometimes not.
+ *  - Two SEPARATE rolls, each out of the shooter's own pool (Finesse, via the
+ *    Firearms skill) exactly as if two Fire buttons had been pressed. The
+ *    roller is a singleton, so they are handed over one at a time via its queue.
+ *  - One Simple Action for the pair, not two. This is the whole point of the
+ *    manoeuvre and it is deliberately NOT scaled up for Full Auto the way the
+ *    ordinary Fire button is: the issue prices Twin Fire at a flat one Simple
+ *    Action for both rolls.
+ *  - Recoil from BOTH guns, because both actually fired.
+ *
+ * Everything is charged UP FRONT, on the press: the action, both magazines and
+ * both guns' recoil. The two rolls that follow are presentation only. That
+ * ordering is what makes the queued second roll safe to leave unopened — the
+ * character has already paid for the shot whether or not its dice get read.
+ */
+const TWIN_FIRE_PENALTY = 1;
+
+/* One hand's contribution to a Twin Fire, built by the loadout while it already
+ * has the weapon's row, mode and magazine in hand. Kept as plain data so the
+ * bar below can live at top level instead of inside shOverview's closure. */
+function twinFireRollSpec(h, i) {
+  // Accuracy zeroed on purpose — see the header. Bonus dice (firing mode,
+  // Gun-Kata, a No-Recoil-rule mod) are untouched: the rule takes away the
+  // guns' Accuracy, not everything else the shot was going to get.
+  const rs = weaponRollSpec(h.name, h.row.Type, 0, h.bonuses, h.row.Reach);
+  if (!rs || rs.locked) return null;
+  const wounded = woundPenalty().size > 0;
+  return {
+    dice: rs.limitDice, bonus: rs.bonus, pool: rs.pool,
+    label: `Twin Fire: ${h.name}`,
+    extraPenalty: TWIN_FIRE_PENALTY,
+    penaltyLabel: wounded ? "Wound + Twin Fire" : "Twin Fire",
+    seq: { i, n: 2 },
+    note: `${rs.skill}: ${rs.skillDice} skill`
+      + (rs.bonus ? ` + ${rs.bonus} bonus (${h.mode})` : "")
+      + " — Twin Fire gives up this gun's Accuracy and takes a penalty die",
+  };
+}
+
+/* The control itself. Returns null when the pair can't twin-fire at all (which
+ * is what keeps it HIDDEN rather than merely greyed for every ordinary
+ * loadout); returns a disabled control, with the reason in its title, when the
+ * pair is right but the moment isn't — a mode mismatch, an empty magazine, an
+ * untrained skill. Hidden vs disabled is the difference between "this doesn't
+ * apply to you" and "this applies but not yet", and only the second is worth
+ * taking up space. */
+function twinFireBar(a, b) {
+  const specA = twinFireRollSpec(a, 1);
+  const specB = twinFireRollSpec(b, 2);
+  // Both guns must be in the same fire mode. Two things can go wrong and they
+  // are NOT the same problem: the guns may have no mode in common at all (a
+  // fact about the weapons, and the issue's own "disable the option" case), or
+  // they may share modes but be set to different ones right now (a fact about
+  // the player's selects, fixable in two clicks). Say which.
+  const shared = a.modes.filter(m => b.modes.includes(m));
+  const sameMode = a.mode === b.mode && shared.includes(a.mode);
+  const dry = a.loaded < a.cost || b.loaded < b.cost;
+  // No Recoil house rule (#61): recoil isn't a stat under it, so Twin Fire
+  // neither adds any nor says anything about it — the same silence the Recoil
+  // counter, recoilBit and the Dossier line already keep.
+  const recoilOn = RULES.recoilInPlay();
+  const why =
+      (!specA || !specB) ? "One of these guns can't be rolled — the skill is trained only"
+    : !shared.length     ? `${a.name} and ${b.name} have no firing mode in common, `
+                           + "so they can't be fired together"
+    : !sameMode          ? "Both guns must be in the SAME fire mode — set each hand's "
+                           + `mode select to one of: ${shared.join(", ")}`
+    : dry                ? "Not enough rounds loaded in both guns for another shot"
+    : null;
+  const costBits = [
+    "1 Simple Action for both rolls",
+    `${a.cost} + ${b.cost} rounds`,
+    recoilOn ? "recoil from both guns" : null,
+  ].filter(Boolean);
+  const btn = el("button", { class: "btn small sh-twinfire-btn",
+    ...(why ? { disabled: "1" } : {}),
+    title: why || `Fire ${a.name} and ${b.name} together in ${a.mode} — two separate `
+      + `rolls, each without the gun's Accuracy and each at −${TWIN_FIRE_PENALTY} `
+      + `penalty die. Costs ${costBits.join(", ")}.`,
+    onclick: () => {
+      // Recoil first and for BOTH guns, before anything is spent: a shot
+      // refused because a gun is shaken loose must cost nothing, and that is
+      // only true if the check happens ahead of the action and the rounds.
+      // recoilBlocked alerts, so || short-circuits to one message, not two.
+      if (recoilOn && (recoilBlocked(a.name, a.effRow) || recoilBlocked(b.name, b.effRow))) return;
+      // Flat one Simple Action for the pair — see the header on why this is
+      // not the Fire button's `mode === "FA" ? 2 : 1`.
+      if (!spendSimpleActions(1, "Twin Fire")) return;
+      a.entry.loaded = Math.max(0, a.loaded - a.cost);
+      b.entry.loaded = Math.max(0, b.loaded - b.cost);
+      if (recoilOn) { addRecoil(a.mode, a.effRow); addRecoil(b.mode, b.effRow); }
+      // Both rolls are built and queued now, from the state as it was when the
+      // trigger was pulled, so the second one can't be quietly re-priced by a
+      // re-render happening between the first roll and the second.
+      openPoolRoller({ ...specA, queue: [specB] });
+      playChanged();
+    } }, "Twin Fire");
+  return el("div", { class: "sh-twinfire" + (why ? " off" : "") },
+    el("div", { class: "sh-twinfire-bar" }, btn),
+    el("div", { class: "sub sh-twinfire-note" },
+      `Hand ${a.slot + 1} + Hand ${b.slot + 1} — ${a.name} & ${b.name}`
+      + (sameMode ? ` in ${a.mode}` : "")));
+}
+
 /* Firing controls on each Overview weapon row.
  *
  * Ballistic weapons pick a firing mode -- its bonus dice are folded into the
@@ -4893,6 +5065,12 @@ function shOverview(body) {
       };
 
       const cards = el("div", { class: "sh-hand-cards" });
+      // Twin Fire (#59): one slot per hand, filled only by a hand that could
+      // actually take part. Populated as each card is built — everything Twin
+      // Fire needs (the mode, the magazine, the bonus dice, the recoil row) is
+      // already computed there, and recomputing it afterwards would be a second
+      // copy of that arithmetic waiting to disagree with the card it describes.
+      const twinHands = [];
       for (let i = 0; i < handCountEff; i++) {
         const held = primaryAt(i);
         const claimedBy = !held ? secondaryOf(i) : null;
@@ -5027,6 +5205,19 @@ function shOverview(body) {
             recoil_mod: toInt(calcRow.recoil_mod) + 1,
             recoil_mod_label: calcRow.recoil_mod ? "mods + free hand" : "free hand",
           } : calcRow;
+          // Twin Fire candidacy for this hand (#59). gunKataFitsWeapon is the
+          // file's established "one-handed pistol or SMG" test — reused, not
+          // reimplemented. A gun with no magazine or no firing mode (a
+          // launcher, an energy weapon) can't be Twin Fired, and the ammo
+          // figures are derived exactly the way firingModeControls derives its
+          // own so the button and the Fire beside it agree about "dry".
+          if (gunKataFitsWeapon(r) && magSize > 0 && modes.length) {
+            const loadedNow = held.loaded == null ? magSize
+              : Math.max(0, Math.min(Math.floor(+held.loaded) || 0, magSize));
+            twinHands[i] = { slot: i, entry: held, row: r, name: held.name,
+              effRow, modes, mode, bonuses,
+              cost: md.ammo + (kataOn ? 1 : 0), loaded: loadedNow, maxAmmo: magSize };
+          }
           tile.append(el("div", { class: "sub" },
             `${r.Type || ""}`,
             weaponSkillDice(held.name, r.Type, shot.acc, bonuses, r.Reach),
@@ -5056,6 +5247,19 @@ function shOverview(body) {
           for (const ub of (ubByHost.get(held) || [])) tile.append(renderUnderbarrel(ub));
         }
         cards.append(tile);
+        // Twin Fire's control belongs to the PAIR, not to either card, so it is
+        // emitted here — inside the grid, immediately after the second card of
+        // an adjacent qualifying pair — rather than after the loop. It spans the
+        // whole grid row (grid-column:1/-1), which puts it directly under the
+        // two cards it joins on a two-hand character, where they sit side by
+        // side. A three-armed character can pair 1+2 and 2+3, so a bar is
+        // emitted for each adjacent pair and names its own two hands; it can no
+        // longer sit visually between them once the grid has been broken into
+        // rows, which is why the caption states the hands rather than relying on
+        // position alone. Read-only shares get no firing controls at all, here
+        // as everywhere else in this block.
+        if (!ro && i > 0 && twinHands[i - 1] && twinHands[i])
+          cards.append(twinFireBar(twinHands[i - 1], twinHands[i]));
       }
       loadout.append(cards);
       loadout.append(concealCallout());

@@ -46,8 +46,7 @@ function defaultView() {
  * them directly here. */
 function stashView(tab) {
   if (!tab) return;
-  tab.view = { activeTab, sheetTab, expandedPool, imagesCollapsed,
-               dosesCollapsed, fxCollapsed };
+  tab.view = { activeTab, sheetTab, expandedPool, imagesCollapsed };
 }
 
 /* Persist a tab's character to its storage slot — only if it has a name (the
@@ -68,11 +67,9 @@ function restoreView(tab) {
   sheetTab = v.sheetTab || "overview";
   expandedPool = v.expandedPool || null;
   imagesCollapsed = !!v.imagesCollapsed;
-  // Defaults CLOSED, so an unset value must read as collapsed rather than open.
-  // (An older tab.view may still carry sensesCollapsed; Enhanced Senses is a
-  // header tile with a popover now, so the key is simply ignored.)
-  dosesCollapsed = v.dosesCollapsed !== false;
-  fxCollapsed = v.fxCollapsed !== false;
+  // An older tab.view may still carry sensesCollapsed / dosesCollapsed /
+  // fxCollapsed. All three panels are popovers off the header now rather than
+  // folding banners, so those keys are simply ignored.
   // One-shot upgrades that must run for chargen characters too, which never
   // reach ensurePlay(). Both are guarded and idempotent.
   if (typeof migrateHackingProgram === "function") migrateHackingProgram();

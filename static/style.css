@@ -599,17 +599,25 @@ label.opt input{margin-top:3px}
    — no cap, so a wide window gives it the slack instead of stranding it at 520px
    with empty space either side. It still yields first when things get tight
    (flex-basis 240px, and the whole row wraps below ~900px). */
-.sh-desc{flex:1 1 240px;min-width:220px;display:flex}
-/* Height is driven by autoGrowTextarea() in sheet.js, which sets it to the
-   content's scrollHeight on every edit. `resize:none` because a manual drag
-   would be silently undone by the next keystroke; max-height stops a long
-   description from pushing the pools off-screen, and it scrolls past that. */
-.sh-desc-input{width:100%;min-height:48px;max-height:220px;resize:none;overflow-y:auto;
-  background:var(--panel-2);
-  border:1px solid var(--line);border-radius:8px;color:var(--text);padding:6px 9px;
-  font-family:var(--body);font-size:12px;line-height:1.4}
-.sh-desc-input:focus{outline:2px solid var(--manon-dim);outline-offset:1px}
-.sh-desc-input::placeholder{color:var(--dim)}
+/* "Running now" sits where the description used to, in the one band visible
+   from every tab. It wears the folded-banner shape because it IS the folded
+   form of the two panels it absorbed, and it holds NO buttons on purpose: the
+   pointer:coarse block below floors .btn/.mini-btn at 32px, so a face with any
+   of them would make the mobile header taller than the box it replaced. Every
+   control is in the popover behind the click. */
+.sh-running{flex:1 1 240px;min-width:220px;margin-bottom:0;cursor:pointer;
+  display:flex;flex-direction:column;justify-content:center}
+.sh-running:hover{border-left-color:var(--manon)}
+.sh-running:focus-visible{outline:2px solid var(--manon);outline-offset:1px}
+.sh-running .sh-fold-sum{color:var(--text)}
+/* The first popover that can genuinely overflow a phone — spells, doses, an
+   effects list and a form stat block. place() reads offsetHeight to decide
+   whether to flip above, so the cap has to bite BEFORE it measures. */
+.sh-popover.sh-running-pop{max-width:min(420px,calc(100vw - 12px));
+  max-height:70vh;overflow-y:auto}
+.sh-run-group{margin-bottom:8px}
+.sh-popover-sub{font-family:var(--disp);font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:3px}
 .sh-meters{margin-left:auto;justify-content:end}
 .sh-name{font-family:var(--disp);font-weight:700;font-size:20px;line-height:1.2}
 .sh-player{color:var(--dim);font-size:12px;line-height:1.2}
@@ -1010,6 +1018,10 @@ label.opt input{margin-top:3px}
 .sh-notes-top{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;
   margin-bottom:14px}
 .sh-notes-top>*{min-width:0;margin:0}
+/* Each side of the Notes grid is a stack of two cards, so the <=900px
+   collapse keeps description -> notes -> images -> dossier rather than
+   interleaving the columns. */
+.sh-notes-col{display:grid;gap:14px;align-content:start;min-width:0}
 @media (max-width:900px){ .sh-notes-top{grid-template-columns:1fr} }
 
 /* One card per pool, laid out 2×2 (see #13). Grid items default to
@@ -1487,7 +1499,10 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   /* header top band stacks: identity, then description, then meters 4-across */
   .sh-top{flex-direction:column}
   .sh-ident{width:100%}
-  .sh-desc{max-width:none;width:100%;flex-basis:auto}
+  /* Stacked, the header children's heights SUM, so the summary drops to one
+     line — the count and the loudest thing running still read. */
+  .sh-running{width:100%;flex-basis:auto}
+  .sh-running .sh-fold-sum{-webkit-line-clamp:1}
   /* Stacked layout has the whole width to work with, so the 2x2 unrolls into a
      single 4-across row rather than sitting as a squat block under the name. */
   .sh-meters{margin-left:0;width:100%;grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -1577,6 +1592,7 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   th{font-size:11px}
   .sh-skilltable th{font-size:10.5px}
   .sh-tag,.sh-tag-select{font-size:12px}
+  .sh-running{min-height:44px}
 }
 @media (prefers-reduced-motion: reduce){
   *{transition:none!important}

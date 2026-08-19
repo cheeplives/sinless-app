@@ -174,8 +174,6 @@ let expandedPool = null;      // pool card the user clicked open on Overview
 // all four, so opening Brawn's doesn't also open Finesse's.
 let poolTempOpen = new Set();
 let imagesCollapsed = false;  // Images section folded shut on the Notes tab
-let dosesCollapsed = true;    // "Under the Effects Of" banner — starts folded
-let fxCollapsed = true;       // Conditional Effects panel — starts folded
 let playSaveTimer = null;
 let sheetMenuOpen = false;    // hamburger menu (Back to Chargen / Homebrew / Export / …)
 let sheetHeadObserver = null; // IntersectionObserver toggling the compact sticky strip
@@ -2000,26 +1998,14 @@ function sheetHeader() {
       el("div", { class: "k" }, RULES.currencyName()),
       el("div", { class: "v" }, fmt(play.cash), el("span", { class: "plus" }, " +"))));
 
-  // Freeform character description, sitting between identity and the meters.
-  // Editing it in play writes to play, not to the chargen record — a character
-  // changing how they look at the table shouldn't rewrite how they were built.
-  // Falls back to the chargen text until play has its own.
-  const descInput = el("textarea", { class: "sh-desc-input",
-    placeholder: "Character description…", spellcheck: "true",
-    oninput: e => {
-      play.description = e.target.value;
-      autoGrowTextarea(e.target);
-      schedulePlaySave();
-    } },
-    play.description ?? CHAR.description ?? "");
-  // scrollHeight reads 0 while the node is still detached, so the first sizing
-  // has to wait until renderSheet has put it in the document.
-  requestAnimationFrame(() => autoGrowTextarea(descInput));
-  const descField = el("div", { class: "sh-desc" }, descInput);
-
   // Top band: identity (hamburger + name, details underneath) on the left,
-  // description in the middle, meters on the right.
-  const top = el("div", { class: "sh-top" }, ident, descField, right);
+  // what is currently running in the middle, meters on the right. That middle
+  // slot used to hold the character description, which never changes mid-session
+  // and is the one field the markdown export does not even print — it moved to
+  // the Notes tab, and this band now carries something you consult every round.
+  // runningNowPanel() returns null when nothing is running and the identity
+  // block takes the width back, exactly as sensesTile() does in the pool row.
+  const top = el("div", { class: "sh-top" }, ident, runningNowPanel(), right);
   // Heritage abilities, full-width, directly above the pools.
   //
   // This used to be two things in two places: a squeezed "Abilities:" line in
@@ -2506,13 +2492,17 @@ function openAnchoredPopover({ kind, anchorSel, label, build, cls }) {
     box.remove();
     document.removeEventListener("keydown", onKey, true);
     document.removeEventListener("pointerdown", onOutside, true);
-    window.removeEventListener("scroll", close, true);
+    window.removeEventListener("scroll", onScroll, true);
     window.removeEventListener("resize", close);
   };
   // Stashed so closeSheetPopover() can tear this down properly when it only has
   // the node: a bare remove() would orphan all four listeners below.
   box._close = close;
   const onKey = e => { if (e.key === "Escape") close(); };
+  // Scroll doesn't bubble, but a CAPTURE listener on window still fires for a
+  // scroll inside any descendant -- so a popover tall enough to scroll itself
+  // would shut under the reader's finger. Only page scroll should close it.
+  const onScroll = e => { if (!box.contains(e.target)) close(); };
   // A pointerdown on the tile is left alone so the click that follows reaches
   // the toggle above; closing here would let that click re-open the box.
   const onOutside = e => {
@@ -2521,7 +2511,7 @@ function openAnchoredPopover({ kind, anchorSel, label, build, cls }) {
   };
   document.addEventListener("keydown", onKey, true);
   document.addEventListener("pointerdown", onOutside, true);
-  window.addEventListener("scroll", close, true);
+  window.addEventListener("scroll", onScroll, true);
   window.addEventListener("resize", close);
 
   const refresh = () => { box.replaceChildren(...build(refresh, close)); place(); };
@@ -2664,18 +2654,105 @@ function importReportModal(report, fileName) {
   });
 }
 
-/* Grow a textarea to fit what's in it.
+/* "Running now": what is currently ON, in the one band visible from every tab.
  *
- * Height has to be cleared before scrollHeight is read: with a height already
- * set, scrollHeight reports that height rather than the content's, so the box
- * would grow and never shrink again when text is deleted. The CSS max-height
- * caps it and turns on scrolling past that point, so this can't run away. */
-function autoGrowTextarea(ta) {
-  if (!ta || !ta.isConnected) return;
-  ta.style.height = "auto";
-  ta.style.height = `${ta.scrollHeight}px`;
+ * Three things change every round and were each visible from exactly one tab:
+ * active spells (Magic), doses and switched-on conditional effects (Overview).
+ * From anywhere else, a character with three spells up, dosed and shifted looked
+ * identical to one with nothing running. The header is the only chrome on all
+ * ten tabs, so it is where that belongs.
+ *
+ * The face carries NO controls, and that is load-bearing rather than taste:
+ * @media(pointer:coarse) inflates .btn/.mini-btn/.row-del to a 32px floor, which
+ * is what makes the mobile header tall. A face holding none of those classes
+ * cannot inflate. Every control lives in the popover behind the click -- the
+ * same split Move, Armor and Enhanced Senses already use.
+ *
+ * Gated on poolEffects() (what COULD be switched) rather than activePoolEffects()
+ * (what IS): with the panel gone from Overview this popover is the only route to
+ * those switches, so a Wildling with nothing on must still be able to reach the
+ * shift. An all-off list wears the dim styling and says so. */
+function runningNowPanel() {
+  const spells = activeSpells();
+  const doses = activeDoses();
+  const fx = poolEffects().filter(e => !e.dose);
+  const shifted = shiftedForm();
+  if (!spells.length && !doses.length && !fx.length && !shifted) return null;
+
+  const onFx = fx.filter(e => poolEffectOn(e.id));
+  const anyOn = Boolean(spells.length || doses.length || onFx.length || shifted);
+  const count = spells.length + doses.length + onFx.length + (shifted ? 1 : 0);
+
+  // Being shifted leads: "you are not currently shaped like a person" is the
+  // loudest thing that can be true here. Then spells, then doses, then effects.
+  const bits = [
+    ...(shifted ? [`Shifted: ${shifted.name}`] : []),
+    ...spells.map(sp => `${sp.name} F${sp.force}`),
+    ...doseGroupsSummary(doses),
+    ...onFx.map(e => `${e.label} (${Object.entries(e.pools)
+      .map(([pl, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${pl}`).join(" ")})`),
+  ];
+
+  return el("div", {
+    class: `sh-callout sh-running ${anyOn ? "warn" : "info"}`,
+    role: "button", tabindex: "0",
+    title: anyOn ? "What is running right now — click for the controls"
+                 : "Nothing running — click to switch something on",
+    "aria-label": `Running now: ${count} active`,
+    onclick: () => openRunningPopover(),
+    onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRunningPopover(); } },
+  },
+    el("div", { class: "sh-fx-head" },
+      el("span", {}, anyOn ? "⚡ " : "○ ", el("b", {}, "Running now"),
+        anyOn ? " " : null, anyOn ? el("b", {}, String(count)) : null)),
+    el("div", { class: "sh-fold-sum" },
+      anyOn ? bits.join(" · ")
+            : fx.map(e => e.label).join(" · ") + " — none active"));
 }
 
+/* Doses summarised the way the banner folds them: two Crams read as one row
+ * with a x2, and the swing rides along when the drug has one. */
+function doseGroupsSummary(doses) {
+  const seen = new Map();
+  for (const d of doses) seen.set(d.name, (seen.get(d.name) || 0) + 1);
+  return [...seen.entries()].map(([name, n]) => {
+    const swing = doseSummary(name);
+    return name + (n > 1 ? ` ×${n}` : "") + (swing ? ` (${swing})` : "");
+  });
+}
+
+/* Every control for what is running, one click from any tab. The two banners
+ * are rendered WHOLE -- nothing was trimmed on the way here -- and refresh
+ * themselves in place, because this box lives on document.body and a re-render
+ * of #sheet would otherwise leave it showing pre-dismissal state. */
+function openRunningPopover() {
+  openAnchoredPopover({
+    kind: "running", anchorSel: ".sh-running", cls: "sh-running-pop",
+    label: "What is running now",
+    build: (refresh, close) => {
+      const ro = !!(activeTabObj() && activeTabObj().readonly);
+      const spells = activeSpells();
+      const body = [popoverHead("⚡ Running Now", close)];
+      if (spells.length) {
+        body.push(el("div", { class: "sh-run-group" },
+          el("div", { class: "sh-popover-sub" }, "Active spells"),
+          ...spells.map(sp => activeSpellRow(sp, { detail: false, ro, after: refresh }))));
+      }
+      // Rendered unfolded: a fold inside a popover would be a second click to
+      // reach what the first click was for.
+      const doses = dosesBanner({ after: refresh });
+      if (doses) body.push(doses);
+      const fx = poolEffectsPanel({ after: refresh });
+      if (fx) body.push(fx);
+      if (spells.length) {
+        body.push(el("p", { class: "hint" },
+          "Durations are fiction-paced, so nothing expires on a clock. The Magic "
+          + "tab carries each effect text and what a summoning brought."));
+      }
+      return body;
+    },
+  });
+}
 /* Enhanced Senses, as a header tile in the pool row's fifth slot.
  *
  * It was a folding banner in the Overview strip, which put it in the wrong
@@ -2771,7 +2848,11 @@ function senseToggleRows(refresh) {
  * mid-fight would be worse than one the player closes themselves.
  *
  * Returns null when nothing is active. */
-function dosesBanner() {
+/* Rendered inside the Running Now popover, always open: a fold inside a popover
+ * would be a second click to reach what the first click was for. `after` runs
+ * once a dismissal has landed, because the popover lives on document.body and a
+ * re-render of #sheet would leave it showing pre-dismissal state. */
+function dosesBanner({ after = null } = {}) {
   const doses = activeDoses();
   if (!doses.length) return null;
   const ro = !!(activeTabObj() && activeTabObj().readonly);
@@ -2796,21 +2877,7 @@ function dosesBanner() {
   const card = el("div", { class: "sh-callout warn sh-doses" },
     el("div", { class: "sh-doses-head" },
       el("span", {}, "💊 Under the Effects Of ",
-        el("b", {}, String(doses.length))),
-      counterBtn(dosesCollapsed ? "Show ▾" : "Hide ▴", () => {
-        dosesCollapsed = !dosesCollapsed;
-        renderSheet();
-      })));
-
-  if (dosesCollapsed) {
-    card.append(el("div", { class: "sh-fold-sum" },
-      groups.map(g => {
-        const swing = swingOf(g);
-        return g.name + (g.uids.length > 1 ? ` ×${g.uids.length}` : "")
-             + (swing ? ` (${swing})` : "");
-      }).join(" · ")));
-    return card;
-  }
+        el("b", {}, String(doses.length)))));
   card.classList.add("is-open");
 
   for (const g of groups) {
@@ -2833,7 +2900,7 @@ function dosesBanner() {
             title: g.uids.length > 1
               ? `Dismiss dose ${i + 1} of ${g.uids.length} — it wore off`
               : `${g.name} wore off — remove it${swing ? ` (${swing} comes back out)` : ""}`,
-            onclick: () => dismissDose(uid) }, "✕"))));
+            onclick: () => { dismissDose(uid); if (after) after(); } }, "✕"))));
     card.append(row);
   }
   return card;
@@ -4140,16 +4207,14 @@ function shOverview(body) {
   // Replicants have a fixed remaining lifespan, rolled once and ticked down.
   const lifespan = replicantLifespanTracker();
   if (lifespan) body.append(lifespan);
-  // Two folding banners: what you can switch on, and what you're currently on.
-  // Both start folded, and their summaries carry enough to say whether to open
-  // them. (Enhanced Senses used to be a third; it's a header tile now — it was
-  // the one of the three that never changes during play, so it belonged with
-  // the standing figures rather than in a strip of event state.)
-  const fx = poolEffectsPanel();
-  if (fx) body.append(fx);
-  // "What am I on" is the first thing to check when a pool total looks wrong.
-  const doses = dosesBanner();
-  if (doses) body.append(doses);
+  // The Conditional Effects panel and the doses banner used to sit here, folded.
+  // Both now live in the header's "Running now" popover, whole: neither had any
+  // business being Overview-only, because you switch an effect on from what the
+  // Augments and Gear tabs gave you and you take a dose from the Gear tab, so
+  // Overview was an arbitrary parking spot for both. They went from one tab and
+  // zero clicks to ten tabs and one click. (Enhanced Senses made the same trip
+  // earlier, to a header tile.) The pool tiles still carry each switched-on
+  // effect's dice at zero clicks, so what moved is the reason, not the number.
 
   // --- kismet + pools
   const kismetRow = el("div", { class: "sh-kismet" },
@@ -5379,7 +5444,7 @@ function actionsStrip() {
   if (actionsStripCollapsed) {
     // Folded, this has to answer one question: what's left to spend? So the
     // summary names every row rather than a bare count — the same reasoning
-    // fxCollapsed's summary uses for Conditional Effects.
+    // the Conditional Effects panel uses when folded.
     const summary = rows.map(r => {
       const spent = Math.max(0, Math.min(used[r.key] || 0, r.total));
       return `${r.label} ${r.total - spent}/${r.total}`;
@@ -5668,7 +5733,10 @@ function dismissSpell(uid) {
       && CHAR.play.shapeshift) {
     CHAR.play.shapeshift.active = "";
   }
-  playChangedRecalc();
+  // Returned so a caller outside #sheet -- the Running Now popover, which lives
+  // on document.body and is not rebuilt by a re-render -- can refresh itself
+  // once the dismissal has actually landed.
+  return playChangedRecalc();
 }
 
 /* Is this spell currently up? Shapeshift's forms are free to switch between
@@ -5679,6 +5747,37 @@ function spellIsActive(name) {
 
 /* The Active Spells banner. Magic tab only, per the issue — it's a caster's
  * working surface, and a mundane character should never see an empty one. */
+/* One active spell as a row: what it is, at what Force, and what it will cost
+ * to soak. `detail` adds the duration, effect prose and summoned-creature line
+ * -- the Magic tab wants all of it, the header popover wants the head row only,
+ * so the popover is a strict subset rather than a second implementation.
+ *
+ * `after` runs once a dismissal has landed, for callers that live outside
+ * #sheet and are not rebuilt by the re-render. */
+function activeSpellRow(s, { detail = false, ro = false, after = null } = {}) {
+  const row = DATA.tables.spells.find(x => x.Name === s.name) || {};
+  const summon = detail
+    ? RULES.summonedAnimal(s.name, (CHAR.play.summons || {})[s.name], s.force, DATA.tables)
+    : null;
+  return el("div", { class: "sh-active-spell" },
+    el("div", { class: "sh-fx-head" },
+      el("span", {}, el("b", {}, s.name), " ",
+        el("span", { class: "chip magic" }, `F${s.force}`), " ",
+        el("span", { class: "chip" + (s.lethal ? " neg" : " ok") },
+          s.drain == null ? "drain: special"
+            : `drain ${s.drain} ${s.lethal ? "LETHAL" : "stun"}`)),
+      ro ? null : el("button", { class: "row-del", title: "Dismiss this spell",
+        onclick: () => { const r = dismissSpell(s.uid); if (after) r.then(after); } }, "✕")),
+    detail && row.Duration ? el("div", { class: "sub" }, `Duration: ${row.Duration}`) : null,
+    detail && row.Effect ? el("div", { class: "sub" }, row.Effect) : null,
+    // A summoning spell that's up shows what it summoned, at the Force it was
+    // actually cast at rather than the Force it's known at.
+    summon ? el("div", { class: "sub", style: "color:var(--manon)" },
+      `${summon.label}: ${summon.name} — Armor ${summon.ballistic}B/${summon.impact}I`
+      + ` · Dodge ${summon.dodge} · Soak ${summon.soak}`
+      + (summon.attacks.length ? ` · ${summon.attacks[0]}` : "")) : null);
+}
+
 function activeSpellsBanner() {
   const list = activeSpells();
   if (!list.length) return null;
@@ -5686,27 +5785,7 @@ function activeSpellsBanner() {
   const card = el("div", { class: "sh-callout sh-active-spells" },
     el("div", { class: "sh-doses-head" },
       el("span", {}, "✨ Active Spells ", el("b", {}, String(list.length)))));
-  for (const s of list) {
-    const row = DATA.tables.spells.find(x => x.Name === s.name) || {};
-    const summon = RULES.summonedAnimal(s.name, (CHAR.play.summons || {})[s.name], s.force, DATA.tables);
-    card.append(el("div", { class: "sh-active-spell" },
-      el("div", { class: "sh-fx-head" },
-        el("span", {}, el("b", {}, s.name), " ",
-          el("span", { class: "chip magic" }, `F${s.force}`), " ",
-          el("span", { class: "chip" + (s.lethal ? " neg" : " ok") },
-            s.drain == null ? "drain: special"
-              : `drain ${s.drain} ${s.lethal ? "LETHAL" : "stun"}`)),
-        ro ? null : el("button", { class: "row-del", title: "Dismiss this spell",
-          onclick: () => dismissSpell(s.uid) }, "✕")),
-      row.Duration ? el("div", { class: "sub" }, `Duration: ${row.Duration}`) : null,
-      row.Effect ? el("div", { class: "sub" }, row.Effect) : null,
-      // A summoning spell that's up shows what it summoned, at the Force it was
-      // actually cast at rather than the Force it's known at.
-      summon ? el("div", { class: "sub", style: "color:var(--manon)" },
-        `${summon.label}: ${summon.name} — Armor ${summon.ballistic}B/${summon.impact}I`
-        + ` · Dodge ${summon.dodge} · Soak ${summon.soak}`
-        + (summon.attacks.length ? ` · ${summon.attacks[0]}` : "")) : null));
-  }
+  for (const s of list) card.append(activeSpellRow(s, { detail: true, ro }));
   card.append(el("p", { class: "hint" },
     "Spells stay up until dismissed — durations here are fiction-paced, so nothing "
     + "expires on a clock. Bonuses a spell grants are applied by adding it under "
@@ -5735,7 +5814,7 @@ function shiftedForm() {
 }
 
 /* The worn form as a row for the Conditional Effects panel. */
-function shiftedFormRow(s) {
+function shiftedFormRow(s, after = null) {
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   return el("div", { class: "sh-fx-row on sh-shifted" },
     el("div", { class: "sh-fx-what" },
@@ -5746,7 +5825,11 @@ function shiftedFormRow(s) {
         "Your own Condition tracks still apply — the form's is what it would "
         + "have as a creature.")),
     ro ? null : el("button", { class: "btn warn", title: "Return to your own shape",
-      onclick: () => { CHAR.play.shapeshift.active = ""; playChangedRecalc(); } }, "Revert"));
+      onclick: () => {
+        CHAR.play.shapeshift.active = "";
+        const r = playChangedRecalc();
+        if (after) r.then(after);
+      } }, "Revert"));
 }
 
 /* The Force the character knows Shapeshift at, or 0 if they don't know it.
@@ -5936,6 +6019,35 @@ function mergeTrackedEffects(play) {
   schedulePlaySave();
 }
 
+/* The character description, on the Notes tab.
+ *
+ * It used to sit in the sheet header, between identity and the meters. It never
+ * changes mid-session and the markdown export does not even emit it, so it was
+ * failing the header comment test -- what that band carries is what you consult
+ * every round -- while holding 400-600px of the one strip visible from all ten
+ * tabs, and growing the header when someone wrote a paragraph.
+ *
+ * Two things must not drift. The READ falls back to the chargen record, because
+ * CHAR.description is what the markdown importer restores and play.description
+ * starts null. The WRITE stays on play.description: writing through to
+ * CHAR.description would let the first keystroke in play rewrite how the
+ * character was BUILT. */
+function descriptionCard() {
+  const play = CHAR.play;
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
+  const ta = el("textarea", { class: "sh-notes", rows: "10",
+    placeholder: "Character description…", spellcheck: "true",
+    ...(ro ? { readonly: "1" } : {}),
+    oninput: e => { play.description = e.target.value; playChanged(false); } });
+  // Set after construction, not as a child: a textarea child text node and its
+  // .value diverge the moment the user types. Same reason notesCard does it.
+  ta.value = play.description ?? CHAR.description ?? "";
+  return el("div", { class: "card sh-card" },
+    el("h3", {}, "Description"),
+    el("p", { class: "hint", style: "margin:2px 0 8px" },
+      "How this character looks and carries themselves. Saves automatically while you type."),
+    ta);
+}
 /* The one list of things currently changing your dice, each row a small form
  * (#46, merged in #57).
  *
@@ -5969,8 +6081,13 @@ function trackedEffectList(title, items, addLabel, placeholder, emptyText) {
 }
 
 function notesCard(rows) {
+  // Read-only shares must not invite typing that will silently not persist --
+  // schedulePlaySave() already returns early, but nothing said so. The attribute
+  // rather than pointer-events, so the text stays selectable and copyable.
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
   const ta = el("textarea", { class: "sh-notes", rows: String(rows || 6),
     placeholder: "Character notes, session logs, reminders…",
+    ...(ro ? { readonly: "1" } : {}),
     oninput: e => { CHAR.play.notes = e.target.value; playChanged(false); } });
   ta.value = CHAR.play.notes || "";
   return el("div", { class: "card sh-card" },
@@ -7249,9 +7366,10 @@ function shUseDoseBtn(entry, row, owned) {
     onclick: async () => {
       if (adjustOwned(entry, -1) === 0) return;   // nothing left to take
       takeDose(entry.name);
-      // Opening the banner on the first dose: the effect is live now and a
-      // folded summary is a poor way to learn that.
-      if (activeDoses().length === 1) dosesCollapsed = false;
+      // The banner used to be unfolded here so the first dose could not be
+      // missed. It no longer needs the nudge: the first dose turns the header's
+      // "Running now" panel from absent to present on every tab, which is a
+      // louder signal than unfolding a banner on a tab you may not be looking at.
       await playChangedRecalc();
     } }, "Use");
 }
@@ -10209,7 +10327,7 @@ function shNotes(body) {
   // half only exists when there's something to say — with nothing beside it the
   // editor takes the full width rather than leaving a hole.
   const autos = dossierNotes();
-  const notes = notesCard(18);
+  const notes = notesCard(14);   // shorter: it no longer owns the whole column
   // A Replicant's clock belongs with the rest of what being one costs you, not
   // only on the Overview. Same live control, same play field.
   const lifespan = replicantLifespanTracker();
@@ -10225,10 +10343,21 @@ function shNotes(body) {
   if (dossierRecoil) dossier.append(dossierRecoil);
   autos.forEach(n => dossier.append(el("div", { class: "sh-callout" }, "⚠ ", n)));
   if (lifespan) dossier.append(lifespan);
-  body.append(el("div", { class: "sh-notes-top" }, notes, dossier));
+  // Two columns of two. Left is what the PLAYER writes — description above the
+  // session notes, both freeform prose in the same voice, so they read as one
+  // column. Right is reference: the pictures, then the generated dossier under
+  // them. Dossier goes last because it is the least-read thing here and is often
+  // just the recoil line, so it fills a tail rather than stranding whitespace at
+  // the top of a column, which is what it did when it led.
+  //
+  // Column WRAPPERS rather than a flat four-cell grid: at <=900px .sh-notes-top
+  // collapses to one column, and wrappers keep the phone order description ->
+  // notes -> images -> dossier instead of splitting the two textareas apart.
+  body.append(el("div", { class: "sh-notes-top" },
+    el("div", { class: "sh-notes-col" }, descriptionCard(), notes),
+    el("div", { class: "sh-notes-col" }, imagesCard(), dossier)));
   const traits = heritageTraitsCard();
   if (traits) body.append(traits);
-  body.append(imagesCard());
 }
 
 /* All heritage traits (features + uplift animal) with their listed effects. */
@@ -10542,7 +10671,10 @@ const POOL_EFFECT_FORMS = {
 /* One row per effect: what it is, what it's worth, and the switch. Sits in the
  * Overview callout strip beside the Replicant lifespan tracker, because these
  * are things you flip mid-fight and they belong above the pools they move. */
-function poolEffectsPanel() {
+/* `after` as on dosesBanner above: the Running Now popover renders this whole
+ * and must be refreshed by hand after a toggle, since it sits outside the
+ * #sheet subtree that playChanged rebuilds. */
+function poolEffectsPanel({ after = null } = {}) {
   // Doses live in their own banner with a Use button and a per-dose dismiss.
   // Giving them an On/Off here as well would be two controls for one bonus,
   // and the two would disagree the moment either was touched.
@@ -10566,34 +10698,10 @@ function poolEffectsPanel() {
   const card = el("div", { class: `sh-callout sh-fx ${anyOn ? "warn" : "info"}` },
     el("div", { class: "sh-fx-head" },
       el("span", {}, anyOn ? "⚡ " : "○ ", el("b", {}, "Conditional Effects"), " ",
-        el("b", {}, anyOn ? `${onCount}/${total}` : String(total))),
-      counterBtn(fxCollapsed ? "Show ▾" : "Hide ▴", () => {
-        fxCollapsed = !fxCollapsed;
-        renderSheet();
-      })));
-
-  // Folded, this has to answer one question: is anything altering my pools right
-  // now? So the summary names what's ON and what it's worth, and falls back to
-  // the available names only when nothing is — the same split the doses banner
-  // uses, and for the same reason. A bare count would make "none active" and
-  // "Adrenal Pump running" look identical at a glance.
-  if (fxCollapsed) {
-    // Being shifted leads the summary. It's the loudest thing that can be true
-    // here — you are not currently shaped like a person — so it should not be
-    // something you have to expand the panel to discover.
-    const onBits = [
-      ...(shifted ? [`Shifted: ${shifted.name}`] : []),
-      ...onList.map(e => `${e.label} (${Object.entries(e.pools)
-        .map(([p, n]) => `${n > 0 ? "+" : "−"}${Math.abs(n)} ${p}`).join(" ")})`),
-    ];
-    card.append(el("div", { class: "sh-fold-sum" },
-      anyOn ? onBits.join(" · ")
-            : list.map(e => e.label).join(" · ") + " — none active"));
-    return card;
-  }
+        el("b", {}, anyOn ? `${onCount}/${total}` : String(total)))));
   card.classList.add("is-open");
 
-  if (shifted) card.append(shiftedFormRow(shifted));
+  if (shifted) card.append(shiftedFormRow(shifted, after));
 
   for (const e of list) {
     const on = poolEffectOn(e.id);
@@ -10617,7 +10725,7 @@ function poolEffectsPanel() {
         : el("button", { class: "btn " + (form ? (on ? "warn" : "good") : (on ? "good" : "")),
             title: on ? `${e.label} is on — click to switch it off (${swing} comes back out)`
                       : `Switch ${e.label} on — adds ${swing} to the pools`,
-            onclick: () => setPoolEffect(e.id, !on) },
+            onclick: () => { setPoolEffect(e.id, !on); if (after) after(); } },
             form ? (on ? form.onBtn : form.offBtn) : (on ? "On" : "Off")));
     card.append(row);
 
@@ -10630,9 +10738,10 @@ function poolEffectsPanel() {
           el("b", { style: left ? "color:var(--ok)" : "color:var(--bad)" },
             `${left} / ${BEAST_DICE_MAX}`)),
         ro ? null : miniCounter("", () => play.beast_dice ?? BEAST_DICE_MAX,
-          v => { play.beast_dice = v; }, 0, BEAST_DICE_MAX),
-        ro ? null : counterBtn("↻", () => { play.beast_dice = BEAST_DICE_MAX; playChanged(); },
-          "good"),
+          v => { play.beast_dice = v; if (after) after(); }, 0, BEAST_DICE_MAX),
+        ro ? null : counterBtn("↻", () => {
+          play.beast_dice = BEAST_DICE_MAX; playChanged(); if (after) after();
+        }, "good"),
         el("span", { class: "sub" }, "refresh each round")));
     }
   }

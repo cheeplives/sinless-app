@@ -5502,8 +5502,17 @@ function shOverview(body) {
           + `Tick Equip on the Gear tab to carry ${stowed.length > 1 ? "them" : "it"}.`));
       }
     }
+    // Armor and Ammo sit side by side in half-width boxes, the same shape the
+    // hand cards use (#60): both were full-width bands stacked under the guns,
+    // and neither carries enough to earn the whole width. auto-fit means they
+    // pair up when there is room and stack when there is not, so the phone
+    // layout is unchanged. Armor leads because it is the longer of the two and
+    // the one consulted on every incoming hit.
+    const loadoutBoxes = el("div", { class: "sh-loadout-boxes" });
+
     // Ammo on hand, listed under the weapons it feeds (issue #21). Uses remaining
     // are tracked on the Gear tab; Effect/Notes come straight from the table.
+    let ammoBox = null;
     if (ammoOnHand.length) {
       const amt = el("table");
       amt.append(el("tr", {}, el("th", {}, "Ammo"), el("th", { class: "num" }, "Uses"),
@@ -5513,7 +5522,8 @@ function shOverview(body) {
         el("td", { class: "num" }, String(a.uses)),
         el("td", { class: "sub" }, [a.row.Effect || "", a.row.Notes || ""]
           .filter(Boolean).join(" · ") || "—"))));
-      loadout.append(amt);
+      ammoBox = el("div", { class: "sh-loadout-box" },
+        el("div", { class: "k" }, "Ammo"), amt);
     }
     // (Both the natural / cyber and trait-mounted tables are built and appended
     // above the equipped weapons — what's part of you, then what's bolted to
@@ -5545,15 +5555,31 @@ function shOverview(body) {
             `wt ${r.wt || 0}`,
             `ZR ${r.ZR || 0}`,
             (r.Rarity && r.Rarity !== "-") ? `Rarity ${r.Rarity}` : "",
-            (arow.extras || []).length ? arow.extras.join(", ") : "",
           ].filter(Boolean).join(" · ");
           const aeffects = arow.effects || [];
+          // What the Quality, Style and Extras DO is folded behind the list of
+          // their own names (#60): a coat with four extras was printing four
+          // rulings inline, which buried the armor values the row exists for.
+          // The summary is the inventory -- names only, always readable -- and
+          // one click gets the meanings, the same trade spells make with their
+          // Description. Extras with no ruling still get named in the summary,
+          // so folding never loses the fact that they are fitted.
+          const named = new Set(aeffects.map(e => e.label));
+          const trimNames = [...aeffects.map(e => e.label),
+            ...(arow.extras || []).filter(x => !named.has(x))];
           return {
             name: el("b", {}, a.name),
             stats: el("td", { class: "num" }, `${r.Ballistic || 0} / ${r.Impact || 0}`),
             last: el("td", { class: "sub" }, notes || "—",
-              aeffects.length ? el("div", { class: "armor-effects" },
-                aeffects.map(e => `${e.label}: ${e.text}`).join(" · ")) : null),
+              trimNames.length
+                ? (aeffects.length
+                    ? expanderPanel(`armor-trim:${a.name}:${idx}`, trimNames.join(" · "),
+                        ...aeffects.map(e => el("div", { class: "armor-effect-line" },
+                          el("b", {}, `${e.label}: `), e.text)))
+                    // Nothing fitted has a ruling to explain, so an expander
+                    // would open onto an empty box -- name them and stop.
+                    : el("div", { class: "armor-effects" }, trimNames.join(" · ")))
+                : null),
           };
         },
       }));
@@ -5617,7 +5643,9 @@ function shOverview(body) {
         }
         return row;
       })();
-      loadout.append(...[
+      const armorBox = el("div", { class: "sh-loadout-box" },
+        el("div", { class: "k" }, "Armor"));
+      armorBox.append(...[
         el("div", { class: "sh-advrow", style: "border:0;padding:6px 0 0" },
           el("span", { class: "sub" },
             `Total armor: ${CALC.combat.ballistic_armor}B / ${CALC.combat.impact_armor}I `
@@ -5628,12 +5656,15 @@ function shOverview(body) {
       // Sits directly under the total it inflates, so the number and the reason
       // it's wrong are read together.
       for (const { slot, names } of overArmoredSlots()) {
-        loadout.append(el("div", { class: "sh-callout warn" }, "⚠ ",
+        armorBox.append(el("div", { class: "sh-callout warn" }, "⚠ ",
           el("b", {}, `${names.length} ${slot} pieces worn — `),
           `only one ${slot} piece should count, but all ${names.length} are adding to the `
           + `totals above: ${names.join(" · ")}. Untick the extras under Worn on the Gear tab.`));
       }
+      loadoutBoxes.append(armorBox);
     }
+    if (ammoBox) loadoutBoxes.append(ammoBox);
+    if (loadoutBoxes.children.length) loadout.append(loadoutBoxes);
     body.append(loadout);
   }
 

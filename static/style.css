@@ -1738,3 +1738,19 @@ body.sheet-readonly .sh-readonly-banner .btn{pointer-events:auto;opacity:1}
   border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--ink)}
 .sh-buy-foot{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
 .sh-buy-total b{font-family:var(--mono);font-size:18px;color:var(--amber)}
+
+/* Armor and Ammo as half-width boxes under the guns (#60). Same auto-fit shape
+   as .sh-hand-cards: they pair up when there is room and stack when there is
+   not, so nothing changes on a phone. align-items:start because Armor is much
+   the taller of the two and Ammo should not be stretched to match it. */
+.sh-loadout-boxes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:12px;margin-top:10px;align-items:start}
+.sh-loadout-box{border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+  min-width:0;background:var(--panel);overflow-wrap:anywhere}
+.sh-loadout-box > .k{font-family:var(--disp);font-size:12px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--manon);margin-bottom:6px}
+.sh-loadout-box table{width:100%}
+/* The trim expander sits inside a table cell that is already .sub, so it must
+   not inherit a second size reduction. */
+.sh-loadout-box .desc-expander summary{font-size:11px}
+.armor-effect-line{margin-top:2px}

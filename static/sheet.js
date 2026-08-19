@@ -6126,21 +6126,144 @@ function conditionTrack(label, max, get, set) {
  */
 function activeSpells() { return (CHAR.play && CHAR.play.active_spells) || []; }
 
+/* The three skills a cast can be rolled on. Nothing in the spells table names a
+ * skill — there is no column for it, and School ("Incantor", "Mentalism", …)
+ * classifies the magic rather than the test — so the app must not pretend to
+ * know. Sorcery leads because it is the general spellcasting skill, and the
+ * other two are offered rather than derived (#68). */
+const CASTING_SKILLS = ["Sorcery", "Conjuring", "Channeling"];
+
+/* The gear/weapon ZR casting penalty, in dice, or 0.
+ *
+ * Same test the Magic tab's banner and the Overview's ZR line use: the house
+ * rule turns carried ZR into −1d per full point on casting rolls, and Hedge
+ * magic is exempt. Factored out because the cast roller now has to APPLY it
+ * rather than just describe it — a roll that opened without it would be a die
+ * or two too generous, which is the bug #59 fixed for Twin Fire. */
+function castingZrPenalty() {
+  if (RULES.houseRule("zr") !== "houserule") return 0;
+  if (CALC.magic.type === "Hedge") return 0;
+  return Math.max(0, Math.floor(CALC.zoetics.gear_zr || 0));
+}
+
+/* Configure-then-cast dialog (#68).
+ *
+ * Force used to be a bare prompt(). Casting now carries three more decisions —
+ * which skill is rolling, how many Ley Line dice the site is worth, how many
+ * Void Line dice it costs — and a chain of four prompt()s would be four modal
+ * boxes with no way to see the total or back out of the third. Every other
+ * multi-input flow in play mode is a configure-then-confirm modal (buyDialog
+ * for anything priced by its options), so this is the same shape with the cash
+ * half removed: choose everything, read the consequences live, commit once.
+ *
+ * It is deliberately NOT buyDialog itself. buyDialog exists to price choices —
+ * it owns a Total line, a cash line and a Buy button that reads "Buy anyway"
+ * when you overdraw — and a cast costs no money at all. Bending it here would
+ * mean threading "pretend this is free" through a dialog whose whole subject is
+ * what things cost. The modal chrome (`mount-modal-backdrop`, `sh-buy-field`)
+ * is shared; the money is not.
+ *
+ * Resolves to { force, skill, ley, void } or null if cancelled. */
+function castDialog({ name, knownForce, zp, row }) {
+  return new Promise(resolve => {
+    const state = { force: knownForce, skill: CASTING_SKILLS[0], ley: 0, void: 0 };
+    const backdrop = el("div", { class: "mount-modal-backdrop" });
+    const done = v => { document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") done(null); };
+
+    const drainLine = el("div", { class: "sh-buy-total" });
+    const soakLine = el("div", { class: "sub" });
+    const poolLine = el("div", { class: "sub" });
+    const castBtn = el("button", { class: "btn-add", onclick: () => done(state) }, "✦ Cast");
+
+    // Number field rather than a select: Ley and Void dice are a table call with
+    // no fixed ceiling, so an enumerated list would be guessing where to stop.
+    const numField = (key, label, hint) => {
+      const input = el("input", { type: "number", min: "0", max: String(ROLLER_MAX_DICE),
+        value: "0", style: "width:80px",
+        oninput: e => {
+          state[key] = Math.max(0, Math.min(ROLLER_MAX_DICE, parseInt(e.target.value, 10) || 0));
+          refresh();
+        } });
+      return el("div", { class: "sh-buy-field" }, el("b", {}, label), input,
+        el("div", { class: "sub" }, hint));
+    };
+
+    const refresh = () => {
+      const drain = RULES.spellDrain(row.Drain, state.force);
+      const lethal = RULES.drainIsLethal(state.force, zp);
+      drainLine.replaceChildren(
+        el("span", { class: "sub" }, "Drain "),
+        el("b", { style: `color:var(--${lethal ? "bad" : "ok"})` },
+          drain == null ? `${row.Drain || "Special"} (table decides)`
+            : `${drain} ${lethal ? "LETHAL" : "Stun"}`));
+      // Restated live as the Force slides, because crossing ZP changes not just
+      // how much drain there is but which pools may soak it (#68) — that is the
+      // consequence worth seeing BEFORE committing, not after.
+      soakLine.textContent = drainSoakText(name, lethal);
+      const sk = CALC.skills[state.skill] || { final: 0, dice_bonus: 0 };
+      const zr = castingZrPenalty();
+      // Terms, not a total. The roller is the authority on the final count —
+      // it takes wound penalties off on top of these — so printing a bottom
+      // line here would be a second implementation of the same arithmetic,
+      // free to drift from the one that actually rolls.
+      poolLine.textContent =
+        `Casting roll: ${sk.final} ${state.skill}`
+        + (sk.dice_bonus ? ` + ${sk.dice_bonus} skill bonus` : "")
+        + (state.ley ? ` + ${state.ley} Ley Line` : "")
+        + (state.void ? ` − ${state.void} Void Line` : "")
+        + (zr ? ` − ${zr} gear ZR` : "")
+        + " · wound penalties come off in the roller.";
+    };
+
+    const forceSel = el("select", { onchange: e => { state.force = +e.target.value; refresh(); } },
+      ...Array.from({ length: knownForce }, (_, i) => {
+        const f = i + 1;
+        return el("option", { value: String(f) },
+          `Force ${f}${f > zp ? " — drain is LETHAL" : ""}`);
+      }));
+    forceSel.value = String(knownForce);
+
+    const skillSel = el("select", { onchange: e => { state.skill = e.target.value; refresh(); } },
+      ...CASTING_SKILLS.map(s => el("option", { value: s },
+        `${s} (${(CALC.skills[s] || { final: 0 }).final}d)`)));
+    skillSel.value = state.skill;
+
+    const modal = el("div", { class: "card mount-modal", style: "max-width:460px" },
+      el("h3", {}, `Cast ${name}`),
+      el("p", { class: "hint" },
+        `Your ZP is ${zp}. At Force ${zp + 1} or higher the Drain lands as LETHAL `
+        + `(physical-based) damage instead of Stun, which changes how it can be `
+        + `soaked. Casting is a Complex Action (2 Simple).`),
+      el("div", { class: "sh-buy-field" }, el("b", {}, "Force"), forceSel),
+      el("div", { class: "sh-buy-field" }, el("b", {}, "Casting skill"), skillSel),
+      numField("ley", "Ley Line dice", "Bonus dice from a ley line or other favourable site."),
+      numField("void", "Void Line dice", "Penalty dice from a void line or hostile mana."),
+      el("div", { class: "sh-buy-foot" }, drainLine, soakLine, poolLine),
+      el("div", { style: "display:flex;gap:8px;margin-top:12px" },
+        castBtn,
+        el("button", { class: "btn", onclick: () => done(null) }, "Cancel")));
+    backdrop.append(modal);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) done(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(backdrop);
+    refresh();
+  });
+}
+
 /* Cast at a chosen Force, up to the Force the spell is known at.
  *
  * Force is asked for rather than assumed, because it decides three separate
  * things at once: the spell's own Force-scaled effects, how much Drain it
  * deals, and — the part worth being loud about — whether that Drain is Stun or
- * LETHAL. The prompt states the consequence before the player commits. */
+ * LETHAL. The dialog states the consequence before the player commits, and
+ * since #68 collects the Ley/Void dice for the casting roll in the same pass. */
 async function castSpell(name, knownForce, after) {
   const zp = CALC.zoetics.zp_remaining;
   const row = DATA.tables.spells.find(x => x.Name === name) || {};
-  const raw = prompt(
-    `Cast ${name} at what Force? (1–${knownForce})\n\n`
-    + `Your ZP is ${zp}. At Force ${zp + 1} or higher the Drain is LETHAL.`,
-    String(knownForce));
-  if (raw == null) return;
-  const force = Math.max(1, Math.min(knownForce, parseInt(raw, 10) || 0));
+  const choice = await castDialog({ name, knownForce, zp, row });
+  if (!choice) return;
+  const force = Math.max(1, Math.min(knownForce, choice.force || 0));
   if (!force) return;
   // A cast is a Complex Action — 2 Simple Actions — same as pressing the
   // Complex button on Actions This Round, just spent from here instead.
@@ -6151,20 +6274,60 @@ async function castSpell(name, knownForce, after) {
   CHAR.play.active_spells.push({
     uid: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name, force, lethal, drain,
+    // The line dice are recorded on the cast, not just spent on the roll: they
+    // are the reason this cast rolled what it did, and a player re-reading the
+    // Running Now list mid-scene should be able to see that the +3 came from a
+    // ley line rather than wonder where it went. Both are optional, so old
+    // records without them keep working (the row treats absent as 0).
+    ley: choice.ley || 0, void: choice.void || 0,
   });
   // Whatever the cast is FOR — stepping into a shape, pointing a familiar at an
   // animal — happens here, after the Force is known and before the state is
   // saved, so one press does one whole thing.
   if (after) after(force);
   await playChangedRecalc();
-  // The Soak roll is the player's to make, so this reminds rather than rolls:
-  // the roller opens loaded with Brawn and their soak dice, and what to beat.
+  // State the Drain and, per #68, exactly how it may be soaked — the two cases
+  // are not the same test and the old message named the wrong pool for both.
+  // The soak itself is rollable from the active-spell row rather than from
+  // here, so the alert can be dismissed without losing the offer.
   const damage = lethal ? "LETHAL" : "Stun";
   alert(`${name} cast at Force ${force}.\n\n`
     + (drain == null
         ? `Drain: ${row.Drain || "Special"} — this spell states no fixed Drain; the table decides.`
         : `Soak ${drain} Drain, taken as ${damage} damage.`)
-    + `\n\nRoll Brawn to soak — the Soak button on the Condition card loads your dice.`);
+    + `\n\n${drainSoakText(name, lethal)}`
+    + `\n\nThe soak buttons on the Active Spells row load the right pool.`);
+  // The casting roll comes last so it is what's left on screen: the alert above
+  // is a statement about a cost that lands AFTER the spell goes off, while this
+  // is the roll being made right now.
+  openCastingRoller(name, force, choice);
+}
+
+/* Open the roller for the casting roll itself, with the line dice applied.
+ *
+ * Ley Line dice are BONUS dice — they come from the site, not from the caster —
+ * so they go in `bonus` and cost no pool, exactly like a firing mode's free
+ * dice. Void Line dice are the mirror: a penalty the TEST carries, which is
+ * what `extraPenalty` is for (#59), so they arrive already taken off rather
+ * than being left for the player to dial in and forget. The gear-ZR casting
+ * penalty rides in the same number for the same reason. */
+function openCastingRoller(name, force, choice) {
+  const sk = CALC.skills[choice.skill] || { final: 0, dice_bonus: 0, pool: "Resolve" };
+  const ley = choice.ley || 0;
+  const voidD = choice.void || 0;
+  const zr = castingZrPenalty();
+  const penaltyBits = [voidD ? "Void Line" : null, zr ? "Gear ZR" : null].filter(Boolean);
+  openPoolRoller({
+    dice: sk.final, bonus: (sk.dice_bonus || 0) + ley, pool: sk.pool,
+    label: `Cast ${name} (F${force})`,
+    note: `${sk.final} ${choice.skill}`
+      + (sk.dice_bonus ? ` + ${sk.dice_bonus} skill bonus` : "")
+      + (ley ? ` + ${ley} Ley Line` : "")
+      + (voidD ? ` · −${voidD} Void Line` : "")
+      + (zr ? ` · −${zr} gear ZR` : ""),
+    extraPenalty: voidD + zr,
+    penaltyLabel: penaltyBits.length ? penaltyBits.join(" + ") : null,
+  });
 }
 
 function dismissSpell(uid) {
@@ -6199,6 +6362,81 @@ function spellIsActive(name) {
  *
  * `after` runs once a dismissal has landed, for callers that live outside
  * #sheet and are not rebuilt by the re-render. */
+/* ---- drain soak (#68) ------------------------------------------------------
+ * Which Fetish, if any, helps this spell's soak. `allGear()` is the play-mode
+ * view of what the character HAS — the deep-copied kit plus anything bought in
+ * play — which is the list that can have a Fetish in it after Finalize; the
+ * chargen array is the wrong one to read past the bright line. */
+function fetishFor(name) {
+  return RULES.fetishesForSpell(allGear(), name);
+}
+
+/* One sentence stating how this drain may be soaked, Fetish included.
+ *
+ * Kept as a string rather than nodes because the same words have to go in two
+ * places that take different things: the post-cast alert (plain text) and the
+ * active-spell row (a `sub` line). One source, so the ruling cannot be right in
+ * one place and stale in the other. */
+function drainSoakText(name, lethal) {
+  const fet = fetishFor(name);
+  // "LETHAL" is this app's word for physical-based drain everywhere else (the
+  // chip, the Magic tab hint), so it leads and "physical" follows in
+  // parentheses rather than the other way round — one vocabulary, or the player
+  // has to work out that two labels mean the same track.
+  const base = lethal
+    ? "Soak: LETHAL (physical-based) drain can ONLY be soaked with Channeling — Brawn does not apply."
+    : "Soak: Stun-based drain is soaked with Channeling FIRST, then Brawn on what's left.";
+  if (!fet.bonus) return base;
+  // Stated as an applied bonus because it IS decidable from the data: the
+  // Fetish's `link` names this exact spell. Anything vaguer would be a reminder
+  // instead — see fetishesForSpell.
+  return `${base} ${fet.best.name} is linked to ${name}: +${fet.bonus}d on the Channeling roll.`
+    + (fet.all.length > 1
+        ? ` (${fet.all.length} linked Fetishes — the best one applies, they don't stack.)`
+        : "");
+}
+
+/* The soak roll buttons for one active spell.
+ *
+ * Reuses openPoolRoller the way the Condition card's Soak button does rather
+ * than reimplementing anything: Channeling rolls out of its own pool (Resolve)
+ * with the Fetish as free bonus dice, and Brawn is the Condition card's soak
+ * shape — no limit dice, dial in what you're spending.
+ *
+ * Brawn deliberately does NOT preload CALC.combat.soak_bonus the way the
+ * Condition card does. Those passive dice come from heritage and martial arts
+ * as *damage* soak; nothing in the data says they resist Drain, and loading
+ * them here would be inventing a bonus rather than reading one. The Brawn
+ * button is offered only on Stun drain, because on physical drain there is no
+ * legal Brawn roll to offer at all. */
+function drainSoakButtons(s) {
+  const fet = fetishFor(s.name);
+  const ch = CALC.skills.Channeling || { final: 0, dice_bonus: 0, pool: "Resolve" };
+  const chBonus = (ch.dice_bonus || 0) + fet.bonus;
+  const btns = [el("button", { class: "btn small roll",
+    title: `Soak Drain with Channeling${fet.bonus ? ` — includes ${fet.best.name} +${fet.bonus}d` : ""}`,
+    onclick: () => openPoolRoller({
+      dice: ch.final, bonus: chBonus, pool: ch.pool || "Resolve",
+      label: `Drain soak — Channeling (${s.name} F${s.force})`,
+      note: `${ch.final} Channeling`
+        + (ch.dice_bonus ? ` + ${ch.dice_bonus} skill bonus` : "")
+        + (fet.bonus ? ` + ${fet.bonus} ${fet.best.name}` : "")
+        + (s.drain == null ? "" : ` · ${s.drain} Drain to soak`),
+    }) }, "⚄ Channeling")];
+  if (!s.lethal) {
+    btns.push(el("button", { class: "btn small roll",
+      title: "Soak what Channeling left over with Brawn — Stun drain only",
+      onclick: () => openPoolRoller({
+        dice: 0, bonus: 0, pool: "Brawn",
+        label: `Drain soak — Brawn (${s.name} F${s.force})`,
+        note: "Second soak, after Channeling — dial in the Brawn you're spending",
+      }) }, "⚄ Brawn"));
+  }
+  // No spacer text nodes: .sh-drain-soak is a flex row and gap does the
+  // spacing, whereas a " " between buttons would become its own flex item.
+  return el("div", { class: "sh-drain-soak" }, ...btns);
+}
+
 function activeSpellRow(s, { detail = false, ro = false, after = null } = {}) {
   const row = DATA.tables.spells.find(x => x.Name === s.name) || {};
   const summon = detail
@@ -6210,9 +6448,18 @@ function activeSpellRow(s, { detail = false, ro = false, after = null } = {}) {
         el("span", { class: "chip magic" }, `F${s.force}`), " ",
         el("span", { class: "chip" + (s.lethal ? " neg" : " ok") },
           s.drain == null ? "drain: special"
-            : `drain ${s.drain} ${s.lethal ? "LETHAL" : "stun"}`)),
+            : `drain ${s.drain} ${s.lethal ? "LETHAL" : "stun"}`),
+        // The line dice this cast was made with. Shown only when non-zero so a
+        // plain cast reads exactly as it did before (#68).
+        s.ley ? el("span", { class: "chip ok" }, `ley +${s.ley}d`) : null,
+        s.void ? el("span", { class: "chip neg" }, `void −${s.void}d`) : null),
       ro ? null : el("button", { class: "row-del", title: "Dismiss this spell",
         onclick: () => { const r = dismissSpell(s.uid); if (after) r.then(after); } }, "✕")),
+    // How this drain is soaked, stated wherever the drain chip is (#68) — the
+    // Magic tab banner and the header's Running Now popover both get it, since
+    // both are surfaces a player consults mid-scene with drain still to take.
+    el("div", { class: "sub" }, drainSoakText(s.name, s.lethal)),
+    drainSoakButtons(s),
     detail && row.Duration ? el("div", { class: "sub" }, `Duration: ${row.Duration}`) : null,
     detail && row.Effect ? el("div", { class: "sub" }, row.Effect) : null,
     // A summoning spell that's up shows what it summoned, at the Force it was
@@ -9163,6 +9410,15 @@ function shMagic(body) {
     wrap.append(el("p", { class: "hint" },
       `Spells cost their listed price in ${RULES.currencyName().toLowerCase()} per Force to learn or advance. `
       + `Casting at Force above your ZP (${zp}) deals drain as LETHAL damage; at or below, drain is Stun.`));
+    // The soak ruling stated once for the whole card, because every row below
+    // carries a "drain: stun" / "drain: LETHAL" chip and the two are not soaked
+    // the same way (#68). Cast rows repeat it per-spell with the Fetish folded
+    // in; these rows are spells not yet cast, where no Force is fixed yet and
+    // so no Fetish bonus can be quoted against a real roll.
+    wrap.append(el("p", { class: "hint" },
+      "Stun drain is soaked with Channeling first, then Brawn on what's left. "
+      + "LETHAL (physical-based) drain can ONLY be soaked with Channeling. "
+      + "A Fetish linked to the spell adds its rating to that Channeling roll."));
     // What's currently up, above the list of what could be — the banner is the
     // thing you consult mid-scene, the list is what you consult between them.
     const banner = activeSpellsBanner();

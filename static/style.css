@@ -605,13 +605,30 @@ label.opt input{margin-top:3px}
    Condition was here first and went back to the Overview: two damage tracks
    made this band taller than a phone screen, on every tab.
 
-   Their explanatory prose runs two ticks below the card default (14px), because
-   in a band that renders everywhere the reminder should not compete with the
-   figure it explains. */
+   Both run about 30% tighter than the same cards would on the Overview: they
+   are reference boxes on ten tabs, not the place you do the work. Every shared
+   element is sized once, in this block, which is also what keeps the two
+   matching each other -- Initiative used to carry a 34px figure and an 18px
+   field that Dodge had no counterpart for.
+
+   Scoped to the band on purpose: .big, .sub and .btn belong to cards all over
+   the sheet and must not shrink with them. */
 .sh-head-boxes{flex:1 1 320px;min-width:260px;display:flex;flex-wrap:wrap;gap:10px;
   align-items:flex-start}
 .sh-head-boxes > .sh-card{flex:1 1 240px;min-width:0;margin:0}
-.sh-head-boxes .sub{font-size:12px}
+.sh-head-boxes > .sh-card{padding:10px 12px}
+.sh-head-boxes h3{font-size:11px}
+/* .sh-counter .big (further down) matches with equal specificity and would win
+   on document order, so this one carries the extra class deliberately. */
+.sh-head-boxes .sh-counter .big{font-size:23px;line-height:1.1;margin:2px 0 4px}
+.sh-head-boxes .sub{font-size:10.5px;line-height:1.35}
+.sh-head-boxes .btn{font-size:11px;padding:4px 9px}
+.sh-head-boxes .sh-init-input{font-size:13px;width:54px;padding:3px 5px}
+.sh-head-boxes .sh-counter-btns{margin-top:5px;gap:6px}
+.sh-head-boxes h3{margin-bottom:2px}
+.sh-head-boxes .sh-card > .sub{margin-top:1px}
+/* The coarse-pointer 32px floor still wins on a phone, and should: these are
+   tap targets before they are type. Mobile therefore tightens less. */
 /* "Running now" is a standalone Overview card now, no longer a header panel, so
    it keeps card chrome and never hides itself when empty -- a fixed column that
    vanishes is one the reader has to remember used to be there. The accent rule

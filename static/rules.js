@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "308";
+const APP_VERSION = "309";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -3212,6 +3212,70 @@ function drainIsLethal(force, zp) {
   return toInt(force) > toInt(zp);
 }
 
+/* ---- drain soak (#68) ------------------------------------------------------
+ * How Drain is soaked depends on what it lands as, and the two cases are not
+ * symmetrical:
+ *
+ *   Stun-based drain      Channeling FIRST, then Brawn on what's left.
+ *   Physical-based drain  Channeling ONLY. Brawn does not touch it.
+ *
+ * The order matters and is not a formatting detail: a caster who leads with
+ * Brawn on Stun drain has spent the pool that was supposed to go second. So the
+ * sheet states the sequence rather than just listing two skills, and the roll
+ * buttons are offered in that order.
+ *
+ * "Physical-based" is the same test as `drainIsLethal` — Force above ZP — which
+ * is why this takes the resolved `lethal` flag rather than re-deriving it: the
+ * active-spell record already froze that decision at cast time, and re-testing
+ * against a ZP that has since moved would silently rewrite what an already-cast
+ * spell costs. */
+const DRAIN_SOAK_STUN = ["Channeling", "Brawn"];
+const DRAIN_SOAK_PHYSICAL = ["Channeling"];
+function drainSoakOrder(lethal) {
+  return lethal ? DRAIN_SOAK_PHYSICAL.slice() : DRAIN_SOAK_STUN.slice();
+}
+
+/* Fetishes that apply to a given spell.
+ *
+ * A Fetish is not a mechanism of its own in this data: it is a `misc_gear` row
+ * named "Fetish N" whose Effect reads "Increase magic soak for a specific spell
+ * or spirit by +N", and the *specific* half is carried by the owned entry's
+ * `link` field — the same field a Focus and a Spirit Bag use, set by
+ * gearLinkSelect in chargen. So "appropriate" is decidable from the data and
+ * needs no guessing: link === the spell being soaked for. A Fetish linked to a
+ * spirit, to a ritual, or to nothing at all is simply not appropriate here.
+ *
+ * The rating is read from the NAME rather than parsed out of the Effect prose,
+ * because the name is the row's key — homebrew and renames both have to keep it
+ * intact for the row to resolve at all, while the prose is free text.
+ *
+ * `carried !== false` is the same permissive test gear ZR and encumbrance use:
+ * a Fetish left at home is owned but not in hand, and cannot help a roll.
+ *
+ * Several can be held at once, and they are NOT summed. A Fetish states a flat
+ * "+N to soak this", so two linked to the same spell is the better of the two
+ * applying, not a stacking pair — summing would let a caster buy Fetish 1 six
+ * times for the price of one Fetish 6's benefit and change. The runner-up is
+ * still returned in `all` so the sheet can say what else is on the hook.
+ *
+ * Returns { bonus, best, all } — bonus 0 and all [] when nothing applies. */
+const FETISH_NAME_RE = /^Fetish\s+(\d+)$/i;
+function fetishesForSpell(gearList, spellName) {
+  const want = String(spellName || "").trim();
+  const all = [];
+  if (want) {
+    for (const item of gearList || []) {
+      if (!item || item.carried === false) continue;
+      const m = FETISH_NAME_RE.exec(String(item.name || "").trim());
+      if (!m) continue;
+      if (String(item.link || "").trim() !== want) continue;
+      all.push({ name: item.name, rating: toInt(m[1]) });
+    }
+  }
+  all.sort((a, b) => b.rating - a.rating);
+  return { bonus: all.length ? all[0].rating : 0, best: all[0] || null, all };
+}
+
 /* ---- animal spells ---------------------------------------------------------
  * Three spells reach into the animals table. Create Darkenbeast and Bound
  * Servant hand the caster ONE animal and change its numbers. Shapeshift is
@@ -6222,6 +6286,7 @@ return {
   deckHardening, rigUnitHardening, hardeningBonusFromText,
   SUMMON_SPELLS, isSummonSpell, isFormSpell, shapeshiftState, summonedAnimal,
   spellDrain, drainIsLethal, DRAIN_SPECIAL,
+  drainSoakOrder, fetishesForSpell,
   equippedDeckName,
   SPEAKER_BOND_MAX, speakerBondCount,
   HAND_COUNT_BASE, HAND_COUNT_MAX, handCount,

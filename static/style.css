@@ -1201,6 +1201,10 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 .sh-active-spells{border-color:var(--manon)}
 .sh-active-spell{padding:5px 0}
 .sh-active-spell + .sh-active-spell{border-top:1px dashed var(--line-dash)}
+/* Drain soak buttons (#68). Wrap rather than overflow: this row also renders
+   inside the narrow Running Now popover, where two buttons don't fit on one
+   line at phone widths. */
+.sh-drain-soak{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px}
 .sh-cast{border-color:var(--manon);color:var(--manon)}
 /* Shapeshift's known forms: one row each, the worn one picked out. */
 .sh-form-row{display:flex;justify-content:space-between;align-items:center;gap:8px;

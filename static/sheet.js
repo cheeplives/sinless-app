@@ -1087,9 +1087,14 @@ function promptDisposal(name, value, modsValue) {
 
     // Base scaled by condition, fitted kit added back whole (#81).
     const amountOf = pct => Math.round(base * (Math.max(0, Math.min(100, pct)) / 100)) + mods;
+    // Both fields sit inside a sentence ("Sell at [ ] % of base -> [ ] Woolongs"),
+    // so the words around them are their only label — spelled out here because
+    // a screen reader reads the field, not the sentence it is embedded in.
     const pctInput = el("input", { type: "number", min: "0", max: "100", step: "5",
+      "aria-label": "Sell at percent of base price",
       value: String(lastResalePct), style: "width:74px" });
     const amtInput = el("input", { type: "number", min: "0", step: "1",
+      "aria-label": `Sale price in ${RULES.currencyName()}`,
       value: String(amountOf(lastResalePct)), style: "width:110px" });
     const sellBtn = el("button", { class: "btn-add" }, "Sell");
     const syncFromPct = () => { amtInput.value = String(amountOf(+pctInput.value || 0)); };
@@ -1641,11 +1646,17 @@ function renderSheet() {
   root.innerHTML = "";
   const ro = !!(typeof activeTabObj === "function" && activeTabObj() && activeTabObj().readonly);
   document.body.classList.toggle("sheet-readonly", ro);
+  root.append(sheetSkipLink());   // first focusable thing in the sheet, by design
   if (ro) root.append(readonlyBanner());
   const head = sheetHeader();
   const bar = sheetStickyBar();
   root.append(head, bar);
-  const body = el("div", { class: "sheet-body" });
+  // The tab strip's panel. There is exactly one, rebuilt per tab, so a fixed id
+  // is safe and every tab button can point its aria-controls at it. No
+  // tabindex: the panel always has focusable content of its own, and an empty
+  // stop between the strip and that content would be one more thing to pass.
+  const body = el("div", { class: "sheet-body", id: "sh-tabpanel", role: "tabpanel",
+    "aria-labelledby": "sh-tab-" + sheetTab });
   ({ overview: shOverview, skills: shSkills, kismet: shKismet, gear: shGear,
      augments: shAugments, magic: shMagic, decking: shDecking,
      rigging: shRigging, actions: shActions, notes: shNotes })[sheetTab](body);
@@ -1673,6 +1684,32 @@ function renderSheet() {
   }, { rootMargin: `-${48 + wsH}px 0px 0px 0px` });
   sheetHeadObserver.observe(head);
   restoreSheetFocus(keep);
+}
+
+/* Skip link — hidden until it takes focus, and the first stop inside #sheet so
+ * a Tab from the workspace strip reaches it immediately.
+ *
+ * It jumps to the TAB STRIP rather than to the sheet body, because the strip is
+ * this screen's navigation: the header in front of it is some fifty focus stops
+ * of pool tiles, meters and counters, and landing on the strip puts the reader
+ * one arrow key from any of the ten sections and one Tab from the content of
+ * the one they are on. A link straight to the body would skip the header and
+ * the navigation both.
+ *
+ * Focus is moved in script rather than left to the href jump for two reasons:
+ * the jump would land on <nav>, whereas what wants focus is the ACTIVE tab
+ * button (so the arrow keys work straight away), and preventDefault keeps a
+ * #sh-tabs out of the address bar of an app that does no hash routing. The href
+ * stays because it is what makes this a link at all. */
+function sheetSkipLink() {
+  return el("a", { class: "sh-skip-link", href: "#sh-tabs",
+    onclick: e => {
+      const tab = document.querySelector('.sh-tabs button[aria-selected="true"]')
+        || document.querySelector(".sh-tabs button");
+      if (!tab) return;                // no strip yet — let the href try
+      e.preventDefault();
+      tab.focus();                     // scrolling the strip into view is wanted here
+    } }, "Skip to sheet tabs");
 }
 
 /* Smoothly scroll the sheet back to the top. Shared by the back-to-top FAB and
@@ -2174,8 +2211,11 @@ function initiativeCard() {
   // button hands that pool to the die roller, which writes the result back
   // into the input below; the input stays directly editable either way.
   const init = sheetInitiative();
+  // The visible "Rolled:" beside the field is its label, so it is a real
+  // <label for> rather than an invented aria-label: same words, and clicking
+  // it now focuses the field the way a label should.
   const initInput = el("input", { type: "number", class: "sh-init-input",
-    min: "0", value: String(play.initiative || 0),
+    id: "sh-init-input", min: "0", value: String(play.initiative || 0),
     oninput: e => { play.initiative = parseInt(e.target.value, 10) || 0; playChanged(false); } });
   return el("div", { class: "card sh-card sh-counter" },
     el("h3", {}, "Initiative"),
@@ -2186,7 +2226,8 @@ function initiativeCard() {
     el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
       el("button", { class: "btn roll sh-init-roll", title: "Roll initiative in the die roller",
         onclick: openInitiativeRoller }, "⚄ Initiative"),
-      el("span", { class: "sub", style: "align-self:center" }, "Rolled:"), initInput));
+      el("label", { class: "sub", for: "sh-init-input", style: "align-self:center" },
+        "Rolled:"), initInput));
 }
 /* The Condition tracks, lifted out of the Overview so the sheet header can
  * carry them (#83). Wound penalty applies to EVERY roll, and the tracks were
@@ -2443,16 +2484,63 @@ function sheetHeader() {
  * header has scrolled out of view — so play-mode essentials stay reachable
  * without the header permanently eating half a tablet screen. */
 function sheetStickyBar() {
-  const nav = el("nav", { class: "sh-tabs" });
+  // The tab strip is the ARIA tabs pattern: role="tablist"/"tab", aria-selected,
+  // and a roving tabindex so the whole strip is ONE tab stop instead of ten
+  // (only the selected tab is tabbable; the arrows reach the other nine).
+  const nav = el("nav", { class: "sh-tabs", id: "sh-tabs", role: "tablist",
+    "aria-label": "Character sheet sections" });
+  const ids = sheetTabList().map(([id]) => id);
+  /* Switch tabs, optionally chasing the focus.
+   *
+   * AUTOMATIC activation (the arrow key switches tab as focus reaches it)
+   * rather than manual: every other path into a tab — a click, the Kismet
+   * counter's "Kismet tab →" button — already sets sheetTab and re-renders on
+   * the spot, so a manual model would make the keyboard the one route that
+   * behaves differently, and there is nothing costly to defer (the panels are
+   * built from CALC either way).
+   *
+   * `keepFocus` is what stops that from being a focus bug. renderSheet()
+   * rebuilds the strip, so the button the reader was standing on is gone by
+   * the time this returns; the new one has to be found and focused. Doing that
+   * unconditionally would let an ordinary re-render (or a mouse click, where
+   * the caret belongs wherever the reader left it) yank focus into the strip,
+   * so the keyboard paths ask for it and nothing else does. */
+  const go = (id, keepFocus) => {
+    sheetTab = id;
+    sheetStickyScrolled = false;   // tab switch scrolls back to the top
+    renderSheet();
+    window.scrollTo(0, 0);
+    if (!keepFocus) return;
+    const next = document.querySelector('.sh-tabs button[aria-selected="true"]');
+    if (next) next.focus({ preventScroll: true });   // scrollTo(0,0) above stands
+  };
+  const onKey = e => {
+    // Read the position off the button the key landed on rather than off
+    // sheetTab: the two agree today (only the selected tab is tabbable), and
+    // this keeps working if that ever stops being true.
+    const at = ids.indexOf((e.currentTarget.id || "").replace("sh-tab-", ""));
+    let to = null;
+    if (e.key === "ArrowRight") to = (at + 1) % ids.length;
+    else if (e.key === "ArrowLeft") to = (at - 1 + ids.length) % ids.length;
+    else if (e.key === "Home") to = 0;
+    else if (e.key === "End") to = ids.length - 1;
+    else return;
+    e.preventDefault();   // Home/End would otherwise scroll the page instead
+    if (at >= 0) go(ids[to], true);
+  };
   for (const [id, label] of sheetTabList()) {
+    const on = id === sheetTab;
     nav.append(el("button", {
-      class: id === sheetTab ? "active" : "",
-      onclick: () => {
-        sheetTab = id;
-        sheetStickyScrolled = false;   // tab switch scrolls back to the top
-        renderSheet();
-        window.scrollTo(0, 0);
-      },
+      class: on ? "active" : "",
+      id: "sh-tab-" + id, role: "tab",
+      "aria-selected": on ? "true" : "false",
+      "aria-controls": "sh-tabpanel",
+      tabindex: on ? "0" : "-1",
+      // detail === 0 means the click was synthesised by Enter/Space on the
+      // button rather than by a pointer — the one way to tell a keyboard
+      // activation from a mouse one inside a plain click handler.
+      onclick: e => go(id, !e.detail),
+      onkeydown: onKey,
     }, label));
   }
   // The strip is what's on screen while you're actually playing, so it carries
@@ -2858,6 +2946,13 @@ function kismetMeter() {
       btn("↺", () => setUsed(0), "Reset Kismet dice to full")));
 }
 
+/* What counts as a tab stop inside a popover, for the focus trap below.
+ * [tabindex="-1"] is excluded on purpose: that is how the box itself, and any
+ * child that is focusable but deliberately not tabbable, opt out. */
+const POPOVER_FOCUS_SEL = "a[href], button:not([disabled]), input:not([disabled]),"
+  + " select:not([disabled]), textarea:not([disabled]), summary,"
+  + " [tabindex]:not([tabindex='-1'])";
+
 /* One anchored popover, opened from a header tile.
  *
  * Five tiles now open one of these (Kismet, Senses, Move, Armor, and whatever
@@ -2881,16 +2976,42 @@ function kismetMeter() {
  * because renderSheet() clears #sheet and only #sheet — that is what lets a
  * popover survive the re-render its own buttons cause.
  *
+ * It is a real modal dialog for the keyboard as well as for the name it
+ * carries: focus moves in on open, Tab is trapped inside, and Escape (or any
+ * other close) hands focus back to whoever opened it.
+ *
  * Returns { refresh, close } for callers that need to drive it. */
 function openAnchoredPopover({ kind, anchorSel, label, build, cls }) {
   // Clicking the tile while this is already up closes it instead of rebuilding
   // it — the tile is a toggle, not a re-open button.
   if (closeSheetPopover() === kind) return null;
   const getAnchor = () => document.querySelector(anchorSel);
+  // Whatever had focus when the box opened is what gets it back on close.
+  // Captured rather than assumed to be the anchor: these boxes are opened from
+  // header tiles, from the running-now chip and (soon enough) from anywhere
+  // else, and dumping the reader on a tile they never touched is its own kind
+  // of lost. The anchor is only the fallback, below.
+  const opener = document.activeElement;
 
+  // tabindex="-1" so a popover with no controls at all — Move on a character
+  // with nothing exotic, Senses with no toggles — can still be focused, and so
+  // still gets announced as the dialog it says it is.
   const box = el("div", { class: "sh-popover" + (cls ? " " + cls : ""),
-    role: "dialog", "aria-label": label, "data-popover": kind });
+    role: "dialog", "aria-modal": "true", "aria-label": label || "Details",
+    tabindex: "-1", "data-popover": kind });
   document.body.append(box);
+
+  // Focus is moved INTO the box on open. Without this the box is a dialog only
+  // in name: it lives on document.body, i.e. at the very end of the document,
+  // so its controls sit some eighty tab stops past the tile that opened it.
+  // preventScroll throughout, because the Running Now box is max-height:70vh
+  // with its own scrollbar and plain focus() would scroll that pane (and the
+  // page under it) to wherever the browser thinks the control belongs.
+  const focusables = () => Array.from(box.querySelectorAll(POPOVER_FOCUS_SEL));
+  const focusInto = () => {
+    const first = focusables()[0];
+    (first || box).focus({ preventScroll: true });
+  };
 
   const place = () => {
     const anchor = getAnchor();
@@ -2907,16 +3028,45 @@ function openAnchoredPopover({ kind, anchorSel, label, build, cls }) {
   };
 
   const close = () => {
+    // Whether focus is still ours to give back, decided BEFORE the box goes:
+    // a pointerdown outside closes the box too, and yanking focus off whatever
+    // the reader just reached for would be worse than leaving it where it is.
+    const mine = box.contains(document.activeElement)
+      || !document.activeElement || document.activeElement === document.body;
     box.remove();
     document.removeEventListener("keydown", onKey, true);
     document.removeEventListener("pointerdown", onOutside, true);
     window.removeEventListener("scroll", onScroll, true);
     window.removeEventListener("resize", close);
+    if (!mine) return;
+    // The opener is often a header tile, and every playChanged() rebuilds those
+    // — so the node we captured may be detached by now. Fall back to whatever
+    // answers the anchor selector today, and to nothing if even that is gone
+    // (a popover can outlive its tile; place() closes on the next reflow).
+    const back = (opener && document.contains(opener)) ? opener : getAnchor();
+    if (back && back.focus) back.focus({ preventScroll: true });
   };
   // Stashed so closeSheetPopover() can tear this down properly when it only has
   // the node: a bare remove() would orphan all four listeners below.
   box._close = close;
-  const onKey = e => { if (e.key === "Escape") close(); };
+  const onKey = e => {
+    if (e.key === "Escape") { close(); return; }
+    if (e.key !== "Tab") return;
+    // aria-modal="true" tells a screen reader nothing outside this box exists;
+    // Tab has to agree, or the first press walks straight back out of the
+    // dialog that was just announced and into the rest of the sheet. Wraps in
+    // both directions; with nothing focusable inside, Tab simply does nothing
+    // and Escape remains the way out.
+    const items = focusables();
+    if (!items.length) { e.preventDefault(); return; }
+    const active = document.activeElement;
+    const outside = !box.contains(active);
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey ? (outside || active === first) : (outside || active === last)) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus({ preventScroll: true });
+    }
+  };
   // Scroll doesn't bubble, but a CAPTURE listener on window still fires for a
   // scroll inside any descendant -- so a popover tall enough to scroll itself
   // would shut under the reader's finger. Only page scroll should close it.
@@ -2932,8 +3082,17 @@ function openAnchoredPopover({ kind, anchorSel, label, build, cls }) {
   window.addEventListener("scroll", onScroll, true);
   window.addEventListener("resize", close);
 
-  const refresh = () => { box.replaceChildren(...build(refresh, close)); place(); };
+  const refresh = () => {
+    // replaceChildren throws away the node that had focus — press Roll and the
+    // Roll button itself is gone — which drops focus to <body> and takes the
+    // trap with it. If the reader was inside the box, put them back inside it.
+    const had = box.contains(document.activeElement);
+    box.replaceChildren(...build(refresh, close));
+    place();
+    if (had && !box.contains(document.activeElement)) focusInto();
+  };
   refresh();
+  focusInto();
   return { refresh, close };
 }
 
@@ -6126,7 +6285,12 @@ function miniCounter(label, get, set, min = 0, max = 9999, showValue = true) {
     ? el("b", { title: "Click to type a value", style: "cursor:text" }, String(get()))
     : null;
   if (val) val.addEventListener("click", () => {
+    // The counter's own label names the field. Several callers pass "" because
+    // they print a coloured label of their own beside the counter (the
+    // Condition tracks, the recoil and dodge rows) — those fall back to the
+    // generic name rather than being left with none at all.
     const input = el("input", { type: "number", value: String(get()),
+      "aria-label": label || "Value",
       min: String(min), max: String(max), class: "sv-edit", style: "width:56px" });
     val.replaceWith(input); input.focus(); input.select();
     let done = false;
@@ -6232,7 +6396,7 @@ function castDialog({ name, knownForce, zp, row }) {
     // no fixed ceiling, so an enumerated list would be guessing where to stop.
     const numField = (key, label, hint) => {
       const input = el("input", { type: "number", min: "0", max: String(ROLLER_MAX_DICE),
-        value: "0", style: "width:80px",
+        value: "0", style: "width:80px", "aria-label": label,   // the <b> below is the visible copy
         oninput: e => {
           state[key] = Math.max(0, Math.min(ROLLER_MAX_DICE, parseInt(e.target.value, 10) || 0));
           refresh();
@@ -7381,7 +7545,10 @@ function shKismet(body) {
       awardKismet(label, n); playChanged();
     } }, `${label} +${n}`));
   }
-  const customAmt = el("input", { type: "number", value: "1", min: "1", style: "width:70px" });
+  // Its two buttons (Award / Spend) say what happens to the number, but neither
+  // names the field itself.
+  const customAmt = el("input", { type: "number", value: "1", min: "1",
+    "aria-label": "Kismet to award or spend", style: "width:70px" });
   awardRow.append(el("span", { class: "sh-inline-adjust" },
     customAmt,
     el("button", { class: "btn small good", onclick: () => {
@@ -8340,7 +8507,8 @@ function shGear(body) {
       .map(([id, label]) => el("button", { onclick: jump(id) }, label))));
 
   // ===== Woolongs on hand + Lifestyle — half-width, side by side.
-  const amt = el("input", { type: "number", value: "100", min: "1", style: "width:90px" });
+  const amt = el("input", { type: "number", value: "100", min: "1",
+    "aria-label": `${RULES.currencyName()} to add or subtract`, style: "width:90px" });
   const applyCash = sign => {
     const n = parseInt(amt.value, 10);
     if (!Number.isFinite(n) || n <= 0) return;

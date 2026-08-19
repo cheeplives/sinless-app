@@ -674,10 +674,13 @@ label.opt input{margin-top:3px}
 /* The visible half of the affordance. cursor:pointer and the title tooltip are
    both hover-only, and this band is read on an 11" tablet more than anywhere
    else -- the glyph is what tells a finger there is more behind the box. */
-.sh-box-more{font-size:9px;color:var(--dim);margin-left:5px;vertical-align:1px}
+/* 10px, not the 9px these started at: the app now has an unconditional 10px
+   type floor, and these two are the glyphs that ANNOUNCE the box opens --
+   the last thing that should be the smallest mark on the page. */
+.sh-box-more{font-size:10px;color:var(--dim);margin-left:5px;vertical-align:1px}
 /* Something exceptional is folded away in there (an initiative note, standing
    cover), as opposed to the ordinary explanation every box has. */
-.sh-box-flag{font-size:9px;color:var(--amber);margin-left:5px;vertical-align:1px}
+.sh-box-flag{font-size:10px;color:var(--amber);margin-left:5px;vertical-align:1px}
 /* The coarse-pointer 32px floor still wins on a phone, and should: these are
    tap targets before they are type. Mobile therefore tightens less. */
 /* "Running now" is a standalone Overview card now, no longer a header panel, so
@@ -1763,11 +1766,25 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   input[type=checkbox],input[type=radio]{width:20px;height:20px}
   .sh-fire-kata input{width:18px;height:18px}
   .sv-edit{padding:5px 6px}
-  .sh-modslot-label,.sh-pool-temp-lbl,.sh-pool-note{font-size:9.5px}
-  .sh-modslot-eff,.sh-pool-kismet{font-size:11px}
-  th{font-size:11px}
+  /* The smallest labels used to be lifted here and only here: .sh-modslot-label,
+     .sh-pool-temp-lbl and .sh-pool-note were 9/8/8.5px at base and this block
+     took them to 9.5px. The base floor is 10px now, unconditionally, so that
+     override would SHRINK them on a touch screen -- the one viewing case it
+     exists to help. Deleted rather than raised: a coarse pointer says nothing
+     about viewing distance, and 10px was chosen as legible everywhere.
+     .sh-pool-kismet (base 11px) and the bare th (base 11px) were no-ops for the
+     same reason and went with it. What survives here still earns its place:
+     .sh-modslot-eff and .sh-skilltable th both sit at 10px at base. */
+  .sh-modslot-eff{font-size:11px}
   .sh-skilltable th{font-size:10.5px}
   .sh-tag,.sh-tag-select{font-size:12px}
+  /* The lifestyle "Effect ▾" chip is a real button, added when the header's
+   * static prose moved into popovers. It inherits .sh-tag's chip metrics and
+   * so arrived at 21px -- a new sub-floor target introduced by the very
+   * change meant to help tablets. Padding, not min-height: it sits in the
+   * wrapping .sh-tags row beside Human/Mage/lifestyle, where a fixed height
+   * would misalign it against its non-interactive neighbours. */
+  .sh-ls-info{min-height:32px;padding:6px 10px}
 
   /* ---- workspace tab strip ----
    * The app's top-level navigation, and the one strip this block never

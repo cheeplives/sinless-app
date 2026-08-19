@@ -205,34 +205,6 @@ function syncThemeControlsGap() {
   }
 }
 
-/* Add "Duplicate" to the ☰ character-actions menu.
- *
- * The chip's inline ⎘ button is hidden on a coarse pointer (see the
- * pointer:coarse block in style.css): it and × were 15px each, 3px apart, and
- * a mis-tap on ⎘ writes a new "(copy)" character to storage with no undo
- * while a mis-tap on × only closes a tab that Load can reopen. Duplication
- * has to live SOMEWHERE on touch, so it lives here — reachable on every
- * pointer, in the menu that already holds Load / Save / Rename / New.
- *
- * Grafted on from this module rather than built inside sheetMenu() (sheet.js)
- * because duplicateTab and everything it touches are workspace concerns; the
- * menu builder stays unaware of tabs. It joins the end of the menu's first
- * group — the "another name, another slot" family, right beside Rename —
- * which is everything before the first separator. */
-function addDuplicateMenuItem(menu) {
-  const panel = menu.querySelector(".sh-menu-panel");
-  if (!panel) return;                      // menu is closed — no panel to add to
-  const tab = activeTabObj();
-  if (!tab || tab.readonly) return;        // read-only views offer "Save a copy" instead
-  const i = WORKSPACE.active;
-  const btn = el("button", {
-    class: "btn sh-mi-plain",
-    title: "Open a copy of this character in a new tab — saved straight away under a new name",
-    onclick: () => { sheetMenuOpen = false; duplicateTab(i); },
-  }, "Duplicate");
-  const sep = panel.querySelector(".sh-menu-sep");   // head of group 2
-  if (sep) panel.insertBefore(btn, sep); else panel.append(btn);
-}
 
 /* ---- render the strip ---------------------------------------------------- */
 function renderWorkspaceBar() {
@@ -242,7 +214,6 @@ function renderWorkspaceBar() {
   // Admin, …) sits at the head of the tab strip so it's available in chargen
   // and play alike. sheetMenu() is defined in sheet.js but is mode-aware.
   const menu = (typeof sheetMenu === "function" && activeTabObj()) ? sheetMenu() : null;
-  if (menu) addDuplicateMenuItem(menu);
   syncThemeControlsGap();
   bar.replaceChildren(
     ...(menu ? [menu] : []),
@@ -314,6 +285,7 @@ function showActiveTab() {
     renderSheet();
     window.scrollTo(0, 0);
   } else {
+    if (typeof removeSkipLink === "function") removeSkipLink();
     $("#sheet").hidden = true;
     $("#app").hidden = false;
     renderTabs();

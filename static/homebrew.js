@@ -565,6 +565,7 @@ function enterHomebrew() {
   hbReturnTo = $("#sheet").hidden ? "app" : "sheet";
   hbEditIndex = null; hbView = "editor";
   hbLoad();
+  if (typeof removeSkipLink === "function") removeSkipLink();
   $("#app").hidden = true;
   $("#sheet").hidden = true;
   $("#homebrew").hidden = false;

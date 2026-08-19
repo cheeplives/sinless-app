@@ -1444,6 +1444,7 @@ function enterSheet() {
 function exitSheet() {
   if (sheetHeadObserver) { sheetHeadObserver.disconnect(); sheetHeadObserver = null; }
   sheetStickyScrolled = false;
+  removeSkipLink();
   $("#sheet").hidden = true;
   $("#app").hidden = false;
 }
@@ -1646,7 +1647,7 @@ function renderSheet() {
   root.innerHTML = "";
   const ro = !!(typeof activeTabObj === "function" && activeTabObj() && activeTabObj().readonly);
   document.body.classList.toggle("sheet-readonly", ro);
-  root.append(sheetSkipLink());   // first focusable thing in the sheet, by design
+  ensureSkipLink();               // parked on <body>, ahead of the workspace strip
   if (ro) root.append(readonlyBanner());
   const head = sheetHeader();
   const bar = sheetStickyBar();
@@ -1710,6 +1711,33 @@ function sheetSkipLink() {
       e.preventDefault();
       tab.focus();                     // scrolling the strip into view is wanted here
     } }, "Skip to sheet tabs");
+}
+
+/* The link has to be the FIRST tab stop on the page, and #sheet cannot give it
+ * that: <nav id="workspace-tabs"> is above #sheet in index.html and spends ~11
+ * stops of its own (the ☰ button, then a chip plus its ⎘ and ✕ per open
+ * character), so a link living inside #sheet was reachable only as the 12th
+ * stop — it still saved 41 of the 53, but a skip link you have to tab to is
+ * most of the way to not having one. Parked on <body> instead, ahead of the
+ * strip.
+ *
+ * Idempotent because renderSheet() runs on every state change: reuse the node
+ * if it is already there rather than stacking a fresh link per render. */
+function ensureSkipLink() {
+  let link = document.querySelector("body > .sh-skip-link");
+  if (!link) {
+    link = sheetSkipLink();
+    document.body.insertBefore(link, document.body.firstChild);
+  }
+  return link;
+}
+
+/* Living on <body> means it outlives the sheet, so it has to be taken down on
+ * the way out: chargen has no .sh-tabs, and a first-stop link that does nothing
+ * is worse for a keyboard user than no link — it is a promise the page cannot
+ * keep. Called from every path that hides #sheet. */
+function removeSkipLink() {
+  document.querySelector("body > .sh-skip-link")?.remove();
 }
 
 /* Smoothly scroll the sheet back to the top. Shared by the back-to-top FAB and
@@ -3868,6 +3896,16 @@ function sheetMenu() {
     const renameBtn = !ro ? el("button", { class: "btn sh-mi-plain",
       title: "Rename this character and move its save — not a copy",
       onclick: act(renameCharacter) }, "Rename…") : null;
+    // Duplicate lives here as well as on the tab chip, because the chip's ⎘ is
+    // hidden on a coarse pointer: at 15px it sat 3px from ✕, and of the two
+    // mis-taps the one that WRITES is the copy — duplicateTab commits the new
+    // character to storage immediately, with no undo, while a closed tab is
+    // still in storage and reopens. A deliberate action belongs behind the
+    // menu. Read-only views are excluded: they offer "Save a copy" instead.
+    const dupBtn = !ro ? el("button", { class: "btn sh-mi-plain",
+      title: "Open a copy of this character in a new tab — saved straight away under a new name",
+      onclick: () => { sheetMenuOpen = false; duplicateTab(WORKSPACE.active); } },
+      "Duplicate") : null;
     const newBtn = el("button", { class: "btn sh-mi-plain", onclick: () => {
       sheetMenuOpen = false; newCharacterTab();
     } }, "New");
@@ -3931,7 +3969,7 @@ function sheetMenu() {
       ? el("button", { class: "btn sh-mi-danger", onclick: act(doSignOut) }, "Sign out") : null;
 
     const groups = [
-      [loadSel, saveBtn, renameBtn, newBtn],
+      [loadSel, saveBtn, renameBtn, dupBtn, newBtn],
       [importBtn, importMdBtn, exportJsonBtn, exportMdBtn],
       [sharingBtn, sharedBtn, homebrewBtn],
       [backBtn, resyncBtn, revertBtn, deleteBtn, manageBtn],

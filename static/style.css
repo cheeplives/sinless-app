@@ -214,6 +214,23 @@
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:var(--ink);color:var(--text);font-family:var(--body);font-size:14px;line-height:1.45}
+/* MINIMUM TYPE SIZE: 10px. Nothing in this file may set a font-size below it.
+ *
+ * A size audit of the rendered Skills tab found 65 of 195 leaf text nodes under
+ * 12px, bottoming out at a 6px .skill-to-chip and an 8px .sh-pool-temp-lbl.
+ * Below roughly 10px the uppercase display face — which is what nearly all of
+ * these small labels use, at .06em-.14em tracking — stops resolving as letters
+ * and starts reading as texture: you see that a tag is there and what colour it
+ * is, not what it says. 6px uppercase is about 4.5pt.
+ *
+ * 10px rather than 11 or 12 because this app is deliberately dense (four pool
+ * tiles and a full skill table in one viewport) and 10px is the point where
+ * legibility is bought without reflowing the tight layouts; it is also a hair
+ * above the 9.5px the @media(pointer:coarse) block had already picked as its
+ * touch floor. That block was the tell: the same labels were lifted for a
+ * tablet and left alone for a mouse, as though a 27" monitor at arm's length
+ * were an easier read than a tablet at 40cm. It is not, so the floor is
+ * unconditional and lives here rather than behind a media query. */
 #app{display:grid;grid-template-columns:290px 1fr;min-height:calc(100vh - var(--ws-h))}
 #app[hidden],#sheet[hidden]{display:none!important}
 
@@ -931,7 +948,7 @@ label.opt input{margin-top:3px}
 .sh-bond-tile .force-term{color:var(--bond,var(--manon))}
 .sh-bond-tile .sh-tag.magic{border-color:var(--bond,var(--manon-dim));color:var(--bond,var(--manon))}
 .sh-spirit-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:4px 10px;margin-bottom:6px}
-.sh-spirit-stats .k{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.sh-spirit-stats .k{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
 .sh-spirit-stats .v{font-family:var(--mono);font-size:12px}
 .sh-spirit-line{margin-top:4px}
 .spirit-svc{margin-bottom:5px}
@@ -957,13 +974,20 @@ label.opt input{margin-top:3px}
    keeps its vertical space and the whole edge is the hit area. */
 .sh-pool-temp.collapsed{cursor:pointer;gap:3px;color:var(--dim)}
 .sh-pool-temp.collapsed:hover{color:var(--text);background:var(--panel)}
-.sh-pool-temp-lbl{font-family:var(--disp);font-size:8px;letter-spacing:.08em;
+/* At the 10px floor. The label is rotated, so its size costs vertical run
+   inside a full-height strip rather than width in the 26px column — "temp" is
+   four characters and has room to spare either way. */
+.sh-pool-temp-lbl{font-family:var(--disp);font-size:10px;letter-spacing:.08em;
   text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg)}
 .sh-pool-temp-plus{font-family:var(--mono);font-size:13px;line-height:1}
 .sh-top{align-items:flex-start}
-/* One tick down, not the two asked for: these start at 9.5px and 7.5 stops
-   being readable at arm's length. */
-.sh-pool-note{font-size:8.5px;color:var(--amber);margin-top:2px;max-width:150px;line-height:1.3}
+/* Was 8.5px — a tick down from 9.5 to buy tile height back. That trade is off
+   now: this line is the only place a switched-on effect says so on the tile
+   ("⚡ Cram ×3 +6"), and an amber warning nobody can read is not a saving. Back
+   up to the 10px floor. The 150px cap means a long note wraps to a second line
+   sooner than it did and the tile grows by ~13px when it does; line-height
+   stays at 1.3 so the wrap costs as little as it can. */
+.sh-pool-note{font-size:10px;color:var(--amber);margin-top:2px;max-width:150px;line-height:1.3}
 
 .sh-init-roll{padding:4px 10px;font-size:12px;white-space:nowrap}
 .sh-init-input{width:80px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
@@ -980,6 +1004,21 @@ label.opt input{margin-top:3px}
 .sh-skilltable td,.sh-skilltable th{padding:4px 6px;vertical-align:top}
 .sh-skilltable td.num{white-space:nowrap}
 .sh-skilltable tr.dim td{color:var(--dim)}
+/* Folded "trained only, no dice" list at the foot of each Skills-tab pool card
+   (built by lockedSkillsBlock). Borrows .settings-rule-help's disclosure
+   vocabulary -- own ▸/▾ marker, quiet dim label -- because it is the same kind
+   of thing: reference you can open, not a heading competing with the table it
+   sits under. The dashed rule separates it from that table without drawing a
+   second card edge. */
+.sh-locked-skills{margin-top:8px;border-top:1px dashed var(--line-dash);padding-top:6px}
+.sh-locked-skills > summary{cursor:pointer;font:400 11px/1.4 var(--body);
+  color:var(--dim);list-style:none;user-select:none}
+.sh-locked-skills > summary::-webkit-details-marker{display:none}
+.sh-locked-skills > summary::before{content:"▸ ";display:inline-block}
+.sh-locked-skills[open] > summary::before{content:"▾ "}
+.sh-locked-skills > summary:hover{color:var(--manon)}
+.sh-locked-skills[open] > summary{color:var(--text);margin-bottom:2px}
+.sh-locked-skills > summary:focus-visible{outline:1px solid var(--manon);outline-offset:2px}
 /* editable specialization on the Skills tab: name + inline chip, input beneath */
 /* wraps because the Skills tab lays pools out 2x2, so a long name plus a chip
    overruns a narrow card; the chip drops to its own line rather than crushing
@@ -987,7 +1026,7 @@ label.opt input{margin-top:3px}
    break mid-word to make room, so the name opts back out of that. */
 .sh-spec-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .sh-skillname{overflow-wrap:normal}
-.sh-spec-chip{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;line-height:1;
+.sh-spec-chip{display:inline-flex;align-items:center;gap:3px;font-size:10px;line-height:1;
   letter-spacing:.04em;color:var(--dim);border:1px solid var(--line);border-radius:9px;
   padding:2px 6px;cursor:pointer;user-select:none;white-space:nowrap}
 .sh-spec-chip:hover{border-color:var(--manon-dim)}
@@ -995,12 +1034,20 @@ label.opt input{margin-top:3px}
 .sh-spec-chip input{margin:0;width:11px;height:11px}
 .sh-spec-input{margin-top:4px;width:100%;max-width:170px;font-size:11px;padding:2px 6px}
 /* "Trained only" marker: Spec-chip geometry so it reads as part of the same row
-   vocabulary, but inert and a size smaller. Red outline throughout -- these are
-   the skills you cannot fall back on, and the tag is meant to catch the eye on
-   sight. `.unusable` (sheet only, where 0 dice means you genuinely cannot roll
-   it right now) adds a filled tint on top. Chargen never sets it; every skill
-   starts at 0 there, so it would light up the whole table on load. */
-.skill-to-chip{display:inline-flex;align-items:center;font-size:6px;line-height:1;
+   vocabulary, but inert. Red outline throughout -- these are the skills you
+   cannot fall back on, and the tag is meant to catch the eye on sight.
+   `.unusable` (sheet only, where 0 dice means you genuinely cannot roll it
+   right now) adds a filled tint on top. Chargen never sets it; every skill
+   starts at 0 there, so it would light up the whole table on load.
+
+   It used to sit a size smaller than .sh-spec-chip, at 6px -- which caught the
+   eye through the red border and colour while the word "Trained" inside it was
+   decoration rather than reading. Both chips are now on the 10px floor; the
+   colour is what separates them, which is what was doing the work anyway. The
+   chip is ~18px wider as a result, and both rows that carry it
+   (.skill-name-line in chargen, .sh-spec-line on the sheet) are flex-wrap,
+   so it drops to its own line rather than crushing a long skill name. */
+.skill-to-chip{display:inline-flex;align-items:center;font-size:10px;line-height:1;
   letter-spacing:.06em;text-transform:uppercase;color:var(--bad);
   border:1px solid var(--bad);border-radius:9px;
   padding:2px 6px;cursor:default;user-select:none;white-space:nowrap}
@@ -1402,7 +1449,7 @@ input.sh-unit-name::placeholder{color:var(--dim);font-weight:600}
 tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid var(--line-soft)}
 .sh-modslots{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .sh-modslot{border:1px solid var(--line);border-radius:6px;padding:6px 8px;text-align:center;background:var(--panel)}
-.sh-modslot-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
+.sh-modslot-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
 .sh-modslot-active{font-size:12px;font-weight:600;margin:2px 0 5px;min-height:14px}
 .sh-modslot-eff{font-size:10px;color:var(--dim);margin-top:3px;line-height:1.3}
 .sh-modslot select{width:100%;font-size:12px;padding:3px 4px}
@@ -1599,7 +1646,10 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
 
 /* reorder handles: Overview loadout rows, Gear weapons / armor / gear rows */
 .sh-reorder{display:inline-flex;flex-direction:column;vertical-align:middle;margin-right:7px;gap:1px}
-.sh-reorder-btn{background:none;border:0;cursor:pointer;color:var(--dim);font-size:9px;line-height:1;
+/* 10px: the arrows are glyphs, not prose, but they are the whole control and a
+   9px ▲ next to 13px table text read as a speck. The pair grows by 2px total,
+   which the row's other cells already clear. */
+.sh-reorder-btn{background:none;border:0;cursor:pointer;color:var(--dim);font-size:10px;line-height:1;
   padding:1px 3px;border-radius:3px}
 .sh-reorder-btn:hover:not([disabled]){color:var(--manon);background:var(--line)}
 .sh-reorder-btn[disabled]{opacity:.25;cursor:default}

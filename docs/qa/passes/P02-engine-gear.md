@@ -208,21 +208,73 @@ actually testing.
 - **Type:** correctness
 - **Check:**
 
-      RULES.ammoStatMods("Pen +1, Barrier +1")
+      RULES.ammoStatMods(DATA.tables.misc_gear.find(r => r.Item === "AP").Effect)
 
-- **Expected:** `{ "acc": 0, "damage": 0, "pen": 1, "bar": 1, "set": {}, "notes": [] }`
-- **Note:** `notes` must be **empty**. A non-empty `notes` containing
-  `"Barrier +1"` means the Barrier spelling stopped being recognised and the
-  adjustment is being silently dropped.
+- **Expected:** `{ "acc": 0, "damage": 0, "pen": 2, "bar": 1, "set": {}, "notes": [] }`
+- **Note:** Reads the **real row**, not a hand-written string — this is
+  load-bearing. Every multi-clause ammo in the data separates its clauses with
+  a period ("Pen +2. Barrier +1."), not a comma, and this case used to pass a
+  synthetic `"Pen +1, Barrier +1"` (comma-joined) that parsed fine under both
+  the broken and the fixed code, so it never actually exercised the real data's
+  punctuation and could not have caught the bug it was written to guard
+  against. Found 2026-08-19 building an unrelated feature: the Kalishnikov's
+  Pen/Barrier stayed at their un-modified 5/4 on the Overview with AP loaded,
+  and the reason was exactly this — the whole string fell through to `notes`
+  unparsed, and the note LOOKED correct (it repeats the same prose) so nothing
+  about the display looked broken at a glance. Fixed by splitting on `[,.]`
+  instead of `,` alone; see `../findings/2026-08-19-P02.md`.
+
+  `notes` must still be **empty** for AP specifically — if it comes back
+  non-empty, the period split broke, or the Barrier spelling stopped being
+  recognised and the adjustment is being silently dropped again.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P02-010: Applying that ammo raises both stats
 - **Type:** correctness
 - **Check:**
 
-      RULES.applyAmmoStats({ acc: 1, damage: "7", pen: "5", bar: "4" }, RULES.ammoStatMods("Pen +1, Barrier +1"))
+      RULES.applyAmmoStats({ acc: 2, damage: "7", pen: "5", bar: "4" }, RULES.ammoStatMods(DATA.tables.misc_gear.find(r => r.Item === "AP").Effect))
 
-- **Expected:** `{ "acc": 1, "damage": "7", "pen": "6", "bar": "5" }`
+- **Expected:** `{ "acc": 2, "damage": "7", "pen": "7", "bar": "5" }`
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P02-010b: A SET clause keeps its trailing prose as a note; Buckshot's three clauses all land
+- **Type:** correctness
+- **Check:**
+
+      RULES.ammoStatMods(DATA.tables.misc_gear.find(r => r.Item === "Buckshot").Effect)
+
+- **Expected:** `{ "acc": 2, "damage": 3, "pen": 0, "bar": 0, "set": { "pen": 1 }, "notes": ["Range = S"] }`
+- **Note:** Buckshot's Effect is `"+2 Accuracy. +3 Damage. Pen = 1. Range = S."`
+  — four clauses, three shapes (`+d Stat`, `Stat = d`, and a fourth that has no
+  recognised stat at all). `Pen = 1` is a SET, not a `+1` delta — it wins over
+  whatever the weapon's own Pen is, which is why it lands in `set` rather than
+  `pen`. "Range = S" matches the same `Stat = value` shape textually but "S" is
+  not a number, so it falls through to `notes` whole rather than being
+  half-applied. This is the case that would have caught the cybergun ammo-fit
+  bug's sibling defect one step earlier — Buckshot is the ammo named in
+  `../findings/2026-08-19-P02.md`.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P02-010c: Buckshot fits the Cybergun Shotgun option, and only that one
+- **Type:** correctness
+- **Check:**
+
+      (() => { const buckshot = DATA.tables.misc_gear.find(r => r.Item === "Buckshot"); const fits = t => RULES.ammoFitsWeapon(buckshot, { Type: t }); return { shotgun: fits("Shotgun"), palmPistol: fits("Palm Pistol"), forearmSMG: fits("Forearm SMG"), heavyPistol: fits("Heavy Pistol") }; })()
+
+- **Expected:** `{ "shotgun": true, "palmPistol": false, "forearmSMG": false, "heavyPistol": false }`
+- **Note:** `AMMO_FITS["Buckshot"]` reads `row.Type === "Shotgun"` — the same
+  test a real (non-cyber) shotgun passes. Before 2026-08-19, the cybergun row
+  built for ammo-fit checks (`static/sheet.js`, inside `shOverview`'s
+  `cyberguns.forEach`) hardcoded `Type: "Cybergun"` on every cybergun
+  regardless of which of the four the character actually has, so this read
+  `false` for all four including the one Buckshot is meant for — the ammo
+  picker on the Overview's Cybergun — Shotgun row never offered it. Fixed by
+  giving that row's `Type` the cyberguns table's own archetype string
+  (`"Shotgun"`, `"Palm Pistol"`, …) and moving the "this is an implanted gun,
+  gate the mid-fight reload confirm" signal onto a separate `cybergun: true`
+  flag, so the two jobs `Type` used to do at once no longer collide. See
+  `../findings/2026-08-19-P02.md`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P02-011: Barrier reaches CALC.weapons

@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "318";
+const APP_VERSION = "319";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -2838,13 +2838,27 @@ function weaponFiringModes(row) {
 }
 
 /* ---- ammunition --------------------------------------------------------------
- * Ammo effects are prose in the gear table ("Pen +1, Barrier +1", "+2 Acc, +3
- * Dmg, Pen = 1 Range = S"), so the numbers a weapon line can actually show --
- * Accuracy, Damage, Pen, Barrier -- are parsed out and everything else is kept
- * verbatim as a note. Both orderings appear in the data, and Pen is sometimes
- * SET rather than adjusted ("Pen = 0" for Gel), which is not the same as an
- * adjustment and has to win over the weapon's own value. The data column is
- * "Bar" but the prose says "Barrier", so both spellings map to the same key. */
+ * Ammo effects are prose in the gear table ("Pen +2. Barrier +1.", "+2
+ * Accuracy. +3 Damage. Pen = 1. Range = S."), so the numbers a weapon line can
+ * actually show -- Accuracy, Damage, Pen, Barrier -- are parsed out and
+ * everything else is kept verbatim as a note. Both orderings appear in the
+ * data, and Pen is sometimes SET rather than adjusted ("Pen = 0" for Gel),
+ * which is not the same as an adjustment and has to win over the weapon's own
+ * value. The data column is "Bar" but the prose says "Barrier", so both
+ * spellings map to the same key.
+ *
+ * Every ammo row in misc_gear separates its clauses with a period, not a
+ * comma -- "Pen +2. Barrier +1." -- so splitting on "," alone (what this used
+ * to do) never split anything: a two-clause effect stayed one unbroken string,
+ * failed every anchored regex below because of the leftover ". Barrier +1."
+ * hanging off the end, and fell straight through to `notes`. The number was
+ * never applied; only the note LOOKED like it had been, because the note text
+ * repeats the same prose the number should have come from. AP's "Pen +2.
+ * Barrier +1." read as a note and the Kalishnikov's Pen/Barrier stayed at
+ * their un-modified 5/4 with no visual sign anything was wrong. Splitting on
+ * "[,.]" fixes every multi-clause ammo in the data at once -- AP, Flechette,
+ * Buckshot, HEI, AP/Razor, Subsonic loads, Tracer Rounds -- not just the one
+ * that got noticed. */
 const AMMO_STAT_KEYS = {
   acc: "acc", accuracy: "acc",
   dmg: "damage", damage: "damage",
@@ -2854,7 +2868,7 @@ const AMMO_STAT_KEYS = {
 function ammoStatMods(effectText) {
   const out = { acc: 0, damage: 0, pen: 0, bar: 0, set: {}, notes: [] };
   const statOf = w => AMMO_STAT_KEYS[String(w || "").toLowerCase()];
-  for (const rawPart of String(effectText || "").split(",")) {
+  for (const rawPart of String(effectText || "").split(/[,.]\s*/)) {
     const part = rawPart.trim();
     if (!part) continue;
     let m;

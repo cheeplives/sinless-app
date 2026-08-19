@@ -5054,7 +5054,7 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
       title: oneshot ? RULES.ONESHOT_NOTE
         : "Reload to a full magazine"
           + (/crossbow/i.test(fireLabel) ? " — a Complex Action to recock" : "")
-          + (r.Type === "Cybergun" && !r.Reloadable ? " — implanted; not meant to be done mid-fight" : "")
+          + (r.cybergun && !r.Reloadable ? " — implanted; not meant to be done mid-fight" : "")
           + ". Also steadies the gun (recoil back to 0).",
       onclick: () => {
         if (oneshot) return;
@@ -5062,7 +5062,7 @@ function firingModeControls(w, r, calcRow, modes, mode, kataOffered = false, rol
         // pocket reload, so this makes the player say so explicitly rather
         // than silently topping off an implant mid-fight. The Reload Port
         // variant pays extra ZR specifically to skip this — see r.Reloadable.
-        if (r.Type === "Cybergun" && !r.Reloadable
+        if (r.cybergun && !r.Reloadable
             && !confirm(`${fireLabel} cannot be reloaded during combat. Reload anyway?`)) return;
         const reloadCost = /crossbow/i.test(fireLabel) ? 2 : 1;
         if (!spendSimpleActions(reloadCost, `Reloading ${fireLabel}`)) return;
@@ -5520,8 +5520,23 @@ function shOverview(body) {
         // the implant states its own Ammo and Modes. Both the choice and the
         // round count live on the source augment entry, since the gun row
         // itself is shared data.
-        const cgRow = { Type: "Cybergun", Weapon: cg.name, Damage: g.Dmg, Ammo: g.Ammo,
-          Reloadable: cg.reloadable };
+        //
+        // `Type` used to be hardcoded to the literal string "Cybergun" here,
+        // which was doing two jobs that don't agree: firingModeControls reads
+        // it to gate the "implanted; not meant to be done mid-fight" reload
+        // confirm, but RULES.ammoFitsWeapon and AMMO_FITS read the SAME field
+        // expecting a real gun-type string ("Shotgun", "Rifle", …) — the same
+        // vocabulary the cyberguns table's own Type column already uses (g.Type
+        // is literally "Shotgun" for the shotgun option). With Type pinned to
+        // "Cybergun", `AMMO_FITS["Buckshot"] = row => row.Type === "Shotgun"`
+        // could never match ANY cybergun, including the one kind of cybergun
+        // Buckshot is actually meant for. `cybergun` is the flag that job
+        // needed all along; Type carries the gun's real archetype instead, and
+        // "Firing modes" is filled in too so mode-gated ammo (Tracer Rounds
+        // needs FA) reads real data instead of the no-modes-listed fallback of
+        // ["SS"] that made it just as unreachable.
+        const cgRow = { Type: g.Type, cybergun: true, Weapon: cg.name, Damage: g.Dmg,
+          Ammo: g.Ammo, "Firing modes": g.Modes, Reloadable: cg.reloadable };
         const ammo = loadedAmmoFor(cg.src, cgRow);
         const base = { acc: g.Acc, damage: g.Dmg, pen: g.Pen, bar: g.Bar ?? "" };
         const shot = RULES.applyAmmoStats(base, ammo.mods);

@@ -107,10 +107,28 @@ Load the fixture and install the measurement helper once:
 
   | Tab | Visible buttons | Smallest height | Under 32 px | Under 44 px |
   |---|---|---|---|---|
-  | Overview | 65 | 16 px | 4 | 64 |
-  | Gear | 61 | 16 px | 6 | 58 |
-  | Kismet | 64 | 32 px | **0** | 63 |
+  | Overview | 69 | 32 px | **0** | 68 |
+  | Gear | 67 | 16 px | 6 | 64 |
+  | Kismet | 70 | 32 px | **0** | 68 |
   | Stats (chargen) | 119 | 32 px | **0** | 119 |
+
+  (Re-observed 2026-08-19 after v316/v317, against a checkout of `c984806` —
+  the commit immediately before this session's touch-target and header-trim
+  work — as the control, same fixture and same coarse pointer on both sides.
+  At `c984806` these three read Overview 68/32/**0**/67, Gear 66/16/**8**/63,
+  Kismet 69/32/**0**/67; the "65/61/64" this table showed before dates from
+  an earlier, undated re-measurement and does not reflect either commit.
+  Overview's +1 button is the new "Effect ▾" chip (`.sh-tag.sh-ls-info`),
+  added by the header-trim work that moved Initiative/Dodge prose into
+  popovers — it inherited `.sh-tag`'s 21px chip metrics and was briefly a
+  sub-floor target the day it was born, now covered at `min-height:32px`.
+  Kismet's +1 is the same chip, since the header renders on every tab.
+  Gear's under-32 count fell 8 → 6: `.sh-rollable` reaching 32px tall and a
+  `flex:0 1 auto` default that had been silently shrinking checkboxes in
+  flex rows back to 13px (fixed with `flex:none`) both landed there.
+  Initiative and Dodge are `role="button"` DIVs (`headBoxFace`), not
+  `&lt;button&gt;` elements, so neither ever appears in this `#sheet button`
+  query on either side of the diff.)
 
   Every remaining sub-32 control is a `.sh-reorder-btn` — the ▲/▼ arrows, which
   are 16 px **each** because they are a stacked pair occupying 32 px together.
@@ -162,13 +180,32 @@ Load the fixture and install the measurement helper once:
 - **Type:** usability
 - **Check:**
 
-      (() => { const nodes = [...document.querySelectorAll("#sheet *, #app *")].filter(e => e.childElementCount === 0 && e.textContent.trim() && e.getBoundingClientRect().width > 0); const sizes = nodes.map(e => parseFloat(getComputedStyle(e).fontSize)); return { min: Math.min(...sizes), max: Math.max(...sizes), under12: sizes.filter(s => s < 12).length, under11: sizes.filter(s => s < 11).length, sampled: sizes.length }; })()
+      (() => { const nodes = [...document.querySelectorAll("#sheet *, #app *")].filter(e => e.childElementCount === 0 && e.textContent.trim() && e.getBoundingClientRect().width > 0); const sizes = nodes.map(e => parseFloat(getComputedStyle(e).fontSize)); return { min: Math.min(...sizes), max: Math.max(...sizes), under12: sizes.filter(s => s < 12).length, under10: sizes.filter(s => s < 10).length, sampled: sizes.length }; })()
 
-- **Expected:** `under11` is `0`. Anything below 11 px is hard to read on a
-  tablet held at arm's length.
-- **Note:** Observed on the chargen side: minimum 11.5 px, with 5 elements under
-  12 px, out of 65 sampled. That is borderline rather than broken — record the
-  numbers and mark **JUDGEMENT** if `under12` is non-zero but `under11` is zero.
+- **Expected:** `under10` is `0`. **Not `under11`** — see the note below; the
+  bar moved on 2026-08-19 and this case's own script and criterion must move
+  with it, or every play tab now fails a case that is actually passing.
+- **Note:** A UX review (2026-08-19) found the app's smallest base text at
+  6px (`.skill-to-chip`) — decoration, not reading, on its own account — and
+  the user directed it fixed. Every base rule under 10px was raised to
+  exactly 10px (`docs/qa/JUDGEMENT-CALLS.md` was checked first: this wasn't
+  filed as a JC because the user had already decided it by asking for the
+  fix, not left it open for the owner). 10px was picked over 11/12 because
+  the layouts are deliberately dense and the `@media(pointer:coarse)` block
+  had already picked 9.5px as an acceptable floor for the *harder* viewing
+  case (touch); 10px sits a hair above that and applies everywhere, so
+  desktop stops being worse-served than a tablet. Shipped in v316.
+
+  This case's original 11px bar predates that decision and is now the wrong
+  test: re-observed after the change, every play tab and chargen read
+  `min: 10`, with `under11` nonzero (mid-teens to 40s depending on tab —
+  dominated by uppercase, letter-spaced display-face labels like `th`,
+  `.sub` and `.sh-tag`, which read fine smaller than body text because the
+  letterforms are simpler and the tracking adds spacing back) while
+  `under10` is `0` everywhere. The check above and the Expected line were
+  both updated to test the floor that is now actually in force. Chargen was
+  previously the only side sampled by hand (11.5px min, 5 under 12 of 65) —
+  re-observed here too and now reads `min: 10, under10: 0, sampled: 85`.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
 ### P13-007: Both themes are legible

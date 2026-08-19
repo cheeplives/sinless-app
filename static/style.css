@@ -599,14 +599,20 @@ label.opt input{margin-top:3px}
    — no cap, so a wide window gives it the slack instead of stranding it at 520px
    with empty space either side. It still yields first when things get tight
    (flex-basis 240px, and the whole row wraps below ~900px). */
-/* "Running now" sits where the description used to, in the one band visible
-   from every tab. It wears the folded-banner shape because it IS the folded
-   form of the two panels it absorbed, and it holds NO buttons on purpose: the
-   pointer:coarse block below floors .btn/.mini-btn at 32px, so a face with any
-   of them would make the mobile header taller than the box it replaced. Every
-   control is in the popover behind the click. */
-.sh-running{flex:1 1 240px;min-width:220px;margin-bottom:0;cursor:pointer;
-  display:flex;flex-direction:column;justify-content:center}
+/* Condition and Dodge share the header's middle slot (#83). They wrap rather
+   than shrink: Condition carries two damage tracks and Dodge a roll button, and
+   squeezing either to fit would defeat the point of promoting them. Dodge drops
+   under Condition when the band cannot hold both -- "if it fits" is the ask. */
+.sh-head-boxes{flex:1 1 320px;min-width:260px;display:flex;flex-wrap:wrap;gap:10px;
+  align-items:flex-start}
+.sh-head-boxes > .sh-card{flex:1 1 240px;min-width:0;margin:0}
+/* "Running now" is a standalone Overview card now, no longer a header panel, so
+   it keeps card chrome and never hides itself when empty -- a fixed column that
+   vanishes is one the reader has to remember used to be there. The accent rule
+   stays: it is still the fastest read of whether anything is altering you. */
+.sh-running{cursor:pointer;border-left:3px solid var(--line)}
+.sh-running.warn{border-left-color:var(--amber)}
+.sh-running.info{border-left-color:var(--line)}
 .sh-running:hover{border-left-color:var(--manon)}
 .sh-running:focus-visible{outline:2px solid var(--manon);outline-offset:1px}
 .sh-running .sh-fold-sum{color:var(--text)}
@@ -1549,10 +1555,9 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   /* header top band stacks: identity, then description, then meters 4-across */
   .sh-top{flex-direction:column}
   .sh-ident{width:100%}
-  /* Stacked, the header children's heights SUM, so the summary drops to one
-     line — the count and the loudest thing running still read. */
-  .sh-running{width:100%;flex-basis:auto}
-  .sh-running .sh-fold-sum{-webkit-line-clamp:1}
+  /* Stacked, the header children's heights SUM, so the Condition/Dodge pair
+     takes the full width and lets its own wrap rule decide the split. */
+  .sh-head-boxes{width:100%;flex-basis:auto}
   /* Stacked layout has the whole width to work with, so the 2x2 unrolls into a
      single 4-across row rather than sitting as a squat block under the name. */
   .sh-meters{margin-left:0;width:100%;grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -1642,7 +1647,6 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   th{font-size:11px}
   .sh-skilltable th{font-size:10.5px}
   .sh-tag,.sh-tag-select{font-size:12px}
-  .sh-running{min-height:44px}
 }
 @media (prefers-reduced-motion: reduce){
   *{transition:none!important}
@@ -1758,3 +1762,14 @@ body.sheet-readonly .sh-readonly-banner .btn{pointer-events:auto;opacity:1}
    not inherit a second size reduction. */
 .sh-loadout-box .desc-expander summary{font-size:11px}
 .armor-effect-line{margin-top:2px}
+
+/* Compact Condition in the header (#83): tracks and the wound penalty on the
+   face, everything that is a BUTTON behind the heading. pointer:coarse floors
+   .btn at 32px, and Heal/Full Heal/Soak plus the prose were most of the card. */
+.sh-cond-compact{padding:8px 10px}
+.sh-cond-compact .sh-track{margin-top:4px}
+.sh-cond-compact .stat-line{margin-top:6px !important;padding:2px 0}
+.sh-cond-more{background:none;border:0;padding:0;cursor:pointer;
+  font-family:var(--disp);font-size:13px;letter-spacing:.04em;color:var(--text)}
+.sh-cond-more:hover{color:var(--manon)}
+.sh-cond-more:focus-visible{outline:2px solid var(--manon);outline-offset:2px}

@@ -581,7 +581,12 @@ function removeFromSublist(entries, hostName, key, name) {
 const CASH_UNDO = {
   weapon:    u => removeNamedEntry(CHAR.play.purchases.weapons, u.name),
   armor:     u => removeNamedEntry(CHAR.play.purchases.armor, u.name),
-  // Amp powers cost ZP rather than cash, so they never reach this ledger.
+  // Amp powers cost ZP rather than cash, so their ledger row moves no money
+  // (delta 0). Undo still belongs here: the row is what carries the button, and
+  // dropping the purchase is the whole refund — the engine derives
+  // CALC.zoetics.amp_zp_spent from this list, so the ZP comes back exactly as
+  // paid, including the half-cost Amp rate (#82).
+  amp_power: u => removeNamedEntry(CHAR.play.purchases.amp_powers, u.name),
   spell:     u => removeNamedEntry(CHAR.play.purchases.spells, u.name),
   deck:      u => removeNamedEntry(CHAR.play.purchases.decks, u.name),
   rig:       u => removeNamedEntry(CHAR.play.purchases.rigs, u.name),
@@ -616,6 +621,48 @@ const CASH_UNDO = {
     if (!en) return false;
     en.ref[u.field] = u.from || "";
     return true;
+  },
+  // A spell's Force is a counter, not an entry, so undo restores the count the
+  // way armor_trait restores a field (#82). Guarded against going backwards
+  // past what is actually stored: undoing two advances out of order must not
+  // leave a negative advance that the engine would read as a Force reduction.
+  spell_force: u => {
+    const advances = CHAR.play.spell_force_advances || {};
+    const from = Math.max(0, +u.from || 0);
+    if (!((+advances[u.name] || 0) > from)) return false;
+    advances[u.name] = from;
+    return true;
+  },
+  // Undoing the sale of a spell BOUGHT IN PLAY puts the entry back where it
+  // was; undoCashSpend takes the sale money away again (#82).
+  restore_spell: u => {
+    const list = CHAR.play.purchases.spells;
+    if (u.entry === undefined) return false;
+    list.splice(Math.max(0, Math.min(list.length, u.at)), 0, deepCopyEntry(u.entry));
+    return true;
+  },
+  // Undoing the sale of a CHARGEN spell just drops the "forgotten" record —
+  // the spell itself never went anywhere, it was only being subtracted (#82).
+  unforget_spell: u => {
+    const list = CHAR.play.spells_forgotten || [];
+    const i = list.indexOf(u.name);
+    if (i < 0) return false;
+    list.splice(i, 1);
+    return true;
+  },
+  // Raising a program's rating renames it in place ("Crack Encryption 3" ->
+  // "… 4"), so undo renames it back — a field restore, not a removal (#82).
+  program_rating: u => {
+    for (const en of ownedPrograms()) {
+      if (en.ref !== u.to) continue;
+      en.arr[en.i] = u.from;
+      const dk = CHAR.play.decking || {};
+      dk.loaded = (dk.loaded || []).map(n => (n === u.to ? u.from : n));
+      for (const d of [...kitOf("decks"), ...(CHAR.play.purchases.decks || [])])
+        if (d && d.hacking === u.to) d.hacking = u.from;
+      return true;
+    }
+    return false;
   },
   deck_mod:    u => removeFromSublist(ownedDecks(), u.host, "mods", u.name),
   rig_mod:     u => removeFromSublist(ownedRigs(), u.host, "mods", u.name),
@@ -671,10 +718,17 @@ async function undoCashSpend(entry) {
   if (idx < 0 || !handler) return;
   // A zero-delta entry moved no money (an unpaid lifestyle adjustment), so
   // promising a refund would be nonsense.
+  // A ZP purchase moves no cash but is emphatically not "no cost restored" —
+  // saying so on an amp power would read as a warning that the ZP was lost
+  // (#82). The ZP figure comes off the entry rather than being recomputed:
+  // it is what the row was labelled with, so the promise matches the receipt.
+  const zpNote = entry.undo.zp !== undefined
+    ? `It is removed and ${entry.undo.zp} ZP freed up again. No cash moved.` : null;
   if (!confirm(`Undo "${entry.label}"?\n\n`
     + (entry.delta
         ? `It is removed and ${fmt(-entry.delta)} refunded in full.`
-        : "It is removed and the previous value restored. No cash moved."))) return;
+        : zpNote
+          || "It is removed and the previous value restored. No cash moved."))) return;
   if (!handler(entry.undo)) {
     alert(`"${entry.label}" isn't there any more — it was already removed.\n\n`
       + "The ledger entry stays. Use Adjust if the refund is still owed.");
@@ -1006,16 +1060,35 @@ const DISPOSABLE_CATEGORIES = ["weapons", "armor", "gear", "augments", "decks",
  * The last percentage used sticks for the session, so a table running 25%
  * doesn't retype it on every sale. */
 let lastResalePct = DEFAULT_RESALE_PCT;
-function promptDisposal(name, value) {
+/* `value` is everything the item is worth, fitted kit included. `modsValue` is
+ * the slice of that which came from things BOLTED ON — mods, armor extras and
+ * Quality/Style surcharges, mounted augments, a drone's guns (#81).
+ *
+ * The percentage is a CONDITION slider: it prices wear and tear on the thing
+ * you are selling, and a scope does not get scratched because the rifle it is
+ * clamped to did. Mods therefore come back at face value and only the base
+ * price is scaled. The reporter's rationale is the deciding one: a mod could in
+ * principle be pulled off and re-fitted elsewhere, but the app has no notion of
+ * owning a mod apart from its host, so the only way to let a player re-buy what
+ * they had is to hand back what they paid for it.
+ *
+ * The total stays editable, as it always was — this only moves where the
+ * slider's default lands. */
+function promptDisposal(name, value, modsValue) {
   return new Promise(resolve => {
-    const base = Math.max(0, Math.round(+value || 0));
+    const total = Math.max(0, Math.round(+value || 0));
+    // Clamped into the total: a caller that miscounts must not be able to make
+    // the scaled part negative and have the slider read backwards.
+    const mods = Math.max(0, Math.min(total, Math.round(+modsValue || 0)));
+    const base = total - mods;
     const backdrop = el("div", { class: "mount-modal-backdrop" });
     const done = val => {
       document.removeEventListener("keydown", onKey); backdrop.remove(); resolve(val);
     };
     const onKey = e => { if (e.key === "Escape") done(null); };
 
-    const amountOf = pct => Math.round(base * (Math.max(0, Math.min(100, pct)) / 100));
+    // Base scaled by condition, fitted kit added back whole (#81).
+    const amountOf = pct => Math.round(base * (Math.max(0, Math.min(100, pct)) / 100)) + mods;
     const pctInput = el("input", { type: "number", min: "0", max: "100", step: "5",
       value: String(lastResalePct), style: "width:74px" });
     const amtInput = el("input", { type: "number", min: "0", step: "1",
@@ -1032,12 +1105,20 @@ function promptDisposal(name, value) {
     const modal = el("div", { class: "card mount-modal", style: "max-width:420px" },
       el("h3", {}, `Part with ${name}?`),
       el("p", { class: "hint" },
-        base ? `Bought for ${fmt(base)}. Sell it on, or write it off as lost.`
-             : "No recorded value for this item — set the sale price yourself, "
-               + "or write it off as lost."),
+        (base || mods)
+          ? `Bought for ${fmt(total)}. Sell it on, or write it off as lost.`
+          : "No recorded value for this item — set the sale price yourself, "
+            + "or write it off as lost."),
+      // Spelled out because the sum stops being obvious once mods are in it:
+      // the number in the box is not the percentage of the price above (#81).
+      mods
+        ? el("p", { class: "hint" },
+            `${fmt(mods)} of that is fitted mods, which come back in full — the `
+            + `percentage below applies to the ${fmt(base)} base price only.`)
+        : null,
       el("div", { class: "stat-line" },
         el("span", {}, "Sell at "), pctInput, el("span", {}, "% "),
-        el("span", { class: "sub" }, "→ "), amtInput,
+        el("span", { class: "sub" }, mods ? "of base → " : "→ "), amtInput,
         el("span", { class: "sub" }, ` ${RULES.currencyName()}`)),
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:14px" },
         sellBtn,
@@ -1056,11 +1137,89 @@ function deepCopyEntry(entry) {
 }
 const sublistName = m => (m && typeof m === "object") ? m.name : m;
 
+/* ------------------------------------------------- (#81) fitted-kit value
+ *
+ * What the things bolted onto an owned item are worth. Every one of these feeds
+ * promptDisposal's `modsValue`, which hands them back at face value while the
+ * condition percentage scales only the host's own price.
+ *
+ * Each helper quotes a fitted thing at exactly the price its OWN ✕ quotes, so
+ * "sell the gun" and "strip it, then sell it" come to the same money. That
+ * equality is the reason these read the tables again rather than reaching for a
+ * CALC total: CALC.armor.cost folds the trim into one number that can't be
+ * split back out reliably once rounding has been applied to the sum.
+ *
+ * The α-cyber surcharge on a mounted augment is deliberately NOT counted. The
+ * mount chip's own ✕ doesn't offer it either, and quoting two different prices
+ * for the same augment depending on which button was pressed would be worse
+ * than under-quoting it consistently. */
+function mountedValue(item, mult) {
+  return ((item || {}).mounted || []).reduce((sum, m) => {
+    const row = (DATA.tables.augments || []).find(a => a.Name === sublistName(m)) || {};
+    return sum + Math.round((+row.Cost || 0) * mult);
+  }, 0);
+}
+
+/* Flat-priced fitted lists: deck mods, rig mods, and a drone's or vehicle's
+ * unit mods and hardpoint weapons. `tables` is a list of [tableKey, nameColumn]
+ * pairs, because a unit's guns are spread across several tables and are looked
+ * up by trying each in turn — the same search findWeapon does on the rig tab.
+ * A name no table knows (a deleted homebrew row) contributes nothing rather
+ * than throwing, matching how the rest of the sheet treats an orphan. */
+function flatFittedValue(names, tables, mult) {
+  return (names || []).reduce((sum, m) => {
+    const n = sublistName(m);
+    for (const [tk, nc] of tables) {
+      const row = (DATA.tables[tk] || []).find(x => x[nc] === n);
+      if (row) return sum + Math.round((+row.Cost || 0) * mult);
+    }
+    return sum;
+  }, 0);
+}
+
+/* Weapon mods are priced against the gun they are fitted to — a percentage-
+ * priced mod (Bling) costs a share of THIS weapon — so this needs the entry and
+ * its table row, not just the mod names. Same call weaponModSlots' `priceOf`
+ * makes, so the slot chip and the whole-weapon sale agree. */
+function weaponModsValue(item, weaponRow, mult) {
+  const base = RULES.weaponBaseCost(weaponRow || {}, item);
+  return ((item || {}).mods || []).reduce((sum, m) => {
+    const row = (DATA.tables.weapon_mods || []).find(x => x.Modification === sublistName(m));
+    return sum + (row ? Math.round(RULES.weaponModCost(row, base) * mult) : 0);
+  }, 0);
+}
+
+/* Armor's "mods" are its trim: Quality (material), Style and Extras. They are
+ * multipliers rather than list entries, but they are bought and refunded like
+ * mods — armorTraitSelect and the Extras picker both charge base × (mult − 1) —
+ * so they belong in the un-scaled half of a sale.
+ *
+ * A multiplier BELOW 1 makes a surcharge negative: shoddy material is a
+ * discount, not a fitting worth money. The sum can therefore come out negative,
+ * and promptDisposal clamps it to zero, which is the right reading — there is
+ * nothing there to refund at face value, so the whole (already reduced) price
+ * is what the condition slider scales. */
+function armorTrimValue(item, armorRow, baseCost, mult) {
+  const surcharge = (tableKey, column, name) => {
+    const row = name ? (DATA.tables[tableKey] || []).find(x => x[column] === name) : null;
+    return row ? Math.round(baseCost * ((+row.Multiplier || 1) - 1) * mult) : 0;
+  };
+  let total = surcharge("armor_materials", "Material", (item || {}).material);
+  // Style and Extras only exist on styleable pieces; a stale value on a fixed
+  // design was never charged for, so it must not be refunded either.
+  if ((armorRow || {}).Style === "Y") {
+    total += surcharge("armor_styles", "Style", item.style);
+    for (const extra of item.extras || [])
+      total += surcharge("armor_extras", "Extra", sublistName(extra));
+  }
+  return total;
+}
+
 /* The one entry point every ✕ on the play sheet goes through. `arr` is the
  * array the row is backed by — the kit or play.purchases, both play's — so
  * parting with something is now just a splice. Returns true when it happened. */
-async function disposeOfItem({ category, arr, index, inPlay, name, value }) {
-  const result = await promptDisposal(name, value);
+async function disposeOfItem({ category, arr, index, inPlay, name, value, modsValue }) {
+  const result = await promptDisposal(name, value, modsValue);
   if (!result) return false;
   const entry = deepCopyEntry(arr[index]);
   arr.splice(index, 1);
@@ -1104,6 +1263,57 @@ async function disposeOfMod({ entry, list, index, name, value, hostName }) {
     result.sold ? result.amount : 0,
     { kind: "restore_mod", category: entry.category, inPlay: entry.inPlay,
       host: entry.i, list, at: index, entry: removed });
+  await playChangedRecalc();
+  return true;
+}
+
+/* Sell (or forget) a known spell — issue #82's "sell spells like ordinary
+ * gear". It goes through the same promptDisposal dialog everything else does,
+ * so the condition percentage, the editable amount and the "Lost / discarded"
+ * option all behave exactly as they do for a gun.
+ *
+ * `modsValue` is deliberately not passed: a spell has nothing bolted to it, so
+ * the whole price is what the slider scales. Its Force advances are NOT carved
+ * out either — they were bought at the same per-Force rate as the spell itself,
+ * so they are part of the one price, not a fitting.
+ *
+ * The two halves are stored differently and that is the point:
+ *   - bought in play  -> splice play.purchases.spells, undo re-inserts it, the
+ *                        same restore-at-index shape gear disposal uses;
+ *   - from chargen    -> record the NAME in play.spells_forgotten, because the
+ *                        chargen record must not be written to after Finalize
+ *                        (splicing CHAR.magic.spells would refund the spell's
+ *                        price into the CREATION budget). Undo drops the name.
+ *
+ * Force advances are left in play.spell_force_advances untouched. They go inert
+ * the moment the spell is gone — applyPlayAdvances only walks spells the
+ * character still has — and leaving them is what lets Undo bring the spell back
+ * at the Force it was sold at rather than the Force it was learned at. */
+async function sellSpell(sp, value) {
+  const play = CHAR.play;
+  const result = await promptDisposal(sp.name, value);
+  if (!result) return false;
+  const verb = result.sold ? "Sold" : "Forgot";
+  if (sp.inPlay) {
+    const list = play.purchases.spells;
+    const at = list.map(x => x.name).lastIndexOf(sp.name);
+    if (at < 0) return false;
+    const entry = deepCopyEntry(list[at]);
+    list.splice(at, 1);
+    logCash(`${verb} ${sp.name}`, result.sold ? result.amount : 0,
+      { kind: "restore_spell", at, entry });
+  } else {
+    play.spells_forgotten = play.spells_forgotten || [];
+    if (play.spells_forgotten.includes(sp.name)) return false;
+    play.spells_forgotten.push(sp.name);
+    logCash(`${verb} ${sp.name}`, result.sold ? result.amount : 0,
+      { kind: "unforget_spell", name: sp.name });
+  }
+  // A spell that is currently up can't stay up once it's been sold. Same rule
+  // pruneLoadedPrograms applies to a sold program's thread, and like that one it
+  // is not restored by Undo: the spell comes back, but whether it is cast again
+  // is the player's call, not a bookkeeping consequence.
+  play.active_spells = activeSpells().filter(s => s.name !== sp.name);
   await playChangedRecalc();
   return true;
 }
@@ -7625,8 +7835,15 @@ function shGear(body) {
                 shUsesStepper(w, playChangedRecalc, "grenade"))
             : null),
         el("td", {}, el("button", { class: "row-del", title: "Sell / remove weapon",
-          onclick: () => disposeOfItem({ category, arr, index: wi, inPlay, name: w.name,
-            value: Math.round((+r.Cost || 0) * mult) }) }, "✕"))));
+          onclick: () => {
+            // (#81) Fitted mods and mounted augments go with the gun, so their
+            // money comes back with it — in full, not scaled by condition.
+            // Before this they were simply lost: the sale quoted the bare
+            // table price and everything bolted on was thrown in for free.
+            const fitted = weaponModsValue(w, r, mult) + mountedValue(w, mult);
+            return disposeOfItem({ category, arr, index: wi, inPlay, name: w.name,
+              value: Math.round((+r.Cost || 0) * mult) + fitted, modsValue: fitted });
+          } }, "✕"))));
       const upgBoxes = weaponUpgradeSlots(w, r, mult);
       if (canMod || upgBoxes.length) {
         const strip = canMod ? weaponModSlots(en, mult, w.name, r)
@@ -7779,8 +7996,20 @@ function shGear(body) {
             await playChangedRecalc();
           } })),
         el("td", {}, el("button", { class: "row-del", title: "Sell / remove armor",
-          onclick: () => disposeOfItem({ category, arr, index: localIndex, inPlay,
-            name: a.name, value: arow.cost ?? Math.round(baseCost * armorMult) }) }, "✕"))));
+          onclick: () => {
+            // (#81) Armor already sold for its FULL price including trim
+            // (CALC.armor.cost folds Quality/Style/Extras in), but the whole
+            // lot was then scaled by condition. Split it: the piece's own
+            // price is what wears out, the trim and any mounted augment come
+            // back whole. Recomputed from the tables rather than subtracted
+            // out of arow.cost, so the refund matches to the penny what
+            // armorTraitSelect and the Extras picker charged.
+            const trim = armorTrimValue(a, r, baseCost, armorMult)
+              + mountedValue(a, armorMult);
+            return disposeOfItem({ category, arr, index: localIndex, inPlay,
+              name: a.name, value: Math.round(baseCost * armorMult) + trim,
+              modsValue: trim });
+          } }, "✕"))));
     });
     armorCard.append(t);
   } else {
@@ -7859,8 +8088,16 @@ function shGear(body) {
               await playChangedRecalc();
             } })]),
       el("td", {}, el("button", { class: "row-del", title: "Sell / remove item",
-        onclick: () => disposeOfItem({ category: "gear", arr, index: en.i, inPlay,
-          name: g.name, value: Math.round((+r.Cost || 0) * gearMult * owned) }) }, "✕")));
+        onclick: () => {
+          // (#81) Host gear (Power Armor, Arwin Goggles, homebrew with mounts)
+          // can carry mounted augments; they leave with it, so their money
+          // comes back whole. Not multiplied by `owned` — the mount list is
+          // per row, not per copy.
+          const fitted = mountedValue(g, gearMult);
+          return disposeOfItem({ category: "gear", arr, index: en.i, inPlay,
+            name: g.name, value: Math.round((+r.Cost || 0) * gearMult * owned) + fitted,
+            modsValue: fitted });
+        } }, "✕")));
   };
   // Weights tally over everything owned, collapsed categories included — hiding
   // a heading tidies the list, it doesn't take the load off your back.
@@ -8534,6 +8771,10 @@ function bondSpiritDetail(name, row, force) {
 function shMagic(body) {
   const type = CALC.magic.type;
   const play = CHAR.play;
+  // A shared view reads the same sheet but must not sell anything off it, so
+  // the spell ✕ is hidden there — same flag every other tab's destructive
+  // controls are gated on (#82).
+  const ro = !!(activeTabObj() && activeTabObj().readonly);
 
   // House rule: gear/weapon ZR is a spellcasting dice penalty (−1d per full
   // point), not a ZP cost. Surface the current penalty at the top of the tab.
@@ -8552,9 +8793,15 @@ function shMagic(body) {
   }
 
   const zp = CALC.zoetics.zp;
+  // (#82) Spells sold in play. A play-bought spell is spliced out of
+  // purchases.spells outright; a CHARGEN spell can only be recorded here,
+  // because the chargen record is never written to after Finalize — so the
+  // list this tab renders has to subtract the same names the engine does.
+  const forgottenSpells = new Set(play.spells_forgotten || []);
   const allSpells = [
     ...CHAR.magic.spells.map(s => ({ ...s, inPlay: false })),
-    ...play.purchases.spells.map(s => ({ ...s, inPlay: true }))];
+    ...play.purchases.spells.map(s => ({ ...s, inPlay: true }))]
+    .filter(s => !forgottenSpells.has(s.name));
   if (allSpells.length || type === "Mage" || type === "Archmage") {
     const wrap = el("div", { class: "card sh-card" },
       el("div", { class: "sh-card-head" },
@@ -8598,9 +8845,24 @@ function shMagic(body) {
                   && !confirm(`+1 Force costs ${fmt(perForce)} but you have ${fmt(play.cash)}. Overdraw?`))
                 return;
               play.spell_force_advances[sp.name] = (play.spell_force_advances[sp.name] || 0) + 1;
-              logCash(`${sp.name}: Force ${force} → ${force + 1}`, -perForce);
+              // (#82) An advance is a FIELD change, not a purchase — there is
+              // no entry to remove — so undo puts the counter back, the same
+              // shape armor_trait and unit_condition use. `from` carries the
+              // advance count rather than the Force, because that counter is
+              // what is stored; the displayed Force is chargen + advances.
+              logCash(`${sp.name}: Force ${force} → ${force + 1}`, -perForce,
+                { kind: "spell_force", name: sp.name,
+                  from: (play.spell_force_advances[sp.name] || 1) - 1 });
               await playChangedRecalc();
-            } }, force >= SPELL_FORCE_MAX ? `Force ${SPELL_FORCE_MAX} (max)` : `+1 Force (${fmt(perForce)})`)),
+            } }, force >= SPELL_FORCE_MAX ? `Force ${SPELL_FORCE_MAX} (max)` : `+1 Force (${fmt(perForce)})`),
+          // Sell a spell like any other bought thing (#82). Priced at the same
+          // rate everything else about a spell is priced at: the table's Cost
+          // is per Force, and that is what learning it and every advance since
+          // has charged, so Cost × its CURRENT Force is what the character has
+          // actually sunk into it — advances included.
+          ro ? null : el("span", {}, " "),
+          ro ? null : el("button", { class: "row-del", title: "Sell / forget this spell",
+            onclick: () => sellSpell(sp, perForce * force) }, "✕")),
         el("div", { class: "sub" },
           `Drain: ${r.Drain || "—"} · Resist: ${r["Target Resistance"] || "—"} · Duration: ${r.Duration || "—"}`),
         r.Effect ? el("div", { class: "sub" }, r.Effect) : null,
@@ -8709,6 +8971,20 @@ function shMagic(body) {
             return;
           }
           play.purchases.amp_powers.push({ name, target: "", times: 1 });
+          // (#82) Amp powers are paid for in ZP, never cash, so buying one used
+          // to leave no trace anywhere the player could act on — and there was
+          // no ✕ on the row either, so a misclicked power was permanent.
+          //
+          // It gets a ZERO-DELTA ledger row: the Activity list already carries
+          // changes that moved no money (unpaid lifestyle months, write-offs),
+          // and undoCashSpend's `delta` arithmetic is a no-op on 0, so the
+          // ledger stays exactly balanced while the row gives the purchase an
+          // Undo button. The ZP refund needs no arithmetic of its own —
+          // CALC.zoetics.amp_zp_spent is DERIVED from this list by the engine,
+          // so dropping the entry returns precisely what was charged, half-cost
+          // Amp discount and all. `zp` rides along for the label only.
+          logCash(`Learned amp power ${name} (${zpCost} ZP)`, 0,
+            { kind: "amp_power", name, zp: zpCost });
           await playChangedRecalc();
         } }, "Buy (ZP)")));
       wrap.append(el("p", { class: "hint" },
@@ -8957,6 +9233,65 @@ function programRunSpec(name, row) {
   };
 }
 
+/* ------------------------------------- raising a program's rating (#82)
+ *
+ * PRICING, and where it comes from: a rated program is not one row with a
+ * rating field, it is SIX rows — "Crack Encryption 1" … "Crack Encryption 6" —
+ * each with its own Cost in the programs table. Nothing here is invented: the
+ * charge is simply the difference between the row the character owns and the
+ * row they are moving to, exactly the way armorTraitSelect charges base ×
+ * (newMult − oldMult) and unitConditionSelect charges the difference between
+ * two condition factors. The program has already been bought once; only the
+ * gap is outstanding.
+ *
+ * That reading is worth stating because it is NOT "Cost per rating × 1". Most
+ * families happen to be linear (Acid Burn is 2,000 per point, so either reading
+ * gives 2,000), but some are not: Sonic Sickness is a flat 10,000 at every
+ * rating, so re-rating it is free — which is what the data says, and pricing it
+ * off a per-point average would silently overcharge for it. Reading the two
+ * rows keeps homebrew program families working too, whatever curve they use.
+ *
+ * Returns null where there is nothing to sell: an unrated program, one already
+ * at the ceiling, one whose next tier isn't in the table, or one whose next
+ * tier the character ALREADY owns — a duplicate name would break every
+ * name-keyed lookup on this tab (loaded threads, deck slots, ownership). */
+function programUpgrade(name, mult) {
+  const from = RULES.programRating(name);
+  if (!from || from >= RULES.HACKING_RATING_MAX) return null;
+  const to = String(name).trim().replace(/\s\d+$/, ` ${from + 1}`);
+  const fromRow = DATA.tables.programs.find(x => x.Name === name);
+  const toRow = DATA.tables.programs.find(x => x.Name === to);
+  if (!fromRow || !toRow) return null;
+  if (allPrograms().includes(to)) return null;
+  const fromCost = Math.round((+fromRow.Cost || 0) * mult);
+  const toCost = Math.round((+toRow.Cost || 0) * mult);
+  return { from: name, to, rating: from + 1, fromCost, toCost,
+    // A family priced flat across its ratings yields 0, not a refund: a
+    // downgrade isn't on offer here, so the charge floors at nothing.
+    cost: Math.max(0, toCost - fromCost) };
+}
+
+/* Rename the owned program in place. The entry is a bare STRING in the array
+ * (programs have no per-copy state), so "raising the rating" is literally
+ * writing the higher-rated name over it — which is why every other place that
+ * holds a program name has to move with it: the deck's loaded threads and the
+ * `hacking` slot on each deck both key off the name and would go stale
+ * otherwise, exactly the drift pruneLoadedPrograms was written to catch. */
+async function raiseProgramRating(en, upgrade) {
+  const play = CHAR.play;
+  if (upgrade.cost > 0 && play.cash < upgrade.cost
+      && !confirm(`${upgrade.to} costs ${fmt(upgrade.cost)} more than `
+        + `${upgrade.from} but you have ${fmt(play.cash)}. Overdraw?`)) return;
+  en.arr[en.i] = upgrade.to;
+  const dk = play.decking || {};
+  dk.loaded = (dk.loaded || []).map(n => (n === upgrade.from ? upgrade.to : n));
+  for (const d of [...kitOf("decks"), ...(play.purchases.decks || [])])
+    if (d && d.hacking === upgrade.from) d.hacking = upgrade.to;
+  logCash(`${upgrade.from} → rating ${upgrade.rating}`, -upgrade.cost,
+    { kind: "program_rating", from: upgrade.from, to: upgrade.to });
+  await playChangedRecalc();
+}
+
 /* Run a program: charge the action, charge the dice, open the roller loaded.
  *
  * The dice are spent HERE rather than handed to the roller as a `pool`, which
@@ -9063,8 +9398,11 @@ function shDecking(body) {
       el("button", { class: "row-del", title: "Sell / remove deck",
         onclick: async () => {
           const row = DATA.tables.decks.find(x => x.Name === d.name) || {};
+          // (#81) Fitted deck mods refund in full; only the chassis is scaled.
+          const fitted = flatFittedValue(d.mods, [["deck_mods", "Deck Mod"]], mult);
           if (!await disposeOfItem({ category, arr: deckArr, index: deckIndex, inPlay,
-            name: d.name, value: Math.round((+row.Cost || 0) * mult) })) return;
+            name: d.name, value: Math.round((+row.Cost || 0) * mult) + fitted,
+            modsValue: fitted })) return;
           if (dk.active_deck === d.name) { dk.active_deck = ""; dk.loaded = []; }
           await playChangedRecalc();
         } }, "✕")));
@@ -9152,7 +9490,10 @@ function shDecking(body) {
   // gear-ZR rule reads the same predicate, so the two can't disagree about what
   // being loaded means.
   const programEntries = ownedPrograms();
-  programEntries.forEach(({ ref: name, arr: progArr, i: progIndex, inPlay, category }) => {
+  // `en` is kept whole (not just destructured) because raiseProgramRating (#82)
+  // needs the backing array and index together to rename the entry in place.
+  programEntries.forEach(en => {
+    const { ref: name, arr: progArr, i: progIndex, inPlay, category } = en;
     const r = DATA.tables.programs.find(x => x.Name === name) || {};
     const io = r["I/O"] || "—";
     const loadable = RULES.programNeedsThread(r);
@@ -9165,6 +9506,7 @@ function shDecking(body) {
     // nothing. Everything else gets one, loaded or not: loading a program is
     // about threads, not about whether you can point it at something.
     const runSpec = RULES.isHackingProgram(name) ? null : programRunSpec(name, r);
+    const upgrade = programUpgrade(name, mult);
     progCard.append(el("div", { class: "sh-advrow" },
       el("span", {}, el("b", {}, name),
         // Action Type is on the face now that Run charges it (#79) — what a
@@ -9190,6 +9532,17 @@ function shDecking(body) {
                     ? ` · ${runSpec.actionType} Action (Decking Exploit first, then Simple)`
                     : ""),
               onclick: () => runProgram(name, r) }, `Run (${runSpec.cost}d)`)
+          : null,
+        // Pay to re-rate an owned program (#82). Only offered where the data
+        // actually has a higher tier to move to, so an unrated program
+        // (Alert Monitor) and a rating-6 program show nothing at all rather
+        // than a disabled button nobody can act on.
+        upgrade
+          ? el("button", { class: "btn small",
+              title: `Upgrade to ${upgrade.to} — ${fmt(upgrade.cost)}`
+                + ` (${fmt(upgrade.toCost)} − ${fmt(upgrade.fromCost)} already paid)`,
+              onclick: () => raiseProgramRating(en, upgrade) },
+              `+1 Rating (${fmt(upgrade.cost)})`)
           : null,
         loadable
           ? counterBtn(loaded ? "Unload" : "Load", () => {
@@ -9796,8 +10149,11 @@ function shRigging(body) {
       el("button", { class: "row-del", title: "Sell / remove VCR",
         onclick: async () => {
           const row = DATA.tables.rigs.find(x => x["Rig Type"] === r.name) || {};
+          // (#81) Fitted rig mods refund in full; only the VCR itself is scaled.
+          const fitted = flatFittedValue(r.mods, [["rig_mods", "Rig Mod"]], rigMult);
           if (!await disposeOfItem({ category, arr: rigArr, index: rigIndex, inPlay,
-            name: r.name, value: Math.round((+row.Cost || 0) * rigMult) })) return;
+            name: r.name, value: Math.round((+row.Cost || 0) * rigMult) + fitted,
+            modsValue: fitted })) return;
           if (rg.active_rig === r.name) rg.active_rig = "";
           await playChangedRecalc();
         } }, "✕")));
@@ -10041,8 +10397,19 @@ function shRigging(body) {
         onclick: async () => {
           // The unit's own resale value uses the unit multiplier, not the
           // fitted-weapon `mult` (which is deliberately 1 in this scope).
+          //
+          // (#81) Everything on the hardpoints goes with the chassis, so it all
+          // refunds in full: unit mods AND fitted weapons. The weapons are in a
+          // separate list from the mods, but the reporter's rationale is the
+          // same for both — they were bought with cash, the app has no way to
+          // own one apart from the unit it is bolted to, and a chassis's
+          // condition is no reason to discount the autocannon on its roof.
+          const fitted =
+            flatFittedValue(u.mods, [cfg.modTable], mult)
+            + flatFittedValue(u.weapons, cfg.weaponTables, mult);
           if (!await disposeOfItem({ category, arr: unitArr, index: localIndex, inPlay,
-            name: u.label || u.name, value: Math.round((+r.Cost || 0) * baseMult) })) return;
+            name: u.label || u.name, value: Math.round((+r.Cost || 0) * baseMult) + fitted,
+            modsValue: fitted })) return;
           // Per-unit play state is keyed by position in the JOINED list, so
           // losing a unit has to shift every later unit's slot down — otherwise
           // its damage tracks (and the linked flag) land on the wrong vehicle.

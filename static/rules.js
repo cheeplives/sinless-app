@@ -36,7 +36,7 @@ const BUNDLE = (typeof DATA_BUNDLE !== "undefined")
  * default fill claim this build made it: "unknown" is a fact worth keeping,
  * and a confidently wrong version is worse than none when you are working out
  * why an old file behaves oddly. */
-const APP_VERSION = "305";
+const APP_VERSION = "306";
 
 // ============================================================== game constants
 // The numeric knobs the engine reads; grouped by chargen step below.
@@ -987,6 +987,19 @@ function defaultCharacter() {
       ritual_advances: {},
       zp_advances: 0,
       spell_force_advances: {},
+      // Spells sold or forgotten in play, by name (#82). Spells are the one
+      // bought-with-cash thing that is NOT in `play.kit` -- KIT_CATEGORIES has
+      // no "spells", because magic lives under character.magic rather than in a
+      // top-level array -- so play cannot simply splice the list it renders the
+      // way it does for gear. Splicing CHAR.magic.spells would cross the bright
+      // line and hand the spell's price back to the CREATION budget.
+      //
+      // A name list is therefore the play-side record, in the same spirit as
+      // the `disposed` map the kit replaced, and applyPlayAdvances subtracts it
+      // below. Names, not indices: a name survives a save/load round trip and a
+      // chargen edit that reorders the list, and a spell can only be known once
+      // (the learn picker hides anything already known), so a name is unique.
+      spells_forgotten: [],
       // ---- THE BRIGHT LINE ----------------------------------------------
       // What the character walked out of creation with, copied into play at
       // Finalize. From that moment play owns this outright: worn flags, fitted
@@ -5537,6 +5550,17 @@ function applyPlayAdvances(character) {
   character.vehicles.push(...(purchases.vehicles || []));
   character.magic.amp_powers.push(...(purchases.amp_powers || []));
   character.magic.spells.push(...(purchases.spells || []));
+  // Spells sold in play (#82). Applied AFTER the purchases are appended so one
+  // pass covers both halves: a play-bought spell is spliced out of
+  // purchases.spells directly by the sheet, but a CHARGEN spell can only be
+  // removed here, because the chargen record itself must stay untouched.
+  // Filtering the joined list means neither half needs a special case, and a
+  // stale name (the spell was already gone) is simply a no-op.
+  const forgotten = (play.spells_forgotten || []);
+  if (forgotten.length) {
+    const gone = new Set(forgotten);
+    character.magic.spells = character.magic.spells.filter(s => !gone.has(s && s.name));
+  }
   for (const [name, plus] of Object.entries(play.spell_force_advances || {})) {
     for (const spell of character.magic.spells) {
       if (spell.name === name) {

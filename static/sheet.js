@@ -2635,11 +2635,18 @@ function headerPoolTile(pool) {
     // Only the effects that are switched ON get a line here — the rest live in
     // the Conditional Effects panel, where you'd go to switch them on.
     ...activePoolEffects().map(e => {
-      const n = e.pools[pool] || 0;
+      // What this effect is worth RIGHT NOW, which for a dose means times the
+      // number counting -- the same multiply poolEffectMod does. Reading the
+      // per-dose figure here made the tile disagree with its own total: three
+      // Crams contribute +6 to Focus but the line said "+2", and the line's
+      // tooltip claims the two agree.
+      const count = e.dose ? doseTally(e.label).counted : 1;
+      const n = (e.pools[pool] || 0) * count;
+      const label = count > 1 ? `${e.label} ×${count}` : e.label;
       return n ? el("div", { class: "sh-pool-note",
         style: `color:var(--${n > 0 ? "ok" : "bad"})`,
-        title: `${e.label} is switched on — this is already in the number above` },
-        `⚡ ${e.label} ${n > 0 ? "+" : "−"}${Math.abs(n)}`) : null;
+        title: `${label} is switched on — this is already in the number above` },
+        `⚡ ${label} ${n > 0 ? "+" : "−"}${Math.abs(n)}`) : null;
     }).filter(Boolean),
     ...notes.map(n => el("div", { class: "sh-pool-note" }, n)));
 }
@@ -11368,7 +11375,18 @@ function takeDose(name) {
 }
 
 function dismissDose(uid) {
-  CHAR.play.doses = activeDoses().filter(d => d.uid !== uid);
+  // Identity, not value: two Crams are two rows and dismissing one keeps the
+  // other. Hand-written or externally generated character JSON can arrive with
+  // no uid at all, though, and `undefined !== undefined` is false for every
+  // such row -- one click would empty the list. Fall back to dropping the first
+  // uid-less entry, which is what the caller meant.
+  const doses = activeDoses();
+  const at = uid == null
+    ? doses.findIndex(d => d.uid == null)
+    : doses.findIndex(d => d.uid === uid);
+  if (at < 0) return;
+  doses.splice(at, 1);
+  CHAR.play.doses = doses;
   playChanged();
 }
 

@@ -260,6 +260,44 @@ Load the fixture and install the measurement helper once:
   would need to roughly double the current height to trip it.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+## Phone widths (out of target, guarded anyway)
+
+The viewports above start at 834px and this app is not designed for a phone.
+The stylesheet still carries an `@media(max-width:680px)` block that exists
+purely to keep a phone usable, and its own comment records a sideways-scroll bug
+it was written to fix. One case keeps that promise honest.
+
+### P13-011: No horizontal page scroll on any play tab at 375×812
+- **Type:** correctness
+- **Steps:** load `wildling-pools.json` (or any finalized fixture), enter play
+  mode, and `resize_window` to `375 × 812`.
+- **Check:**
+
+      (async () => { const de = document.documentElement; const tabs = {}; for (const t of ["overview","skills","kismet","gear","augments","magic","decking","rigging","actions","notes"]) { sheetTab = t; renderSheet(); await new Promise(r => setTimeout(r, 40)); tabs[t] = de.scrollWidth; } sheetTab = "gear"; renderSheet(); await new Promise(r => setTimeout(r, 40)); const wrap = [...document.querySelectorAll(".sh-tablewrap")].find(w => w.querySelector("table")); return { clientWidth: de.clientWidth, tabs, gearTable: { wrapW: Math.round(wrap.getBoundingClientRect().width), tableW: Math.round(wrap.querySelector("table").getBoundingClientRect().width), scrollable: wrap.scrollWidth > wrap.clientWidth } }; })()
+
+- **Expected:** every entry in `tabs` equals `clientWidth` (375). `gearTable` has
+  `scrollable: true` with `tableW` well over `wrapW` — the table is **wider**
+  than the screen and that is correct, because it scrolls inside its own
+  `.sh-tablewrap`. The defect this guards against is the *page* scrolling, not
+  the table.
+- **Note:** Failed on the Gear tab at 389 against 375 until 2026-08-19. The
+  table was never the problem — it was already wrapped. The blowout was the
+  grid above it: `.sh-two` resolved to a bare `1fr`, and a `1fr` track takes
+  `min-content` as its automatic minimum, so the card's content sized the column
+  instead of the column sizing the card. `.sh-two` measured 347px wide with a
+  computed `grid-template-columns: 374.547px` — a single column wider than the
+  grid holding it. `minmax(0,1fr)` gives the track a real floor.
+  `.sh-pools` and `.sh-skillgrid` share the declaration and were changed with
+  it; neither tripped, but both had the same latent weakness. See
+  [`../findings/2026-08-19-P13.md`](../findings/2026-08-19-P13.md) NEW-003.
+
+  If this ever fails again, find the offender by walking for elements whose
+  right edge clears the viewport and that sit in no scroll container:
+
+      (() => { const W = document.documentElement.clientWidth; const inScroller = e => { let q = e.parentElement; while (q && q !== document.body) { const o = getComputedStyle(q).overflowX; if (o === "auto" || o === "scroll" || o === "hidden") return true; q = q.parentElement; } return false; }; return [...document.querySelectorAll("body *")].filter(e => { const r = e.getBoundingClientRect(); return r.right > W + 0.5 && r.width > 0 && !inScroller(e); }).slice(0, 8).map(e => ({ cls: (e.className || e.tagName).toString().slice(0, 50), left: Math.round(e.getBoundingClientRect().left), right: Math.round(e.getBoundingClientRect().right) })); })()
+
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

@@ -1,0 +1,259 @@
+{
+  "name": "QA Wildling Pools",
+  "player": "",
+  "description": "",
+  "notes": "",
+  "house_rules": {
+    "zr": "classic",
+    "priorities": "classic",
+    "currency": "zuzus",
+    "ew": "classic",
+    "engineering": "classic",
+    "recoil": "classic"
+  },
+  "priorities": {
+    "heritage": 4,
+    "attributes": 3,
+    "resources": 2,
+    "skills": 1,
+    "magic": 0
+  },
+  "heritage": {
+    "type": "Green",
+    "uplift_type": "",
+    "features": [
+      "Wildling"
+    ],
+    "blessing_plus3": "",
+    "blessing_plus1": "",
+    "specialization_pool": "",
+    "heavy_torso_mounts": [
+      "",
+      ""
+    ],
+    "no_head_mount": "",
+    "snake_attack": "bite"
+  },
+  "attributes": {
+    "Strength": 6,
+    "Body": 6,
+    "Reaction": 5,
+    "Intelligence": 4,
+    "Willpower": 5,
+    "Charisma": 3
+  },
+  "cha_pool_choice": "Brawn",
+  "skills": {
+    "Unarmed Combat": 5,
+    "Athletics": 4,
+    "Observation": 3,
+    "Dodge": 3,
+    "Biotech": 2
+  },
+  "skill_specializations": {},
+  "ritual_skills": {},
+  "knowledge_skills": [],
+  "etiquettes": {},
+  "martial_arts": [],
+  "magic": {
+    "chosen_type": "Amp",
+    "school": "",
+    "spells": [],
+    "amp_powers": [],
+    "archmage_bind": false
+  },
+  "speaker": {
+    "relationships": [],
+    "bonds": 0,
+    "infusions": []
+  },
+  "augments": [
+    {
+      "name": "Adrenal Pump",
+      "count": 1,
+      "alpha": false,
+      "slotted": false,
+      "target": ""
+    }
+  ],
+  "weapons": [],
+  "armor": [],
+  "decks": [],
+  "programs": [],
+  "hacking_rating": 0,
+  "rigs": [],
+  "drones": [],
+  "vehicles": [],
+  "gear": [
+    {
+      "name": "Cram",
+      "qty": 4,
+      "carried": true,
+      "carried_qty": 4
+    },
+    {
+      "name": "Sixgun",
+      "qty": 1,
+      "carried": true,
+      "carried_qty": 1
+    },
+    {
+      "name": "Kamakazi",
+      "qty": 2,
+      "carried": true,
+      "carried_qty": 2
+    },
+    {
+      "name": "ACTH",
+      "qty": 1,
+      "carried": true,
+      "carried_qty": 1
+    }
+  ],
+  "lifestyle": {
+    "name": "",
+    "months": 0
+  },
+  "lifestyles": [
+    {
+      "name": "Low",
+      "months": 2
+    }
+  ],
+  "finalized": true,
+  "play": {
+    "cash": 800,
+    "cash_rolled": true,
+    "starting_cash": 800,
+    "cash_log": [
+      {
+        "label": "Starting cash roll 4d6×100: [4, 1, 2, 1]",
+        "delta": 800
+      }
+    ],
+    "lifestyles": [
+      {
+        "name": "Low",
+        "months": 2,
+        "active": true
+      }
+    ],
+    "lifestyles_seeded": true,
+    "lifestyles_baseline": {
+      "Low": 2
+    },
+    "lifestyles_reconciled": true,
+    "kismet": 0,
+    "kismet_earned": 0,
+    "kismet_log": [],
+    "boons_spent": 0,
+    "major_boons_spent": 0,
+    "physical_damage": 3,
+    "stun_damage": 2,
+    "initiative": 0,
+    "dodge_dice": 0,
+    "replicant_lifespan_months": null,
+    "pool_effects": {
+      "augment:Adrenal Pump": true
+    },
+    "doses": [
+      {
+        "uid": "qa-dose-1-cram",
+        "name": "Cram",
+        "at": "2026-08-19T12:00:00.000Z"
+      },
+      {
+        "uid": "qa-dose-2-cram",
+        "name": "Cram",
+        "at": "2026-08-19T12:00:00.000Z"
+      },
+      {
+        "uid": "qa-dose-3-cram",
+        "name": "Cram",
+        "at": "2026-08-19T12:00:00.000Z"
+      },
+      {
+        "uid": "qa-dose-4-sixgun",
+        "name": "Sixgun",
+        "at": "2026-08-19T12:00:00.000Z"
+      },
+      {
+        "uid": "qa-dose-5-kamakazi",
+        "name": "Kamakazi",
+        "at": "2026-08-19T12:00:00.000Z"
+      }
+    ],
+    "beast_dice": 6,
+    "mcp_dice": null,
+    "pool_used": {},
+    "actions_used": {},
+    "effects": [],
+    "modifiers": [],
+    "notes": "",
+    "attribute_advances": {},
+    "skill_advances": {},
+    "etiquette_advances": {},
+    "martial_art_advances": {},
+    "ritual_advances": {},
+    "zp_advances": 0,
+    "spell_force_advances": {},
+    "spells_forgotten": [],
+    "description": null,
+    "creation_budget": {
+      "starting_cash": 250000,
+      "categories": {
+        "Weapons/Armor": 0,
+        "Augments": 60000,
+        "Drones/Vehicles/Rigs": 0,
+        "Decks and Programs": 0,
+        "Gear": 2100,
+        "Lifestyle": 600
+      },
+      "spent": 62700,
+      "remaining": 187300
+    },
+    "trait_mounts": {},
+    "active_senses": {},
+    "summons": {},
+    "shapeshift": {
+      "picks": [],
+      "active": ""
+    },
+    "active_spells": [],
+    "disposed": {},
+    "fitted_mods": [],
+    "disposed_mods": [],
+    "unit_overrides": {},
+    "purchases": {
+      "gear": [],
+      "augments": [],
+      "amp_powers": [],
+      "spells": [],
+      "weapons": [],
+      "armor": [],
+      "decks": [],
+      "programs": [],
+      "rigs": [],
+      "drones": [],
+      "vehicles": [],
+      "hacking_levels": 0
+    },
+    "decking": {
+      "active_deck": "",
+      "loaded": []
+    },
+    "rigging": {
+      "active_rig": "",
+      "units": {},
+      "linked": {},
+      "active": {},
+      "hotseat": {}
+    },
+    "pool_boost": {},
+    "pool_kismet": {},
+    "images": [],
+    "infusion_spirits": {},
+    "bond_slots": [],
+    "ghost_rating": 4
+  }
+}

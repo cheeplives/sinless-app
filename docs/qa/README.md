@@ -80,7 +80,7 @@ written to give identical results either way.
 
 ## Fixtures
 
-Eight canonical characters in [`fixtures/`](fixtures/), described in
+Ten canonical characters in [`fixtures/`](fixtures/), described in
 [`fixtures/README.md`](fixtures/README.md) along with the error/warning profile
 each one should produce. Load them through the app's own code path — never by
 writing localStorage directly.
@@ -90,6 +90,12 @@ was added on 2026-08-05 after three separate changes to the decking rules all
 reported "zero drift across all seven fixtures" — true, and meaningless, because
 not one of them owned a deck. When you change a subsystem, check that some
 fixture actually exercises it before trusting a clean diff.
+
+`wildling-pools.json` was added on 2026-08-19 for the same reason. Every other
+fixture returns an empty `CALC.pool_effects`, so the entire conditional-effects
+layer -- including `setPoolEffect`, and therefore the only route to those
+switches -- had never been exercised by anything. Building it surfaced two
+defects on the first afternoon.
 
 `hostile-payloads.json` contains inert XSS probes. It is safe to load and is
 meant to be loaded, but do not publish or share it.

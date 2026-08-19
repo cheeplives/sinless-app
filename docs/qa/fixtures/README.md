@@ -1,6 +1,6 @@
 # Fixtures
 
-Nine canonical characters the pass docs load instead of building state by hand.
+Ten canonical characters the pass docs load instead of building state by hand.
 Each is a complete character in the app's own save format. Load one per
 [`P00 §4`](../passes/P00-setup.md).
 
@@ -9,7 +9,7 @@ Values below were re-observed from `RULES.calculate` after the rulings in
 no longer matches, that is either a real regression or a deliberate rules change
 — check before "fixing" the fixture.
 
-Counts are for the character **unfinalized** (see the probe below), so the two
+Counts are for the character **unfinalized** (see the probe below), so the
 finalized fixtures are described by their real validity rather than by what the
 play sheet chooses to show.
 
@@ -24,6 +24,72 @@ play sheet chooses to show.
 | `rigger-drones.json` | **Finalized.** VCR + 2 drones + a vehicle, martial art, **`zr: houserule`** | 0 / 0 |
 | `kitchen-sink-final.json` | **Finalized.** Every chargen tab populated, play state in use | 0 / 0 |
 | `hostile-payloads.json` | **Finalized.** Inert XSS probes in every renderable string | 0 / 0 |
+| `wildling-pools.json` | **Finalized.** Green Wildling + Adrenal Pump + three live doses | 0 / 0 |
+
+### `wildling-pools.json` — what it's for
+
+Added 2026-08-19. **No other fixture exercises a conditional pool effect at
+all** — the other nine all return an empty `CALC.pool_effects`, which means the
+whole switchable-effects path, including `setPoolEffect` and therefore the only
+route to those switches, had no coverage. This one carries all three sources at
+once.
+
+| | |
+|---|---|
+| Heritage | **Green**, one Boon: **Wildling** (priority 4, the minimum Green allows) |
+| Augment | **Adrenal Pump** — BI 5 against Body 6, ㄓ60,000 of a ㄓ250,000 budget |
+| Doses carried | Cram ×4, Sixgun, Kamakazi ×2, ACTH |
+| Doses **live** in play | 3 × Cram, Sixgun, Kamakazi — five entries, three names |
+| Switched **on** | Adrenal Pump only. Wildling ships **off**, so both branches have a base |
+| Damage | 3 physical, 2 stun — so the shift's `healOnShift` has something to heal |
+| Base pools | Brawn 11 · Finesse 9 · Focus 7 · Resolve 8 |
+
+The five enumerated effects and what each is worth:
+
+| id | source | pools |
+|---|---|---|
+| `heritage:Wildling` | Heritage | Brawn +6, Finesse +6, Focus −3, Resolve −3 |
+| `augment:Adrenal Pump` | Augment | Brawn +2, Finesse +2, Resolve +2 |
+| `gear:Cram` | Gear (dose, max 4) | Focus +2 |
+| `gear:Sixgun` | Gear (dose, max 1) | Focus +4 |
+| `gear:Kamakazi` | Gear (dose, max 2) | Brawn +2, Finesse +2 |
+
+Live pool totals, both ways, all observed:
+
+| | Brawn | Finesse | Focus | Resolve |
+|---|---|---|---|---|
+| as shipped (Pump + doses) | 15 | 13 | 17 | 10 |
+| shifted as well | **21** | **19** | **14** | **7** |
+
+Four things make this fixture worth its weight, none of which any other fixture
+can reach:
+
+**Wildling is the only source of *negative* pool dice.** Focus and Resolve go
+*down* on shifting, so this is the one character that can test the clamp in
+`poolState`: spend 9 of Resolve's 10, shift, and it reads 7/7 with 0 remaining
+while `play.pool_used.Resolve` is still 9 — shift back out and the 9 returns.
+Dice a shift shrinks away are never written off.
+
+**Cram at 3 of a 4 cap tests dose stacking on both sides of the cap.** The Focus
+swing at 1/3/4/5/6 Crams is +6/+10/+12/+12/+12 (Sixgun's +4 included), so the
+same fixture proves the multiply and the clamp.
+
+**Sixgun's effect text has two clauses** — `+4d Focus Pool for 3 hours. If
+addicted, instead -2d Focus Pool without it.` — which is the first-clause-wins
+rule in `parsePoolDice`. A parser that netted them would read +2.
+
+**The shift heals.** `healOnShift` rolls 1d6 against physical damage only, so
+the 3 physical / 2 stun it ships with makes the roll observable and proves stun
+is left alone.
+
+Doses carry explicit `uid`s (`qa-dose-1-cram` …). That is not decoration:
+`dismissDose` removes by uid, and a dose list written by hand without them used
+to delete itself wholesale on the first click. See
+[`../findings/2026-08-19-P06.md`](../findings/2026-08-19-P06.md) NEW-002.
+
+ㄓ187,300 of the Resources-2 budget is deliberately unspent. The character owns
+no weapons, armour, deck or drones — those are covered elsewhere, and the
+headroom leaves room for play-mode purchase tests.
 
 ### `rigger-drones.json` — what it's for
 

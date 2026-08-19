@@ -1572,6 +1572,103 @@ path by which play could reach into the creation record.
   is an added class on the same element rather than a different one.
 - **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
 
+### P06-054: All three conditional-effect sources resolve together, and the tiles agree with themselves
+- **Type:** correctness
+- **Steps:** load `wildling-pools.json` and enter play mode.
+- **Check:**
+
+      (async () => { setPoolEffect(RULES.WILDLING_EFFECT_ID, true); await recalc(); sheetTab = "overview"; renderSheet(); const tiles = [...document.querySelectorAll(".sh-head-pools > *")].map(t => t.innerText.replace(/\n+/g, " | ").trim()); const sums = {}; for (const pool of RULES.POOL_NAMES) { const st = poolState(pool); sums[pool] = { base: CALC.pools[pool], mod: st.beast, max: st.max, adds: CALC.pools[pool] + st.beast === st.max }; } const sources = CALC.pool_effects.map(e => e.source); return { sources, sums, focusLines: tiles[2] }; })()
+
+- **Expected:** `sources` is
+  `["Heritage","Augment","Gear","Gear","Gear"]`. Every entry in `sums` has
+  `adds: true`, with `max` of **21 / 19 / 14 / 7** for Brawn / Finesse / Focus /
+  Resolve over a **11 / 9 / 7 / 8** base. `focusLines` reads
+
+      ◈ 0 | FOCUS | 14 / 14 | − | + | ↺ | TEMP | + | ⚡ Wildling −3 | ⚡ Cram ×3 +6 | ⚡ Sixgun +4
+
+- **Note:** The `×3 +6` on the Cram line is the assertion, not decoration.
+  `poolTile` used to print the **per-dose** figure (`⚡ Cram +2`) while
+  `poolEffectMod` multiplied by the number counting, so a tile's own breakdown
+  did not add up to the total printed directly above it — 7 − 3 + 2 + 4 = 10
+  against a displayed 14 — and the line's tooltip claimed *"this is already in
+  the number above"*. Fixed 2026-08-19; see
+  [`../findings/2026-08-19-P06.md`](../findings/2026-08-19-P06.md) NEW-001. If
+  this case regresses, the Running Now panel will still be right, so the two
+  surfaces will disagree on one screen rather than both being wrong.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-055: A shift that shrinks a pool clamps what is spent without writing it off
+- **Type:** correctness
+- **Steps:** load `wildling-pools.json` and enter play mode.
+- **Check:**
+
+      (async () => { setPoolEffect(RULES.WILDLING_EFFECT_ID, false); await recalc(); CHAR.play.pool_used = { Resolve: 9 }; const read = () => { const st = poolState("Resolve"); return { max: st.max, used: st.used, remaining: st.remaining, stored: CHAR.play.pool_used.Resolve }; }; const off = read(); setPoolEffect(RULES.WILDLING_EFFECT_ID, true); await recalc(); const shifted = read(); setPoolEffect(RULES.WILDLING_EFFECT_ID, false); await recalc(); return { off, shifted, backOut: read() }; })()
+
+- **Expected:**
+
+      { "off":      { "max": 10, "used": 9, "remaining": 1, "stored": 9 },
+        "shifted":  { "max":  7, "used": 7, "remaining": 0, "stored": 9 },
+        "backOut":  { "max": 10, "used": 9, "remaining": 1, "stored": 9 } }
+
+- **Note:** Wildling is the **only** source of negative pool dice in the data,
+  so this path is unreachable from any other fixture. `used` reads 7 while
+  shifted because `poolState` clamps for display, but `play.pool_used.Resolve`
+  stays 9 — dice a shift takes away are not spent, and shifting back out
+  returns them. A `setUsed` that wrote the clamp down would pass the `shifted`
+  line and fail `backOut`, which is the whole point of asserting all three.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-056: Doses stack to their cap and stop, and one dismiss removes one dose
+- **Type:** correctness
+- **Steps:** load `wildling-pools.json` and enter play mode.
+- **Check:**
+
+      (async () => { const play = CHAR.play; const orig = JSON.parse(JSON.stringify(play.doses)); const set = n => { play.doses = Array.from({ length: n }, (_, i) => ({ uid: `c${i}`, name: "Cram" })).concat([{ uid: "sg", name: "Sixgun" }]); return poolState("Focus").beast; }; const stacking = { "1": set(1), "3": set(3), "4": set(4), "5": set(5), "6": set(6) }; play.doses = orig; await recalc(); renderSheet(); document.querySelector(".sh-running").click(); await new Promise(r => setTimeout(r, 80)); const before = poolState("Focus").max; [...document.querySelectorAll(".sh-popover button")].find(b => /Dismiss dose 2 of 3/.test(b.title)).click(); await new Promise(r => setTimeout(r, 140)); const pop = document.querySelector(".sh-popover"); return { stacking, dismissed: { left: play.doses.map(d => d.uid), focus: [before, poolState("Focus").max], popoverStillOpen: !!pop, cramLine: pop && pop.innerText.split("\n").find(l => /^Cram/.test(l)) } }; })()
+
+- **Expected:**
+
+      { "stacking": { "1": 6, "3": 10, "4": 12, "5": 12, "6": 12 },
+        "dismissed": { "left": ["qa-dose-1-cram","qa-dose-3-cram","qa-dose-4-sixgun","qa-dose-5-kamakazi"],
+                       "focus": [17, 15], "popoverStillOpen": true, "cramLine": "Cram ×2" } }
+
+- **Note:** Sixgun's +4 is in every `stacking` reading, so the Cram half is
+  6/10/12/12/12 minus 4 → 2/6/8/8/8, clamping at `Max Doses` 4. Sixgun is also
+  the `parsePoolDice` first-clause-wins case: its text carries both `+4d Focus`
+  and a `-2d Focus` withdrawal clause, and a parser that netted the two would
+  make every row here 6 lower.
+
+  The `dismissed` half is the R2 refresh contract — the popover lives outside
+  the `#sheet` subtree `playChanged` rebuilds, so it must be refreshed by hand.
+  `popoverStillOpen: true` with `cramLine: "Cram ×2"` proves it updated in
+  place rather than closing or going stale. **`left` is load-bearing**: dose 2
+  goes and doses 1 and 3 stay. Removing by uid means a dose list written without
+  uids matched `undefined !== undefined` for every row and one click emptied it
+  (findings 2026-08-19 NEW-002); `dismissDose` now falls back to dropping the
+  first uid-less entry.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
+### P06-057: Shifting heals physical damage only, and the Running Now popover survives its own scrollbar
+- **Type:** correctness
+- **Steps:** load `wildling-pools.json` (3 physical / 2 stun as shipped) and enter play mode. Stub `alert` per P00 §3.
+- **Check:**
+
+      (async () => { window.__alerts = []; setPoolEffect(RULES.WILDLING_EFFECT_ID, false); CHAR.play.physical_damage = 3; CHAR.play.stun_damage = 2; await recalc(); setPoolEffect(RULES.WILDLING_EFFECT_ID, true); await new Promise(r => setTimeout(r, 60)); const healed = { phys: CHAR.play.physical_damage, stun: CHAR.play.stun_damage, beast: CHAR.play.beast_dice, alert: window.__alerts.at(-1) }; renderSheet(); document.querySelector(".sh-running").click(); await new Promise(r => setTimeout(r, 80)); const pop = document.querySelector(".sh-popover"); const scrolls = pop.scrollHeight > pop.clientHeight; pop.scrollTop = 40; pop.dispatchEvent(new Event("scroll", { bubbles: true })); await new Promise(r => setTimeout(r, 60)); return { healed, scrolls, stillOpenAfterInnerScroll: !!document.querySelector(".sh-popover") }; })()
+
+- **Expected:** `healed.phys` is **0 to 2** (1d6 against 3, floored at 0),
+  `healed.stun` is still **2**, `healed.beast` is **6**, and `healed.alert`
+  matches `/^Beast Form heals you\. Physical −3 \(rolled \d\)\.$/` when the
+  roll covered it. `scrolls` and `stillOpenAfterInnerScroll` are both `true`.
+- **Note:** The heal is a die roll, so this is the one case here without a fixed
+  expected number — assert the range and that **stun did not move**, which is
+  the half that has been wrong before (#67 heals wounds, not stun). A fresh
+  shift also refreshes Beast dice to 6.
+
+  The scroll half is a regression guard for a bug this panel exposed rather than
+  caused: `openAnchoredPopover` bound `scroll` on `window` in the **capture**
+  phase, which fires for scrolls on descendants too. No earlier popover scrolled
+  internally; this one does, and it would have shut under the reader's finger.
+- **Result:** [ ] PASS  [ ] FAIL  [ ] JUDGEMENT  [ ] BLOCKED
+
 ---
 
 ## Wrapping up

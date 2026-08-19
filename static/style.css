@@ -1763,7 +1763,12 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   /* Reorder arrows are two stacked 11px targets; give them the pair's height. */
   .sh-reorder-btn{font-size:12px;min-width:32px;min-height:16px;padding:2px 6px}
   /* Checkboxes are the densest targets on the Gear tab (Equip / Worn / Carried). */
-  input[type=checkbox],input[type=radio]{width:20px;height:20px}
+  /* flex:none matters as much as the size here. These sit in flex rows --
+   * the augment grade options put one beside a "ZR 0.5" label in a 54px
+   * .opt box -- and the default flex:0 1 auto let the box SHRINK the
+   * checkbox back to 13px, so the width above was being set and then
+   * quietly undone. The label wraps instead now. */
+  input[type=checkbox],input[type=radio]{width:20px;height:20px;flex:none}
   .sh-fire-kata input{width:18px;height:18px}
   .sv-edit{padding:5px 6px}
   /* The smallest labels used to be lifted here and only here: .sh-modslot-label,
@@ -1785,6 +1790,24 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
    * wrapping .sh-tags row beside Human/Mage/lifestyle, where a fixed height
    * would misalign it against its non-interactive neighbours. */
   .sh-ls-info{min-height:32px;padding:6px 10px}
+  /* Text-entry and dropdown controls. These were the last group under the
+   * floor and they were missed for the same reason each time: this block
+   * grew by naming button classes, and a <select> or a number field is not
+   * a .btn. One rule covers the lot rather than five more class names --
+   * .sh-tag-select (22px), .sh-init-input (25px), .sh-modslot select (25px),
+   * .sh-spec-input (26px) and the bare number fields on Skills/Kismet/Gear
+   * (28px) all reach 32px from here, and each keeps its own padding and
+   * font, so nothing shifts on a mouse. min-height rather than padding
+   * because these already have padding tuned per control, and doubling it
+   * would move the text off-centre inside its own box. */
+  select,textarea,input[type=text],input[type=number]{min-height:32px}
+  /* The folded temp-dice strip is the pool tile's left edge: full height
+   * already, so only its 26px WIDTH was under the floor. .sh-pool's
+   * padding-left has to move with it or the strip overlaps the pool's own
+   * figures -- the two numbers are one measurement written twice. */
+  .sh-pool{padding-left:36px}
+  .sh-pool-temp{width:32px}
+  .sh-pool-temp .mini-btn{width:28px}
 
   /* ---- workspace tab strip ----
    * The app's top-level navigation, and the one strip this block never

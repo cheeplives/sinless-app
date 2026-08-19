@@ -1201,6 +1201,27 @@ label.opt input{margin-top:3px}
 .sh-advrow{display:flex;justify-content:space-between;align-items:center;gap:10px;
   padding:7px 8px;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;background:var(--panel-2);font-size:13px}
 .sh-advrow.active-row{border-color:var(--ok)}
+/* Decking's Programs list (issue #84): the action cluster used to be a plain
+   flex row, which sizes itself to whatever THAT row holds -- a program with
+   no Upgrade button sat with Run one slot further left than a program that
+   had one, so Run and Load drifted sideways from program to program instead
+   of stacking into columns. Fixed-width tracks make every row's cluster the
+   same total width regardless of content, and since .sh-advrow right-aligns
+   it (justify-content:space-between), a same-width cluster's left edge -- so
+   every column's start -- lands at the same X on every row. Every row supplies
+   all four cells (an empty .sh-prog-cell-empty stands in for a missing
+   button), so a track is never skipped, only left blank.
+   Widths: upgrade costs run to six figures on the priciest programs, so that
+   column is widest and its label is allowed to wrap (buttons don't get
+   white-space:nowrap by default) rather than push the track wider and break
+   the alignment this exists to fix. Run's text is short and fixed-shape
+   ("Run (Nd)"); Load's is one of three short words; delete matches the 32px
+   .row-del floor already in place for touch. */
+.sh-prog-actions{display:grid;grid-template-columns:150px 84px 78px 32px;
+  gap:6px;align-items:center;flex:none}
+.sh-prog-actions>*{text-align:center}
+.sh-prog-actions .btn{line-height:1.25;white-space:normal}
+.sh-prog-cell-empty{display:block}
 .sh-spell{border:1px solid var(--line);border-radius:6px;background:var(--panel-2);padding:8px 10px;margin-bottom:8px}
 .sh-spell.amp{border-color:var(--manon-dim)}
 /* Vehicle/drone condition tracks (issue #22): Physical Condition costs cash to
@@ -1734,6 +1755,23 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
      grid and the page scrolled sideways 14px at 375x812, even though the
      table itself is correctly wrapped in an overflow-x .sh-tablewrap. */
   .sh-two,.sh-pools,.sh-skillgrid{grid-template-columns:minmax(0,1fr)}
+  /* .sh-prog-actions (issue #84) is a fixed 362px so its columns line up
+     program to program -- see the rule itself for why. Fixed-width is
+     exactly what a 375px phone can't afford next to a program's name and
+     description, and .sh-advrow has no flex-wrap by default, so before this
+     the row forced the whole page 103px wider than the viewport. Scoped to
+     rows that actually carry the cluster (:has(), already used elsewhere in
+     this file) rather than every .sh-advrow, so deck rows, augment rows and
+     the rest are unaffected. The 362px block still doesn't shrink -- its
+     columns keep lining up with each other, just stacked under the name
+     instead of squeezed beside it. */
+  .sh-advrow:has(.sh-prog-actions){flex-wrap:wrap}
+  /* Wrapping the cluster onto its own line isn't enough by itself -- at a
+     347px card the 362px cluster is still wider than the row that now holds
+     it alone. Column-perfect alignment is a tablet/desktop goal; a phone
+     gets a 2x2 grid that fits INSIDE whatever width it lands in instead, same
+     four cells, same order, just two rows of two rather than one row of four. */
+  .sh-prog-actions{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
 }
 /* Touch devices: lift the smallest labels and give controls real tap areas.
  * Desktop pointers are unaffected — the density this app is designed around

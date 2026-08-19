@@ -4352,6 +4352,50 @@ function calcRowFor(entry, entries) {
   return rows[nth] || rows[0] || {};
 }
 
+/* "Reload All Weapons" (issue #85): a bulk, between-fights action from the
+ * Gear tab's Ammo section. Tops off every owned weapon's `w.loaded` to a full
+ * magazine and spends nothing — the single-weapon Reload button on a hand
+ * card is a combat action (costs a Simple Action, or two for a crossbow) and
+ * this deliberately is not; it's meant for the moment before a session
+ * starts, not the moment before a shot.
+ *
+ * Scope, all deliberate: melee/natural attacks have no `Ammo` figure and are
+ * skipped by the maxAmmo check below; a sealed one-shot has no magazine to
+ * refill (RULES.weaponIsOneshot). Cyberguns are left out entirely — their
+ * per-weapon Reload already gates a non-Reloadable implant behind a confirm
+ * ("cannot be reloaded during combat... Reload anyway?"), and a silent bulk
+ * pass would run right past a rule that exists specifically to make that
+ * decision explicit. Drone/vehicle-mounted weapons are left out too: those
+ * are configured and reloaded from the Rigging tab, spending its own Exploit
+ * Actions, and are a different array (`unit.weapons`) with a different owner.
+ * Recoil is untouched — the per-weapon Reload's "also steadies the gun" is a
+ * combat-action side effect this free, out-of-round action doesn't carry.
+ *
+ * `calcRowFor` rather than a bare name-`find`, so two identically-named
+ * weapons each read their own Ammo figure instead of both reading the
+ * first's — see calcRowFor's own comment for the bug that fixed. */
+function reloadAllWeapons() {
+  const entries = ownedWeapons().map(en => en.ref);
+  let reloaded = 0, full = 0;
+  entries.forEach(w => {
+    const r = DATA.tables.weapons.find(x => x.Weapon === w.name) || {};
+    if (RULES.weaponIsOneshot(r)) return;
+    const calcRow = calcRowFor(w, entries);
+    const maxAmmo = Math.max(0, parseInt(calcRow.Ammo ?? r.Ammo, 10) || 0);
+    if (!maxAmmo) return;
+    const loaded = w.loaded == null ? maxAmmo
+      : Math.max(0, Math.min(Math.floor(+w.loaded) || 0, maxAmmo));
+    if (loaded >= maxAmmo) { full++; return; }
+    w.loaded = maxAmmo;
+    reloaded++;
+  });
+  if (!reloaded) {
+    alert(full ? "Every weapon is already fully loaded." : "No weapons need reloading.");
+    return;
+  }
+  playChanged();
+}
+
 /* Ammo the character actually owns, by name -- chargen kit plus anything bought
    in play, merged, since you load from one stock. */
 function ownedAmmoRows() {
@@ -9205,6 +9249,13 @@ function shGear(body) {
     gearWeightCarried += unitWt * carriedQty(en.ref);
     gearWeightOwned += unitWt * ownedQty(en.ref);
   });
+  // The data splits ammo across three literal Class strings -- "Ammo",
+  // "Ammo (Exotic)", "Ammo (Projectile)" -- each its own heading, so a
+  // character carrying only exotic or projectile rounds and nothing plain
+  // would never see a bare "Ammo" heading at all. Match the prefix, the same
+  // test `isAmmo` uses elsewhere in this tab, and show the button once, on
+  // whichever ammo heading sorts first, rather than once per heading.
+  let ammoReloadShown = false;
   gearCats.forEach(cls => {
     const rows = gearEntries.filter(e => e.cls === cls);
     const open = gearCatOpen[cls] !== false;
@@ -9212,6 +9263,9 @@ function shGear(body) {
     // number the section is otherwise there to answer.
     const catWt = round1(rows.reduce((sum, { en, row: r }) =>
       sum + wtNum(r.Weight) * carriedQty(en.ref), 0));
+    const isAmmoHeading = cls.startsWith("Ammo");
+    const showReloadHere = isAmmoHeading && !ro && !ammoReloadShown;
+    if (showReloadHere) ammoReloadShown = true;
     gt.append(el("tr", { class: "sh-gear-cat" },
       el("td", { colspan: "6", role: "button", tabindex: "0",
         title: open ? `Collapse ${cls}` : `Expand ${cls}`,
@@ -9220,7 +9274,15 @@ function shGear(body) {
         el("span", { class: "cat-arrow" }, open ? "▾" : "▸"),
         el("b", {}, cls),
         el("span", { class: "sub" }, ` (${rows.length})`),
-        catWt > 0 ? el("span", { class: "sub" }, ` · ${catWt} carried`) : null)));
+        catWt > 0 ? el("span", { class: "sub" }, ` · ${catWt} carried`) : null,
+        // Issue #85, parked on the Ammo heading rather than a card of its own —
+        // it's a bulk action ON this category, the same way "Expand/Collapse
+        // all" sits on the category bar below rather than in its own card.
+        showReloadHere ? el("button", { class: "btn small", style: "margin-left:10px",
+          title: "Top off every owned weapon's magazine. Costs no Actions — "
+            + "for the moment before a session starts, not the moment before a shot.",
+          onclick: e => { e.stopPropagation(); reloadAllWeapons(); } },
+          "Reload All Weapons") : null)));
     if (!open) return;
     // Rows of one category run kit-first then bought-in-play, so a neighbour in
     // the same backing array is simply the adjacent row of this block.
@@ -10615,6 +10677,49 @@ function shDecking(body) {
     // about threads, not about whether you can point it at something.
     const runSpec = RULES.isHackingProgram(name) ? null : programRunSpec(name, r);
     const upgrade = programUpgrade(name, mult);
+    // Issue #84: a flex row sizes its action cluster to whatever that ROW
+    // happens to hold, so a program with no Upgrade (rating-capped, or none
+    // to raise to) sat with Run one slot further left than its neighbours —
+    // "Run" and "Load" drifted sideways program to program instead of
+    // stacking into columns. `.sh-prog-actions` fixes each button to the same
+    // width on every row via `grid-template-columns`, and every row supplies
+    // all four cells — an empty placeholder standing in for a button that
+    // doesn't apply — so a column's X position is the same whether or not
+    // THIS row's version of it has anything to say. Order (left to right)
+    // follows the request: rating upgrade, then Run beside it, then Load.
+    const upgradeCell = upgrade
+      // Costs run to 6 figures on the priciest programs and the column is
+      // fixed-width to line up with every other row, so long labels wrap to a
+      // second line (style.css) rather than push the column wider.
+      ? el("button", { class: "btn small",
+          title: `Upgrade to ${upgrade.to} — ${fmt(upgrade.cost)}`
+            + ` (${fmt(upgrade.toCost)} − ${fmt(upgrade.fromCost)} already paid)`,
+          onclick: () => raiseProgramRating(en, upgrade) },
+          `+1 Rating (${fmt(upgrade.cost)})`)
+      : el("span", { class: "sh-prog-cell-empty", "aria-hidden": "true" });
+    const runCell = runSpec
+      // The dice count is on the face, not just the tooltip: it is the
+      // number the player is deciding on, and at a coarse pointer there is
+      // no hover to read.
+      ? el("button", { class: "btn good",
+          title: `Roll ${runSpec.cost}d6 — ${runSpec.skill} ${runSpec.skillDice}`
+            + ` + ${name} rating ${runSpec.rating}`
+            + (runSpec.bonusDice ? `, bonus ${runSpec.bonusDice}` : "")
+            + `. Costs ${runSpec.cost} dice: ${runSpec.mcp} MCP available,`
+            + ` then ${runSpec.pool}`
+            + (runSpec.actionUnits
+                ? ` · ${runSpec.actionType} Action (Decking Exploit first, then Simple)`
+                : ""),
+          onclick: () => runProgram(name, r) }, `Run (${runSpec.cost}d)`)
+      : el("span", { class: "sh-prog-cell-empty", "aria-hidden": "true" });
+    const loadCell = loadable
+      ? counterBtn(loaded ? "Unload" : "Load", () => {
+          if (loaded) dk.loaded = dk.loaded.filter(n => n !== name);
+          else if (dk.loaded.length >= threads) { alert("All threads are in use — unload something first."); return; }
+          else dk.loaded.push(name);
+          playChanged();
+        }, loaded ? "" : "accent")
+      : el("span", { class: "chip", title: `I/O ${io}: runs without occupying a thread` }, "no load");
     progCard.append(el("div", { class: "sh-advrow" },
       el("span", {}, el("b", {}, name),
         // Action Type is on the face now that Run charges it (#79) — what a
@@ -10625,41 +10730,8 @@ function shDecking(body) {
         pSkill ? el("div", { class: "sub" }, `Skill: ${pSkill}`) : null,
         r.Effect ? el("div", { class: "sub" }, r.Effect) : null,
         descriptionExpander(r.Description, `programs:${name}`)),
-      el("span", { style: "display:flex;gap:6px;align-items:center" },
-        runSpec
-          // The dice count is on the face, not just the tooltip: it is the
-          // number the player is deciding on, and at a coarse pointer there is
-          // no hover to read.
-          ? el("button", { class: "btn good",
-              title: `Roll ${runSpec.cost}d6 — ${runSpec.skill} ${runSpec.skillDice}`
-                + ` + ${name} rating ${runSpec.rating}`
-                + (runSpec.bonusDice ? `, bonus ${runSpec.bonusDice}` : "")
-                + `. Costs ${runSpec.cost} dice: ${runSpec.mcp} MCP available,`
-                + ` then ${runSpec.pool}`
-                + (runSpec.actionUnits
-                    ? ` · ${runSpec.actionType} Action (Decking Exploit first, then Simple)`
-                    : ""),
-              onclick: () => runProgram(name, r) }, `Run (${runSpec.cost}d)`)
-          : null,
-        // Pay to re-rate an owned program (#82). Only offered where the data
-        // actually has a higher tier to move to, so an unrated program
-        // (Alert Monitor) and a rating-6 program show nothing at all rather
-        // than a disabled button nobody can act on.
-        upgrade
-          ? el("button", { class: "btn small",
-              title: `Upgrade to ${upgrade.to} — ${fmt(upgrade.cost)}`
-                + ` (${fmt(upgrade.toCost)} − ${fmt(upgrade.fromCost)} already paid)`,
-              onclick: () => raiseProgramRating(en, upgrade) },
-              `+1 Rating (${fmt(upgrade.cost)})`)
-          : null,
-        loadable
-          ? counterBtn(loaded ? "Unload" : "Load", () => {
-              if (loaded) dk.loaded = dk.loaded.filter(n => n !== name);
-              else if (dk.loaded.length >= threads) { alert("All threads are in use — unload something first."); return; }
-              else dk.loaded.push(name);
-              playChanged();
-            }, loaded ? "" : "accent")
-          : el("span", { class: "chip", title: `I/O ${io}: runs without occupying a thread` }, "no load"),
+      el("span", { class: "sh-prog-actions" },
+        upgradeCell, runCell, loadCell,
         el("button", { class: "row-del", title: "Sell / remove program",
           onclick: async () => {
             const pr = DATA.tables.programs.find(x => x.Name === name) || {};

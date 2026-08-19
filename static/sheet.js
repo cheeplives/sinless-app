@@ -2162,11 +2162,44 @@ function zpMeterValues() {
   return { current: Math.max(0, z.zp - Math.ceil(spent)), max: z.zp };
 }
 
+/* The clickable face of a header box — its name, its live figure, and the ▾
+ * that says there is a detail box behind it.
+ *
+ * Move and Armor make the WHOLE tile role="button"; Initiative and Dodge can't,
+ * because each already owns a real <button> (and Initiative a number field), and
+ * a role="button" wrapping a live control is both a nesting error and a click
+ * that would fire twice. So the affordance is scoped to the part of the card
+ * that isn't already interactive: same cursor, same role, same Enter/Space, same
+ * "click for…" title. The roll row underneath is left entirely alone.
+ *
+ * The ▾ is not decoration. cursor:pointer and a title tooltip are both hover-only
+ * affordances, and this band is read on an 11" tablet more than anywhere else,
+ * where there is no hover at all — the glyph is the only thing that says "there
+ * is more here" to a finger. `flag` adds a ★ when the box is hiding something
+ * exceptional (an initiative note, standing cover), so a character who has one
+ * isn't relying on the reader opening every box on the off-chance. */
+function headBoxFace(name, figure, title, open, flag = false) {
+  return el("div", { class: "sh-box-face", role: "button", tabindex: "0",
+    title, "aria-label": `${name} ${figure} — open detail`,
+    onclick: open,
+    onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } } },
+    el("h3", {}, name,
+      flag ? el("span", { class: "sh-box-flag" }, "★") : null,
+      el("span", { class: "sh-box-more" }, "▾")),
+    el("div", { class: "big" }, figure));
+}
+
 /* Initiative, lifted to top level so the header band can carry it (#83).
  * You roll it once at the top of a fight and read it every round after, and it
  * was reachable from the Overview only. Condition took this slot first and gave
  * it back: two damage tracks made the header 1080px on a phone, where this card
- * is a figure, a roll button and a field. */
+ * is a figure, a roll button and a field.
+ *
+ * What the card no longer prints is the prose: "Focus Pool dice + Reaction" and
+ * the ★ notes are true for a character all session and never change between
+ * rounds, and the header's own bar is what you consult EVERY round. They now sit
+ * one tap away in openInitiativePopover(), whole and expanded on. The figure and
+ * the roll row — the two things that are per-round — stay. */
 function initiativeCard() {
   const play = CHAR.play;
   // --- initiative + combat numbers
@@ -2174,19 +2207,55 @@ function initiativeCard() {
   // button hands that pool to the die roller, which writes the result back
   // into the input below; the input stays directly editable either way.
   const init = sheetInitiative();
+  const notes = init.notes || [];
   const initInput = el("input", { type: "number", class: "sh-init-input",
     min: "0", value: String(play.initiative || 0),
     oninput: e => { play.initiative = parseInt(e.target.value, 10) || 0; playChanged(false); } });
-  return el("div", { class: "card sh-card sh-counter" },
-    el("h3", {}, "Initiative"),
-    el("div", { class: "big" }, `${init.dice}d+${init.bonus}`),
-    el("div", { class: "sub" }, "Focus Pool dice + Reaction"),
-    ...(init.notes || []).map(n =>
-      el("div", { class: "sub", style: "color:var(--amber);margin-top:4px" }, "★ " + n)),
+  return el("div", { class: "card sh-card sh-counter sh-init" },
+    headBoxFace("Initiative", `${init.dice}d+${init.bonus}`,
+      "Focus Pool dice + Reaction"
+        + (notes.length ? ` · ${notes.length} note${notes.length === 1 ? "" : "s"}` : "")
+        + " — click for how initiative is rolled",
+      openInitiativePopover, notes.length > 0),
     el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
       el("button", { class: "btn roll sh-init-roll", title: "Roll initiative in the die roller",
         onclick: openInitiativeRoller }, "⚄ Initiative"),
       el("span", { class: "sub", style: "align-self:center" }, "Rolled:"), initInput));
+}
+
+/* Where "Focus Pool dice + Reaction" went, restated and expanded on the way the
+ * Move and Armor popovers expand their tiles' tooltips: the header says the
+ * figure, this says what the two halves of it are and what you do with the
+ * total. Anchored to the face rather than the whole card so it opens under the
+ * number, not under the roll button. */
+function openInitiativePopover() {
+  openAnchoredPopover({
+    kind: "initiative", anchorSel: ".sh-init .sh-box-face", label: "Initiative",
+    build: (refresh, close) => {
+      const init = sheetInitiative();
+      const body = [popoverHead("⚄ Initiative", close),
+        el("div", { class: "sh-sense" },
+          el("div", {}, `${init.dice}d + ${init.bonus}`),
+          el("div", { class: "sub" }, "Focus Pool dice + Reaction. Throw the dice, "
+            + "count every 4–6 as a Success, then add Reaction — that total is "
+            + "where you sit in the round order."))];
+      // Rolling initiative does NOT spend Focus: the pool sets how many dice you
+      // get, and the roller is in initiative mode with no pool selector for
+      // exactly that reason. Worth saying once here, because every other place
+      // on the sheet that names a pool is naming something you pay.
+      body.push(el("div", { class: "sh-sense" },
+        el("div", { class: "sub smaller" }, "⚄ Initiative rolls it and writes the "
+          + "total into Rolled: for you. The field stays typeable, for a total "
+          + "rolled at the table. Focus is not spent — the pool only sizes the roll.")));
+      // The ★ notes are per-character standing riders ("acts twice in the first
+      // round", and the like). Prose, and prose is what a popover is for.
+      for (const n of (init.notes || [])) {
+        body.push(el("div", { class: "sh-sense" },
+          el("div", { style: "color:var(--amber)" }, "★ " + n)));
+      }
+      return body;
+    },
+  });
 }
 /* The Condition tracks, lifted out of the Overview so the sheet header can
  * carry them (#83). Wound penalty applies to EVERY roll, and the tracks were
@@ -2247,61 +2316,169 @@ function conditionCard() {
       : null);
 }
 
-/* Dodge, likewise lifted to top level for the header band (#83). */
+/* Dodge, likewise lifted to top level for the header band (#83).
+ *
+ * Dodging is a roll, not a counter: the card works like Soak — a button that
+ * opens the roller pointed at Finesse with your passive dodge dice already in.
+ * Situational dice (Full Defense, cover) are what the roller's own Bonus ± is
+ * for, and they last exactly one roll, which is what "gained in play" meant.
+ *
+ * It used to carry every WHY of that number in the header: which augments the
+ * free dice come from, the "No passive dodge dice — dodging is Finesse out of
+ * the pool" sentence when there are none, standing cover, drone riders. All of
+ * it is per-character and none of it changes between rounds, so all of it now
+ * lives one tap away in openDodgePopover(). What stays is the figure and the
+ * roll button.
+ *
+ * The figure is new here and deliberate: the card used to have no number at all
+ * (the old big number was play.dodge_dice, a scratch value nothing ever wrote
+ * but its own ±, so it sat at 0 forever and told you nothing). With the prose
+ * gone the free-dice total is the one thing worth reading at a glance — and it
+ * gives this box the same h3/figure/roll-row shape as Initiative beside it,
+ * which is what makes the matched pair match without CSS having to force it. */
 function dodgeCard() {
   const play = CHAR.play;
   const c = CALC.combat;
   const ro = !!(activeTabObj() && activeTabObj().readonly);
-  // Dodging is a roll, not a counter, so this card has no number to stare at —
-  // it works like Soak: a button that opens the roller pointed at Finesse with
-  // your passive dodge dice already in, and a note saying how many those are.
-  // (The big number was play.dodge_dice, a scratch value nothing ever wrote but
-  // its own ±, so it sat at 0 forever and told you nothing.) Situational dice
-  // (Full Defense, cover) are what the roller's own Bonus ± is for, and they
-  // last exactly one roll, which is what "gained in play" always meant.
   const dodgeTracked = play.dodge_dice || 0;      // legacy hand-tracked dice, still counted
   const dodgeFree = (c.dodge_bonus || 0) + dodgeTracked;
   const dodgeRoll = () => openPoolRoller({ dice: 0, bonus: dodgeFree, pool: "Finesse",
     label: "Dodge",
     note: (dodgeFree ? `${dodgeFree} dodge dice free — ` : "")
       + "dial in the Finesse you're spending" });
-  return el("div", { class: "card sh-card sh-counter" },
-    el("h3", {}, "Dodge"),
-    el("div", { class: "sub" },
-      (c.dodge_sources || []).length ? (c.dodge_sources || []).join(" · ")
-        : "No passive dodge dice — dodging is Finesse out of the pool"),
-    dodgeTracked
-      ? el("div", { class: "sub", style: "color:var(--amber)" },
-          `includes ${dodgeTracked} hand-tracked — clear it with the counter below`)
-      : null,
-    dodgeTracked && !ro
-      ? miniCounter("Tracked dodge dice", () => play.dodge_dice || 0,
-          v => { play.dodge_dice = v; }, 0, 99)
-      : null,
-    // A deployed drone whose rider is about dodging says so here, where you
-    // roll it — a Shield Drone's "reroll 1s" is not a number the engine can add
-    // to a pool, but it is a thing to remember at exactly this moment (#38).
-    ...(c.drone_dodge_notes || []).map(n => el("div", { class: "sub", style: "color:var(--manon)" },
-      `${n.text} (${n.source})`)),
-    // Standing cover: martial-art stances and full-cover infusions, best tier
-    // wins rather than stacking. There is no cover stat in the engine, so this
-    // is reported and played at the table — and it belongs beside Dodge because
-    // both answer the same question, "how hard am I to hit right now".
-    c.cover ? statLine("Cover", c.cover.label, c.cover.sources.join(" · ")) : null,
-    // A Shield-Wall Drone's mobile cover is the same kind of standing rider (#38).
-    ...(c.drone_cover_notes || []).map(n => statLine("Cover (drone)", n.text, n.source)),
+  // Cover and drone riders are the ★-worthy ones: they change how hard you are
+  // to hit and there is no number on the face that hints at them. Hand-tracked
+  // dice are already counted into the figure, so they don't earn a star.
+  const flagged = !!c.cover || (c.drone_dodge_notes || []).length > 0
+    || (c.drone_cover_notes || []).length > 0;
+  return el("div", { class: "card sh-card sh-counter sh-dodge" },
+    headBoxFace("Dodge", dodgeFree ? `+${dodgeFree}d` : "0d",
+      (dodgeFree
+        ? `${dodgeFree} free dodge ${dodgeFree === 1 ? "die" : "dice"}`
+        : "No passive dodge dice")
+        + (c.cover ? ` · cover ${c.cover.label}` : "")
+        + " — click for where these come from",
+      openDodgePopover, flagged),
     ro
-      ? (dodgeFree ? el("div", { class: "sub" },
-          `+${dodgeFree} dodge ${dodgeFree === 1 ? "die" : "dice"}`) : null)
+      ? null
       : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
           el("button", { class: "btn roll",
             title: `Roll to dodge — ${dodgeFree} free dodge ${dodgeFree === 1 ? "die" : "dice"}`
               + " plus whatever Finesse you spend",
             onclick: dodgeRoll }, "⚄ Dodge"),
-          el("span", { class: "sub", style: "align-self:center" },
-            dodgeFree ? `+${dodgeFree} dodge ${dodgeFree === 1 ? "die" : "dice"}`
-                      : "Finesse pool")));
+          el("span", { class: "sub", style: "align-self:center" }, "Finesse pool")));
 }
+
+/* Everything the Dodge box used to print under its heading.
+ *
+ * Same shape as the Armor popover: one row per thing, the thing named on top and
+ * where it comes from underneath. The hand-tracked counter comes along whole —
+ * it is a control, not prose, but it only exists on characters carrying a legacy
+ * value and putting it in the header for them cost a row on everyone's ten tabs.
+ * Stepping it re-renders the sheet, which replaces the anchor tile; the popover
+ * survives that because it lives on document.body and openAnchoredPopover looks
+ * its anchor up by selector each time — but it does have to be told to redraw,
+ * which is why the counter here is written out rather than reusing miniCounter():
+ * that helper's ± leave their own figure to be repainted by the sheet re-render,
+ * and a popover on document.body is exactly the thing that re-render doesn't
+ * touch. Same classes, so it looks like every other mini counter. */
+function openDodgePopover() {
+  openAnchoredPopover({
+    kind: "dodge", anchorSel: ".sh-dodge .sh-box-face", label: "Dodge",
+    build: (refresh, close) => {
+      const play = CHAR.play;
+      const c = CALC.combat;
+      const ro = !!(activeTabObj() && activeTabObj().readonly);
+      const dodgeTracked = play.dodge_dice || 0;
+      const dodgeFree = (c.dodge_bonus || 0) + dodgeTracked;
+      const sources = c.dodge_sources || [];
+      const body = [popoverHead("⚄ Dodge", close),
+        el("div", { class: "sh-sense" },
+          el("div", {}, dodgeFree
+            ? `+${dodgeFree} dodge ${dodgeFree === 1 ? "die" : "dice"}, free`
+            : "0 free dodge dice"),
+          el("div", { class: "sub" }, sources.length ? sources.join(" · ")
+            : "No passive dodge dice — dodging is Finesse out of the pool")),
+        el("div", { class: "sh-sense" },
+          el("div", { class: "sub smaller" }, "⚄ Dodge opens the roller pointed at "
+            + "Finesse with the free dice already in — dial in the Finesse you are "
+            + "spending on top. Situational dice (Full Defense, cover) go in with "
+            + "the roller's own Bonus ±, and last exactly one roll."))];
+      if (dodgeTracked) {
+        body.push(el("div", { class: "sh-sense" },
+          el("div", { style: "color:var(--amber)" },
+            `includes ${dodgeTracked} hand-tracked`),
+          el("div", { class: "sub" }, "A legacy count kept by hand. It is already "
+            + "in the figure above; clear it here once the engine covers it."),
+          ro ? null : (() => {
+            const step = d => () => {
+              CHAR.play.dodge_dice = Math.max(0, Math.min(99, (CHAR.play.dodge_dice || 0) + d));
+              playChanged();
+              refresh();
+            };
+            return el("span", { class: "sh-mini" },
+              el("span", { class: "lbl" }, "Tracked dodge dice"),
+              el("button", { class: "mini-btn", title: "One fewer hand-tracked die",
+                onclick: step(-1) }, "−"),
+              el("b", {}, String(dodgeTracked)),
+              el("button", { class: "mini-btn", title: "One more hand-tracked die",
+                onclick: step(1) }, "+"));
+          })()));
+      }
+      // A deployed drone whose rider is about dodging says so here, where you
+      // roll it — a Shield Drone's "reroll 1s" is not a number the engine can add
+      // to a pool, but it is a thing to remember at exactly this moment (#38).
+      for (const n of (c.drone_dodge_notes || [])) {
+        body.push(el("div", { class: "sh-sense" },
+          el("div", { style: "color:var(--manon)" }, n.text),
+          el("div", { class: "sub" }, n.source)));
+      }
+      // Standing cover: martial-art stances and full-cover infusions, best tier
+      // wins rather than stacking. There is no cover stat in the engine, so this
+      // is reported and played at the table — and it belongs beside Dodge because
+      // both answer the same question, "how hard am I to hit right now".
+      if (c.cover) {
+        body.push(el("div", { class: "sh-sense" },
+          el("div", {}, `Cover ${c.cover.label}`),
+          el("div", { class: "sub" }, c.cover.sources.join(" · "))));
+      }
+      // A Shield-Wall Drone's mobile cover is the same kind of standing rider (#38).
+      for (const n of (c.drone_cover_notes || [])) {
+        body.push(el("div", { class: "sh-sense" },
+          el("div", {}, `Cover (drone) ${n.text}`),
+          el("div", { class: "sub" }, n.source)));
+      }
+      return body;
+    },
+  });
+}
+/* The current lifestyle's effect, behind the "Effect ▾" chip in the tags row.
+ *
+ * Reads the active lifestyle fresh rather than closing over it, for the same
+ * reason every other popover here does: changing the lifestyle from the dropdown
+ * beside the chip re-renders the sheet, and a captured name would leave this box
+ * quoting the lifestyle you just moved off. The Gear tab's lifestyle card carries
+ * the same sentence in full and is where you'd act on it — this is the copy you
+ * can reach from the other nine tabs. */
+function openLifestylePopover() {
+  openAnchoredPopover({
+    kind: "lifestyle", anchorSel: ".sh-ls-info", label: "Lifestyle effect",
+    build: (refresh, close) => {
+      const ls = (CHAR.play.lifestyles || []).find(l => l.active);
+      if (!ls) {
+        return [popoverHead("◈ Lifestyle", close),
+          el("div", { class: "sh-roller-hint" },
+            "No current lifestyle selected — pick one from the dropdown.")];
+      }
+      return [popoverHead("◈ Lifestyle", close),
+        el("div", { class: "sh-sense" },
+          el("div", {}, `${ls.name} · ${ls.months || 0} mo prepaid`),
+          el("div", { class: "sub" },
+            LIFESTYLE_EFFECTS[ls.name] || "No listed effect."))];
+    },
+  });
+}
+
 /* Public/Private badge shown next to the name when signed in and viewing your
  * own saved character. Click to toggle sharing. Hidden in local-only mode and
  * on read-only shared views (not yours to share). */
@@ -2325,6 +2502,7 @@ function sheetHeader() {
   const heritageLabel = CHAR.heritage.type
     + (CHAR.heritage.uplift_type ? ` (${CHAR.heritage.uplift_type})` : "");
   const activeLs = (play.lifestyles || []).find(l => l.active);
+  const lsEffectText = activeLs ? LIFESTYLE_EFFECTS[activeLs.name] : null;
   const heritageAbilities = heritageAbilityLines();
   // Current-lifestyle dropdown: switches the active flag among the
   // lifestyles the character owns (same effect as the radio buttons on the
@@ -2351,9 +2529,22 @@ function sheetHeader() {
     el("div", { class: "sh-tags" },
       el("span", { class: "sh-tag" }, heritageLabel),
       el("span", { class: "sh-tag magic" }, CALC.magic.type),
-      lsSelect),
-    activeLs && LIFESTYLE_EFFECTS[activeLs.name]
-      ? el("div", { class: "sh-ls-effect" }, LIFESTYLE_EFFECTS[activeLs.name]) : null);
+      lsSelect,
+      // The lifestyle effect used to print in full as a .sh-ls-effect paragraph
+      // right here. It is a sentence that is true for the whole session and does
+      // nothing between rounds, and in the stacked tablet-portrait layout it was
+      // buying a whole extra line of the one band that renders on all ten tabs.
+      // As a chip beside the dropdown that sets the lifestyle it costs no height
+      // at all — the tags row already exists — and the sentence itself is one tap
+      // away, whole, in the popover. (It also still reads out of the select's own
+      // title, which is a hover tooltip and therefore useless on a tablet; the
+      // chip is the version a finger can reach.)
+      lsEffectText
+        ? el("button", { class: "sh-tag sh-ls-info", type: "button",
+            title: `${activeLs.name} lifestyle effect — click to read it`,
+            "aria-label": `${activeLs.name} lifestyle effect`,
+            onclick: openLifestylePopover }, "Effect ▾")
+        : null));
 
   // Interactive pool tiles live up here — pools matter more than attributes.
   // The fifth slot Kismet used to hold is now Enhanced Senses: a tile rather
@@ -2414,6 +2605,14 @@ function sheetHeader() {
   // Initiative is the right size for a band that renders everywhere -- one
   // figure, one roll button, one field -- and answers a question you ask every
   // round. Condition returned to the Overview whole.
+  //
+  // Both boxes are now that size. Each was also printing its own explanation
+  // under the heading ("Focus Pool dice + Reaction"; the dodge sources, or the
+  // sentence about there being none) plus, on the characters who have them,
+  // initiative notes, standing cover and drone riders. None of that changes
+  // between rounds, which is the bar this band is held to, so it went behind the
+  // same click Move and Armor use -- openInitiativePopover / openDodgePopover,
+  // where it is restated and expanded rather than merely relocated.
   const headBoxes = el("div", { class: "sh-head-boxes" },
     initiativeCard(), dodgeCard());
   const top = el("div", { class: "sh-top" }, ident, headBoxes, right);

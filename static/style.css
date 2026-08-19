@@ -613,18 +613,28 @@ label.opt input{margin-top:3px}
 
    Scoped to the band on purpose: .big, .sub and .btn belong to cards all over
    the sheet and must not shrink with them. */
+/* stretch, not flex-start: the two boxes must read as a matched pair, and
+   Dodge's height is VARIABLE -- cover, drone riders and the tracked-dodge
+   counter each add a row -- so tuning type to match today's content would come
+   apart on the first character who has cover. Stretch holds in every case; the
+   type scale below just keeps the natural gap small enough that the taller box
+   is not mostly air. */
 .sh-head-boxes{flex:1 1 320px;min-width:260px;display:flex;flex-wrap:wrap;gap:10px;
-  align-items:flex-start}
-.sh-head-boxes > .sh-card{flex:1 1 240px;min-width:0;margin:0}
+  align-items:stretch}
+.sh-head-boxes > .sh-card{flex:1 1 240px;min-width:0;margin:0;
+  display:flex;flex-direction:column}
+/* The roll row sits at the foot of whichever box stretched, so the two
+   buttons stay on one line as a pair rather than floating mid-card. */
+.sh-head-boxes .sh-counter-btns{margin-top:auto}
 .sh-head-boxes > .sh-card{padding:10px 12px}
 .sh-head-boxes h3{font-size:11px}
 /* .sh-counter .big (further down) matches with equal specificity and would win
    on document order, so this one carries the extra class deliberately. */
-.sh-head-boxes .sh-counter .big{font-size:23px;line-height:1.1;margin:2px 0 4px}
+.sh-head-boxes .sh-counter .big{font-size:19px;line-height:1.05;margin:1px 0 2px}
 .sh-head-boxes .sub{font-size:10.5px;line-height:1.35}
 .sh-head-boxes .btn{font-size:11px;padding:4px 9px}
 .sh-head-boxes .sh-init-input{font-size:13px;width:54px;padding:3px 5px}
-.sh-head-boxes .sh-counter-btns{margin-top:5px;gap:6px}
+.sh-head-boxes .sh-counter-btns{gap:6px}
 .sh-head-boxes h3{margin-bottom:2px}
 .sh-head-boxes .sh-card > .sub{margin-top:1px}
 /* The coarse-pointer 32px floor still wins on a phone, and should: these are

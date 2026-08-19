@@ -599,13 +599,19 @@ label.opt input{margin-top:3px}
    — no cap, so a wide window gives it the slack instead of stranding it at 520px
    with empty space either side. It still yields first when things get tight
    (flex-basis 240px, and the whole row wraps below ~900px). */
-/* Condition and Dodge share the header's middle slot (#83). They wrap rather
-   than shrink: Condition carries two damage tracks and Dodge a roll button, and
-   squeezing either to fit would defeat the point of promoting them. Dodge drops
-   under Condition when the band cannot hold both -- "if it fits" is the ask. */
+/* Initiative and Dodge share the header's middle slot (#83). They wrap rather
+   than shrink -- squeezing a roll button to fit defeats the point of promoting
+   it -- so Dodge drops under Initiative when the band cannot hold both.
+   Condition was here first and went back to the Overview: two damage tracks
+   made this band taller than a phone screen, on every tab.
+
+   Their explanatory prose runs two ticks below the card default (14px), because
+   in a band that renders everywhere the reminder should not compete with the
+   figure it explains. */
 .sh-head-boxes{flex:1 1 320px;min-width:260px;display:flex;flex-wrap:wrap;gap:10px;
   align-items:flex-start}
 .sh-head-boxes > .sh-card{flex:1 1 240px;min-width:0;margin:0}
+.sh-head-boxes .sub{font-size:12px}
 /* "Running now" is a standalone Overview card now, no longer a header panel, so
    it keeps card chrome and never hides itself when empty -- a fixed column that
    vanishes is one the reader has to remember used to be there. The accent rule
@@ -897,7 +903,9 @@ label.opt input{margin-top:3px}
   text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg)}
 .sh-pool-temp-plus{font-family:var(--mono);font-size:13px;line-height:1}
 .sh-top{align-items:flex-start}
-.sh-pool-note{font-size:9.5px;color:var(--amber);margin-top:2px;max-width:150px;line-height:1.3}
+/* One tick down, not the two asked for: these start at 9.5px and 7.5 stops
+   being readable at arm's length. */
+.sh-pool-note{font-size:8.5px;color:var(--amber);margin-top:2px;max-width:150px;line-height:1.3}
 
 .sh-init-roll{padding:4px 10px;font-size:12px;white-space:nowrap}
 .sh-init-input{width:80px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
@@ -1642,7 +1650,7 @@ tr.sh-modslots-row td{padding-top:0;padding-bottom:10px;border-bottom:1px solid 
   input[type=checkbox],input[type=radio]{width:20px;height:20px}
   .sh-fire-kata input{width:18px;height:18px}
   .sv-edit{padding:5px 6px}
-  .sh-modslot-label,.sh-pool-temp-lbl,.sh-pool-note{font-size:10.5px}
+  .sh-modslot-label,.sh-pool-temp-lbl,.sh-pool-note{font-size:9.5px}
   .sh-modslot-eff,.sh-pool-kismet{font-size:11px}
   th{font-size:11px}
   .sh-skilltable th{font-size:10.5px}
@@ -1763,13 +1771,3 @@ body.sheet-readonly .sh-readonly-banner .btn{pointer-events:auto;opacity:1}
 .sh-loadout-box .desc-expander summary{font-size:11px}
 .armor-effect-line{margin-top:2px}
 
-/* Compact Condition in the header (#83): tracks and the wound penalty on the
-   face, everything that is a BUTTON behind the heading. pointer:coarse floors
-   .btn at 32px, and Heal/Full Heal/Soak plus the prose were most of the card. */
-.sh-cond-compact{padding:8px 10px}
-.sh-cond-compact .sh-track{margin-top:4px}
-.sh-cond-compact .stat-line{margin-top:6px !important;padding:2px 0}
-.sh-cond-more{background:none;border:0;padding:0;cursor:pointer;
-  font-family:var(--disp);font-size:13px;letter-spacing:.04em;color:var(--text)}
-.sh-cond-more:hover{color:var(--manon)}
-.sh-cond-more:focus-visible{outline:2px solid var(--manon);outline-offset:2px}

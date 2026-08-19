@@ -2162,6 +2162,32 @@ function zpMeterValues() {
   return { current: Math.max(0, z.zp - Math.ceil(spent)), max: z.zp };
 }
 
+/* Initiative, lifted to top level so the header band can carry it (#83).
+ * You roll it once at the top of a fight and read it every round after, and it
+ * was reachable from the Overview only. Condition took this slot first and gave
+ * it back: two damage tracks made the header 1080px on a phone, where this card
+ * is a figure, a roll button and a field. */
+function initiativeCard() {
+  const play = CHAR.play;
+  // --- initiative + combat numbers
+  // Initiative: roll Focus-pool dice, add Reaction — e.g. "12d+8". The Roll
+  // button hands that pool to the die roller, which writes the result back
+  // into the input below; the input stays directly editable either way.
+  const init = sheetInitiative();
+  const initInput = el("input", { type: "number", class: "sh-init-input",
+    min: "0", value: String(play.initiative || 0),
+    oninput: e => { play.initiative = parseInt(e.target.value, 10) || 0; playChanged(false); } });
+  return el("div", { class: "card sh-card sh-counter" },
+    el("h3", {}, "Initiative"),
+    el("div", { class: "big" }, `${init.dice}d+${init.bonus}`),
+    el("div", { class: "sub" }, "Focus Pool dice + Reaction"),
+    ...(init.notes || []).map(n =>
+      el("div", { class: "sub", style: "color:var(--amber);margin-top:4px" }, "★ " + n)),
+    el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
+      el("button", { class: "btn roll sh-init-roll", title: "Roll initiative in the die roller",
+        onclick: openInitiativeRoller }, "⚄ Initiative"),
+      el("span", { class: "sub", style: "align-self:center" }, "Rolled:"), initInput));
+}
 /* The Condition tracks, lifted out of the Overview so the sheet header can
  * carry them (#83). Wound penalty applies to EVERY roll, and the tracks were
  * reachable only from one tab -- marking a box mid-fight meant leaving
@@ -2170,35 +2196,25 @@ function zpMeterValues() {
  *
  * Recomputes `play` and `ro` itself rather than closing over shOverview, which
  * is what lets the header call it. */
-function conditionCard({ compact = false } = {}) {
+function conditionCard() {
   const play = CHAR.play;
   const ro = !!(activeTabObj() && activeTabObj().readonly);
   // --- condition (wound penalty folded in — it's derived straight from these tracks)
   const { raw: rawWound, negated: woundNegated, doubled: woundDoubled, dice: wound } = woundPenalty();
-  const healButtons = el("span", {},
-    counterBtn("Heal Stun", () => {
-      play.stun_damage = 0; playChanged();
-    }), " ",
-    counterBtn("Full Heal", () => {
-      play.physical_damage = 0; play.stun_damage = 0; playChanged();
-    }, "good"));
-  return el("div", { class: "card sh-card" + (compact ? " sh-cond-compact" : "") },
-    el("div", { class: "sh-card-head" },
-      // Compact, the heading is the way in to everything that moved: a coarse
-      // pointer floors every .btn at 32px, and Heal/Heal/Soak plus the prose
-      // were most of the card's height. The tracks and the penalty stay on the
-      // face because marking a box from any tab is the entire point (#83).
-      compact
-        ? el("button", { class: "sh-cond-more", type: "button",
-            title: "Heal, soak and the wound rules",
-            onclick: () => openConditionPopover() }, "Condition ▸")
-        : el("h3", {}, "Condition"),
-      compact ? null : healButtons),
+  return el("div", { class: "card sh-card" },
+    el("div", { class: "sh-card-head" }, el("h3", {}, "Condition"),
+      el("span", {},
+        counterBtn("Heal Stun", () => {
+          play.stun_damage = 0; playChanged();
+        }), " ",
+        counterBtn("Full Heal", () => {
+          play.physical_damage = 0; play.stun_damage = 0; playChanged();
+        }, "good"))),
     conditionTrack("Physical", CALC.condition.physical,
       () => play.physical_damage, v => { play.physical_damage = v; }),
     conditionTrack("Stun", CALC.condition.stun,
       () => play.stun_damage, v => { play.stun_damage = v; }),
-    compact ? null : el("p", { class: "hint", style: "margin:8px 0 0" },
+    el("p", { class: "hint", style: "margin:8px 0 0" },
       `Every 3 boxes marked on either track: ${woundDoubled ? "−2 dice" : "−1 die"} on tasks, `
       + "cumulative. Biotech can remove these penalties during combat."),
     el("div", { class: "stat-line", style: "margin-top:8px" },
@@ -2207,7 +2223,7 @@ function conditionCard({ compact = false } = {}) {
         wound < 0 ? `${wound} dice` : "0")),
     // Soaking is Brawn out of the pool plus whatever soak dice you're owed, so
     // it opens the roller pointed at Brawn with those already in (issue #39).
-    (ro || compact) ? null : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
+    ro ? null : el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
       el("button", { class: "btn roll",
         title: "Roll to soak — Brawn pool dice, plus any passive soak dice",
         onclick: () => openPoolRoller({ dice: 0, bonus: CALC.combat.soak_bonus || 0,
@@ -2216,65 +2232,19 @@ function conditionCard({ compact = false } = {}) {
             + "dial in the Brawn you're spending" }) }, "⚄ Soak"),
       el("span", { class: "sub", style: "align-self:center" },
         CALC.combat.soak_bonus ? `+${CALC.combat.soak_bonus} soak dice` : "Brawn pool")),
-    (!compact && woundNegated)
+    woundNegated
       ? el("div", { class: "sub", style: "color:var(--ok)" },
           rawWound < 0 ? `Negated — would be ${rawWound}` : "Wound penalties negated")
       : null,
-    (!compact && woundDoubled)
+    woundDoubled
       ? el("div", { class: "sub", style: "color:var(--bad)" },
           "Doubled by " + (CALC.combat.wound_penalty_doubled_by || "an augment")
           + (rawWound < 0 ? ` — would be ${rawWound}` : ""))
       : null,
-    (!compact && CALC.combat.physical_damage_reduction)
+    CALC.combat.physical_damage_reduction
       ? el("div", { class: "sub", style: "color:var(--ok)" },
           `Damage soak: −${CALC.combat.physical_damage_reduction} physical per hit (min 1) — Platelet Production Enhancement`)
       : null);
-}
-
-/* Everything the compact Condition box leaves off its face: the two Heal
- * buttons, the Soak roll, the wound rule in prose, and the negated/doubled/
- * damage-reduction riders. Reached from the box's own heading, the same
- * face-plus-popover split Move, Armor and Enhanced Senses use. */
-function openConditionPopover() {
-  openAnchoredPopover({
-    kind: "condition", anchorSel: ".sh-cond-compact", label: "Condition",
-    build: (refresh, close) => {
-      const play = CHAR.play;
-      const ro = !!(activeTabObj() && activeTabObj().readonly);
-      const { raw, negated, doubled, dice } = woundPenalty();
-      const c = CALC.combat;
-      const body = [popoverHead("🩹 Condition", close)];
-      if (!ro) {
-        body.push(el("div", { class: "sh-counter-btns" },
-          counterBtn("Heal Stun", () => { play.stun_damage = 0; playChanged(); refresh(); }), " ",
-          counterBtn("Full Heal", () => {
-            play.physical_damage = 0; play.stun_damage = 0; playChanged(); refresh();
-          }, "good")));
-        body.push(el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
-          el("button", { class: "btn roll",
-            title: "Roll to soak — Brawn pool dice, plus any passive soak dice",
-            onclick: () => openPoolRoller({ dice: 0, bonus: c.soak_bonus || 0,
-              pool: "Brawn", label: "Soak",
-              note: (c.soak_bonus ? `${c.soak_bonus} passive soak dice — ` : "")
-                + "dial in the Brawn you're spending" }) }, "⚄ Soak"),
-          el("span", { class: "sub", style: "align-self:center" },
-            c.soak_bonus ? `+${c.soak_bonus} soak dice` : "Brawn pool")));
-      }
-      body.push(el("div", { class: "sh-sense" },
-        el("div", {}, `Wound penalty ${dice < 0 ? `${dice} dice` : "0"}`),
-        el("div", { class: "sub" },
-          `Every 3 boxes marked on either track: ${doubled ? "−2 dice" : "−1 die"} on tasks, `
-          + "cumulative. Biotech can remove these penalties during combat.")));
-      if (negated) body.push(el("div", { class: "sub", style: "color:var(--ok)" },
-        raw < 0 ? `Negated — would be ${raw}` : "Wound penalties negated"));
-      if (doubled) body.push(el("div", { class: "sub", style: "color:var(--bad)" },
-        "Doubled by " + (c.wound_penalty_doubled_by || "an augment")
-        + (raw < 0 ? ` — would be ${raw}` : "")));
-      if (c.physical_damage_reduction) body.push(el("div", { class: "sub", style: "color:var(--ok)" },
-        `Damage soak: −${c.physical_damage_reduction} physical per hit (min 1)`));
-      return body;
-    },
-  });
 }
 
 /* Dodge, likewise lifted to top level for the header band (#83). */
@@ -2439,11 +2409,13 @@ function sheetHeader() {
   // applies to EVERY roll and the tracks were reachable from one tab only, so
   // marking a box mid-fight meant leaving whatever tab you were on.
   //
-  // Unlike its predecessors this pair carries real controls, so it DOES cost
-  // header height on a coarse pointer, where .mini-btn floors at 32px. That is
-  // the deliberate trade: the tracks are worth reaching from everywhere.
+  // Condition held this slot briefly and gave it back: two damage tracks made
+  // the header 1080px on a 375px phone, taller than the screen, on every tab.
+  // Initiative is the right size for a band that renders everywhere -- one
+  // figure, one roll button, one field -- and answers a question you ask every
+  // round. Condition returned to the Overview whole.
   const headBoxes = el("div", { class: "sh-head-boxes" },
-    conditionCard({ compact: true }), dodgeCard());
+    initiativeCard(), dodgeCard());
   const top = el("div", { class: "sh-top" }, ident, headBoxes, right);
   // Heritage abilities, full-width, directly above the pools.
   //
@@ -4844,25 +4816,6 @@ function shOverview(body) {
   if (expandedPool) poolCard.append(poolSkillList(expandedPool));
   poolCard.append(el("h4", { class: "sh-h4" }, "Attributes"), attrsRow);
 
-  // --- initiative + combat numbers
-  // Initiative: roll Focus-pool dice, add Reaction — e.g. "12d+8". The Roll
-  // button hands that pool to the die roller, which writes the result back
-  // into the input below; the input stays directly editable either way.
-  const init = sheetInitiative();
-  const initInput = el("input", { type: "number", class: "sh-init-input",
-    min: "0", value: String(play.initiative || 0),
-    oninput: e => { play.initiative = parseInt(e.target.value, 10) || 0; playChanged(false); } });
-  const initCard = el("div", { class: "card sh-card sh-counter" },
-    el("h3", {}, "Initiative"),
-    el("div", { class: "big" }, `${init.dice}d+${init.bonus}`),
-    el("div", { class: "sub" }, "Focus Pool dice + Reaction"),
-    ...(init.notes || []).map(n =>
-      el("div", { class: "sub", style: "color:var(--amber);margin-top:4px" }, "★ " + n)),
-    el("div", { class: "sh-counter-btns", style: "margin-top:8px" },
-      el("button", { class: "btn roll sh-init-roll", title: "Roll initiative in the die roller",
-        onclick: openInitiativeRoller }, "⚄ Initiative"),
-      el("span", { class: "sub", style: "align-self:center" }, "Rolled:"), initInput));
-
   const c = CALC.combat;
   /* The Combat card stood here and is gone. It had become a catch-all: fourteen
    * lines with nothing in common except that each was a derived number nobody
@@ -5007,16 +4960,16 @@ function shOverview(body) {
   // each. One card before the break puts Actions at the head of column two,
   // which is where it was asked for.
   // Three columns, pinned by break-before rather than left to the flow (#83):
-  // Attributes/Skills fill column one, Actions heads column two with Initiative
-  // under it, and Running Now heads column three. Condition and Dodge are no
-  // longer here at all -- they moved to the header band, where they are
-  // reachable from every tab.
+  // Attributes/Skills fill column one; Running Now heads column two with
+  // Actions under it; Condition heads column three. Initiative and Dodge are
+  // not here -- they moved to the header band, reachable from every tab.
   const actions = actionsCard();
-  actions.classList.add("sh-col-break");
   const running = runningNowPanel();
   running.classList.add("sh-col-break");
+  const cond = conditionCard();
+  cond.classList.add("sh-col-break");
   body.append(el("div", { class: "sh-ov-grid" },
-    ...[poolCard, actions, initCard, running,
+    ...[poolCard, running, actions, cond,
         infCard, stationCard, maCard].filter(Boolean)));
 
   /* The Heritage Traits card used to sit here, on the grounds that a Bat's
